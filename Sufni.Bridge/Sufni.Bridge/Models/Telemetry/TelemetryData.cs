@@ -72,6 +72,8 @@ public enum BalanceType
     Rebound
 }
 
+public record PositionVelocityData(double[] Travel, double[] Velocity);
+
 public record BalanceData(
     List<double> FrontTravel,
     List<double> FrontVelocity,
@@ -692,6 +694,24 @@ public class TelemetryData
             hsr * totalPercentage);
     }
 
+    public PositionVelocityData CalculatePositionVelocityData(SuspensionType type)
+    {
+        var suspension = type == SuspensionType.Front ? Front : Rear;
+        var travel = new List<double>();
+        var velocity = new List<double>();
+
+        foreach (var s in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
+        {
+            for (var i = s.Start; i <= s.End && i < suspension.Travel.Length; i++)
+            {
+                travel.Add(suspension.Travel[i]);
+                velocity.Add(suspension.Velocity[i]);
+            }
+        }
+
+        return new PositionVelocityData(travel.ToArray(), velocity.ToArray());
+    }
+
     private static Func<double, double> FitPolynomial(double[] x, double[] y)
     {
         var coefficients = Fit.Polynomial(x, y, 1);
@@ -713,8 +733,8 @@ public class TelemetryData
         {
             t.Add(s.Stat.MaxTravel / travelMax * 100);
 
-            // Use positive values for rebound too, because ScottPlot can't invert axis easily. 
-            v.Add(balanceType == BalanceType.Rebound ? -s.Stat.MaxVelocity : s.Stat.MaxVelocity);
+            // Rebound velocities are negative, compression velocities are positive.
+            v.Add(s.Stat.MaxVelocity);
         }
 
         var tArray = t.ToArray();

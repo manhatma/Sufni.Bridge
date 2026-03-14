@@ -8,18 +8,21 @@ namespace Sufni.Bridge.Plots;
 
 public class BalancePlot(Plot plot, BalanceType type) : TelemetryPlot(plot)
 {
-    private void AddStatistics(TelemetryData telemetryData)
+    private void AddStatistics(TelemetryData telemetryData, int roundedMaxVelocity)
     {
         var balance = telemetryData.CalculateBalance(type);
 
         var maxVelocity = Math.Max(
-            balance.FrontVelocity.Max(),
-            balance.RearVelocity.Max());
+            balance.FrontVelocity.Select(Math.Abs).DefaultIfEmpty(0).Max(),
+            balance.RearVelocity.Select(Math.Abs).DefaultIfEmpty(0).Max());
 
         var msd = balance.MeanSignedDeviation / maxVelocity * 100.0;
         var msdString = $"MSD: {msd:+0.00;-#.00} %";
 
-        AddLabel(msdString, 100, 0, -10, -5, Alignment.LowerRight);
+        if (type == BalanceType.Rebound)
+            AddLabel(msdString, 100, -roundedMaxVelocity, -10, -5, Alignment.LowerRight);
+        else
+            AddLabel(msdString, 100, 0, -10, -5, Alignment.LowerRight);
     }
 
     public override void LoadTelemetryData(TelemetryData telemetryData)
@@ -33,9 +36,15 @@ public class BalancePlot(Plot plot, BalanceType type) : TelemetryPlot(plot)
 
         var balance = telemetryData.CalculateBalance(type);
 
-        var maxVelocity = Math.Max(balance.FrontVelocity.Max(), balance.RearVelocity.Max());
+        var maxVelocity = Math.Max(
+            balance.FrontVelocity.Select(Math.Abs).DefaultIfEmpty(0).Max(),
+            balance.RearVelocity.Select(Math.Abs).DefaultIfEmpty(0).Max());
         var roundedMaxVelocity = (int)Math.Ceiling(maxVelocity / 100.0) * 100;
-        Plot.Axes.SetLimits(0, 100, 0, roundedMaxVelocity);
+
+        if (type == BalanceType.Rebound)
+            Plot.Axes.SetLimits(0, 100, -roundedMaxVelocity, 0);
+        else
+            Plot.Axes.SetLimits(0, 100, 0, roundedMaxVelocity);
 
         var tickInterval = (int)Math.Ceiling(maxVelocity / 5 / 100.0) * 100;
         Plot.Axes.Left.TickGenerator = new NumericFixedInterval(tickInterval);
@@ -65,6 +74,24 @@ public class BalancePlot(Plot plot, BalanceType type) : TelemetryPlot(plot)
         rearTrend.LineStyle.Color = RearColor;
         rearTrend.LineStyle.Width = 2;
 
-        AddStatistics(telemetryData);
+        AddStatistics(telemetryData, roundedMaxVelocity);
+
+        // Legend labels
+        var legendY1 = type == BalanceType.Compression
+            ? roundedMaxVelocity * 0.95
+            : -roundedMaxVelocity * 0.05;
+        var legendY2 = type == BalanceType.Compression
+            ? roundedMaxVelocity * 0.87
+            : -roundedMaxVelocity * 0.13;
+
+        var frontLegend = Plot.Add.Text("Front", 100, legendY1);
+        frontLegend.LabelFontColor = FrontColor;
+        frontLegend.LabelFontSize = 12;
+        frontLegend.LabelAlignment = Alignment.UpperRight;
+
+        var rearLegend = Plot.Add.Text("Rear", 100, legendY2);
+        rearLegend.LabelFontColor = RearColor;
+        rearLegend.LabelFontSize = 12;
+        rearLegend.LabelAlignment = Alignment.UpperRight;
     }
 }

@@ -1,0 +1,26 @@
+<UserControl
+    x:Class="Sufni.Bridge.Views.SessionPages.MiscPageView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="clr-namespace:Sufni.Bridge.ViewModels.SessionPages"
+    d:DesignHeight="600"
+    d:DesignWidth="500"
+    x:DataType="vm:MiscPageViewModel"
+    mc:Ignorable="d">
+
+    <Design.DataContext>
+        <vm:MiscPageViewModel />
+    </Design.DataContext>
+
+    <ScrollViewer Width="{Binding $parent[ScrollViewer].Bounds.Width}" Height="{Binding $parent[ScrollViewer].Bounds.Height}" IsScrollChainingEnabled="False">
+        <StackPanel Orientation="Vertical">
+            <Svg IsVisible="{Binding VelocityDistributionComparison, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding VelocityDistributionComparison}" />
+            <Svg IsVisible="{Binding PositionVelocityComparison, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding PositionVelocityComparison}" />
+            <Svg IsVisible="{Binding FrontPositionVelocity, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontPositionVelocity}" />
+            <Svg IsVisible="{Binding RearPositionVelocity, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearPositionVelocity}" />
+        </StackPanel>
+    </ScrollViewer>
+
+</UserControl>

@@ -22,4 +22,8 @@ public class SessionCache
     [Column("rear_lsr_percentage")] public double? RearLsrPercentage { get; set; }
     [Column("front_hsr_percentage")] public double? FrontHsrPercentage { get; set; }
     [Column("rear_hsr_percentage")] public double? RearHsrPercentage { get; set; }
+    [Column("velocity_distribution_comparison")] public string? VelocityDistributionComparison { get; set; }
+    [Column("position_velocity_comparison")] public string? PositionVelocityComparison { get; set; }
+    [Column("front_position_velocity")] public string? FrontPositionVelocity { get; set; }
+    [Column("rear_position_velocity")] public string? RearPositionVelocity { get; set; }
 }

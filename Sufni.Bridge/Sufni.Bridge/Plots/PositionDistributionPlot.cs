@@ -5,21 +5,9 @@ using Sufni.Bridge.Models.Telemetry;
 
 namespace Sufni.Bridge.Plots;
 
-public class TravelHistogramPlot(Plot plot, SuspensionType type) : TelemetryPlot(plot)
+public class PositionDistributionPlot(Plot plot, SuspensionType type) : TelemetryPlot(plot)
 {
     private const double HistogramRangeMultiplier = 1.3;
-
-    private static readonly Color StatColor = Color.FromHex("#FFD700");
-
-    private void AddSmallLabel(string content, double x, double y, int xoffset, int yoffset, Alignment alignment)
-    {
-        var text = Plot.Add.Text(content, x, y);
-        text.LabelFontColor = StatColor;
-        text.LabelFontSize = 11;
-        text.LabelAlignment = alignment;
-        text.LabelOffsetX = xoffset;
-        text.LabelOffsetY = yoffset;
-    }
 
     private void AddStatistics(TelemetryData telemetryData, double yRangeTop)
     {
@@ -32,40 +20,31 @@ public class TravelHistogramPlot(Plot plot, SuspensionType type) : TelemetryPlot
         var maxPercentage = mx > 0 ? statistics.Max / mx * 100.0 : 0.0;
         var p95Percentage = mx > 0 ? statistics.P95 / mx * 100.0 : 0.0;
 
-        Plot.Add.VerticalLine(statistics.Average, 2f, StatColor, LinePattern.Dashed);
-        Plot.Add.VerticalLine(statistics.Max, 2f, StatColor, LinePattern.Dashed);
-        Plot.Add.VerticalLine(statistics.P95, 2f, StatColor, LinePattern.Dashed);
+        Plot.Add.VerticalLine(statistics.Average, 2f, Color.FromHex("#FFD700"), LinePattern.Dashed);
+        Plot.Add.VerticalLine(statistics.Max, 2f, Color.FromHex("#FFD700"), LinePattern.Dashed);
+        Plot.Add.VerticalLine(statistics.P95, 2f, Color.FromHex("#FFD700"), LinePattern.Dashed);
 
-        AddSmallLabel("avg", statistics.Average, yRangeTop * 0.95, -8, 0, Alignment.MiddleRight);
-        AddSmallLabel("max", statistics.Max, yRangeTop * 0.95, -8, 0, Alignment.MiddleRight);
-        AddSmallLabel("95th", statistics.P95, yRangeTop * 0.95, -8, 0, Alignment.MiddleRight);
+        AddLabel("avg", statistics.Average, yRangeTop * 0.95, -8, 0, Alignment.MiddleRight);
+        AddLabel("max", statistics.Max, yRangeTop * 0.95, -8, 0, Alignment.MiddleRight);
+        AddLabel("95th", statistics.P95, yRangeTop * 0.95, -8, 0, Alignment.MiddleRight);
 
-        // Tabular layout with monospace font — use non-breaking spaces (\u00A0) to prevent
-        // SVG whitespace normalization from collapsing leading padding spaces
-        static string N(double val, int width = 5) =>
-            val.ToString("F1").PadLeft(width).Replace(' ', '\u00A0');
+        var avgString = $"Avg:  {statistics.Average:F1} mm ({avgPercentage:F1}%)";
+        var p95String = $"95th: {statistics.P95:F1} mm ({p95Percentage:F1}%)";
+        var maxString = $"Max:  {statistics.Max:F1} mm ({maxPercentage:F1}%)";
+        var boString = $"#BO:  {statistics.Bottomouts}";
 
-        // Main lines are 22 chars wide; pad last line with trailing NBSPs so it left-aligns
-        // visually in the right-aligned text box (ScottPlot right-aligns each line to anchor)
-        const int lineWidth = 22;
-        var boLine = $"Bottom\u00A0outs:\u00A0{statistics.Bottomouts}";
-        var statsText =
-            $"Avg:\u00A0\u00A0{N(statistics.Average)}\u00A0mm\u00A0({N(avgPercentage, 4)}%)\n" +
-            $"95th:\u00A0{N(statistics.P95)}\u00A0mm\u00A0({N(p95Percentage, 4)}%)\n" +
-            $"Max:\u00A0\u00A0{N(statistics.Max)}\u00A0mm\u00A0({N(maxPercentage, 4)}%)\n" +
-            boLine.PadRight(lineWidth, '\u00A0');
-
-        var statsLabel = Plot.Add.Text(statsText, mx, yRangeTop * 0.85);
-        statsLabel.LabelFontColor = StatColor;
-        statsLabel.LabelFontSize = 10;
-        statsLabel.LabelFontName = "Menlo";
+        var statsLabel = Plot.Add.Text(
+            $"{avgString}\n\n{p95String}\n\n{maxString}\n\n{boString}",
+            mx,
+            yRangeTop);
+        statsLabel.LabelFontColor = Color.FromHex("#FFD700");
+        statsLabel.LabelFontSize = 14;
         statsLabel.LabelAlignment = Alignment.UpperRight;
-        statsLabel.LabelOffsetX = -10; // 1em margin between label right edge and axis
         statsLabel.LabelBold = true;
         statsLabel.LabelBackgroundColor = Color.FromHex("#15191C").WithAlpha(220);
-        statsLabel.LabelBorderColor = StatColor.WithAlpha(80);
+        statsLabel.LabelBorderColor = Color.FromHex("#FFD700").WithAlpha(80);
         statsLabel.LabelBorderWidth = 1;
-        statsLabel.LabelPadding = 5;
+        statsLabel.LabelPadding = 12;
     }
 
     public override void LoadTelemetryData(TelemetryData telemetryData)
@@ -73,8 +52,8 @@ public class TravelHistogramPlot(Plot plot, SuspensionType type) : TelemetryPlot
         base.LoadTelemetryData(telemetryData);
 
         Plot.Axes.Title.Label.Text = type == SuspensionType.Front
-            ? "Front travel histogram"
-            : "Rear travel histogram";
+            ? "Front position distribution"
+            : "Rear position distribution";
         Plot.Layout.Fixed(new PixelPadding(70, 10, 50, 40));
 
         Plot.Axes.Bottom.Label.Text = "Travel (mm)";

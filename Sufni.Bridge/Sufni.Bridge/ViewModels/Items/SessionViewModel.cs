@@ -23,6 +23,7 @@ public partial class SessionViewModel : ItemViewModelBase
     private SpringPageViewModel SpringPage { get; } = new();
     private DamperPageViewModel DamperPage { get; } = new();
     private BalancePageViewModel BalancePage { get; } = new();
+    private MiscPageViewModel MiscPage { get; } = new();
     private NotesPageViewModel NotesPage { get; } = new();
     public ObservableCollection<PageViewModelBase> Pages { get; }
     public string Description => NotesPage.Description ?? "";
@@ -65,6 +66,11 @@ public partial class SessionViewModel : ItemViewModelBase
         {
             Pages.Remove(BalancePage);
         }
+
+        MiscPage.VelocityDistributionComparison = cache.VelocityDistributionComparison;
+        MiscPage.PositionVelocityComparison = cache.PositionVelocityComparison;
+        MiscPage.FrontPositionVelocity = cache.FrontPositionVelocity;
+        MiscPage.RearPositionVelocity = cache.RearPositionVelocity;
 
         return true;
     }
@@ -172,6 +178,33 @@ public partial class SessionViewModel : ItemViewModelBase
             Dispatcher.UIThread.Post(() => { Pages.Remove(BalancePage); });
         }
 
+        // BYB diagrams
+        var vdc = new VelocityDistributionComparisonPlot(new Plot());
+        vdc.LoadTelemetryData(telemetryData);
+        sessionCache.VelocityDistributionComparison = vdc.Plot.GetSvgXml(width, height);
+        Dispatcher.UIThread.Post(() => { MiscPage.VelocityDistributionComparison = sessionCache.VelocityDistributionComparison; });
+
+        var pvc = new PositionVelocityComparisonPlot(new Plot());
+        pvc.LoadTelemetryData(telemetryData);
+        sessionCache.PositionVelocityComparison = pvc.Plot.GetSvgXml(width, height);
+        Dispatcher.UIThread.Post(() => { MiscPage.PositionVelocityComparison = sessionCache.PositionVelocityComparison; });
+
+        if (telemetryData.Front.Present)
+        {
+            var fpv = new PositionVelocityPlot(new Plot(), SuspensionType.Front);
+            fpv.LoadTelemetryData(telemetryData);
+            sessionCache.FrontPositionVelocity = fpv.Plot.GetSvgXml(width, height);
+            Dispatcher.UIThread.Post(() => { MiscPage.FrontPositionVelocity = sessionCache.FrontPositionVelocity; });
+        }
+
+        if (telemetryData.Rear.Present)
+        {
+            var rpv = new PositionVelocityPlot(new Plot(), SuspensionType.Rear);
+            rpv.LoadTelemetryData(telemetryData);
+            sessionCache.RearPositionVelocity = rpv.Plot.GetSvgXml(width, height);
+            Dispatcher.UIThread.Post(() => { MiscPage.RearPositionVelocity = sessionCache.RearPositionVelocity; });
+        }
+
         await databaseService.PutSessionCacheAsync(sessionCache);
     }
 
@@ -183,14 +216,14 @@ public partial class SessionViewModel : ItemViewModelBase
     {
         session = new Session();
         IsInDatabase = false;
-        Pages = [SpringPage, DamperPage, BalancePage, NotesPage];
+        Pages = [SpringPage, DamperPage, BalancePage, MiscPage, NotesPage];
     }
 
     public SessionViewModel(Session session, bool fromDatabase)
     {
         this.session = session;
         IsInDatabase = fromDatabase;
-        Pages = [SpringPage, DamperPage, BalancePage, NotesPage];
+        Pages = [SpringPage, DamperPage, BalancePage, MiscPage, NotesPage];
 
         NotesPage.ForkSettings.PropertyChanged += (_, _) => EvaluateDirtiness();
         NotesPage.ShockSettings.PropertyChanged += (_, _) => EvaluateDirtiness();
@@ -291,7 +324,10 @@ public partial class SessionViewModel : ItemViewModelBase
                 session.HasProcessedData = true;
             }
 
-            if (!await LoadCache())
+            var cacheLoaded = await LoadCache();
+            if (!cacheLoaded ||
+                ((SpringPage.FrontTravelHistogram is not null || SpringPage.RearTravelHistogram is not null) && MiscPage.VelocityDistributionComparison is null) ||
+                MiscPage.PositionVelocityComparison is null)
             {
                 await CreateCache(bounds);
             }

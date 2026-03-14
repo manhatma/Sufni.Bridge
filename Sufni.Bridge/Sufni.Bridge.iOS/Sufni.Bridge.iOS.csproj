@@ -4,7 +4,7 @@
     <TargetFramework>net9.0-ios</TargetFramework>
     <SupportedOSPlatformVersion>13.0</SupportedOSPlatformVersion>
     <Nullable>enable</Nullable>
-    <CodesignKey>Apple Development: sghctoma@gmail.com (ZQF5R92YHE)</CodesignKey>
+    <CodesignKey>Apple Development: niels_barth@icloud.com (5BK7SW7DUL)</CodesignKey>
     <!--RuntimeIdentifier>iossimulator-x64</RuntimeIdentifier-->
     <!--RuntimeIdentifier>ios-arm64</RuntimeIdentifier-->
     <UseInterpreter>true</UseInterpreter>

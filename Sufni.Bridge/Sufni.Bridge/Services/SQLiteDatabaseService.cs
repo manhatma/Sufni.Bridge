@@ -159,10 +159,21 @@ public class SqLiteDatabaseService : IDatabaseService
     private async Task EnsureSessionCacheColumns()
     {
         var tableInfo = await connection.QueryAsync<TableInfoRecord>("PRAGMA table_info(session_cache)");
-        if (tableInfo.TrueForAll(column => column.Name != "travel_comparison_histogram"))
+        var columnNames = tableInfo.Select(column => column.Name).ToHashSet();
+        async Task AddColumnIfMissing(string name)
         {
-            await connection.ExecuteAsync("ALTER TABLE session_cache ADD COLUMN travel_comparison_histogram TEXT");
+            if (!columnNames.Contains(name))
+                await connection.ExecuteAsync($"ALTER TABLE session_cache ADD COLUMN {name} TEXT");
         }
+        await AddColumnIfMissing("travel_comparison_histogram");
+        await AddColumnIfMissing("front_position_distribution");
+        await AddColumnIfMissing("rear_position_distribution");
+        await AddColumnIfMissing("front_velocity_distribution");
+        await AddColumnIfMissing("rear_velocity_distribution");
+        await AddColumnIfMissing("front_position_velocity");
+        await AddColumnIfMissing("rear_position_velocity");
+        await AddColumnIfMissing("velocity_distribution_comparison");
+        await AddColumnIfMissing("position_velocity_comparison");
     }
 
     private class TableInfoRecord

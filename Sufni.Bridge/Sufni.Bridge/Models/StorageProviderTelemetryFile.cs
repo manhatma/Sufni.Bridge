@@ -71,6 +71,7 @@ public class StorageProviderTelemetryFile : ITelemetryFile
         await Initialization;
 
         Imported = true;
+#if !DEBUG
         var parent = await storageFile.GetParentAsync();
         var parentItems = parent!.GetItemsAsync();
         IStorageFolder? uploaded = null;
@@ -87,6 +88,7 @@ public class StorageProviderTelemetryFile : ITelemetryFile
         }
 
         await storageFile.MoveAsync(uploaded);
+#endif
     }
 
     public async Task OnTrashed()
