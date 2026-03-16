@@ -27,4 +27,5 @@ public class SessionCache
     [Column("position_velocity_comparison")] public string? PositionVelocityComparison { get; set; }
     [Column("front_position_velocity")] public string? FrontPositionVelocity { get; set; }
     [Column("rear_position_velocity")] public string? RearPositionVelocity { get; set; }
+    [Column("summary_json")] public string? SummaryJson { get; set; }
 }

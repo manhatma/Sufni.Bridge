@@ -21,7 +21,11 @@
             <Setter Property="Padding" Value="8,6" />
             <Setter Property="Background" Value="{StaticResource SufniBackground}" />
         </Style>
+        <Style Selector="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+        </Style>
         <Style Selector="TextBlock.summary-title">
+            <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="Bold" />
             <Setter Property="HorizontalAlignment" Value="Center" />
             <Setter Property="Background" Value="#00c7a0" />
@@ -29,6 +33,7 @@
             <Setter Property="Padding" Value="8,4" />
         </Style>
         <Style Selector="TextBlock.summary-header">
+            <Setter Property="FontSize" Value="12" />
             <Setter Property="FontWeight" Value="Bold" />
             <Setter Property="HorizontalAlignment" Value="Center" />
         </Style>
@@ -41,7 +46,7 @@
                 <ItemsControl Grid.Row="1" ItemsSource="{Binding RunDataRows}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:SummaryValueRow">
-                            <Grid ColumnDefinitions="150,*">
+                            <Grid ColumnDefinitions="116,*">
                                 <Border Grid.Column="0" Classes="summary-cell">
                                     <TextBlock Text="{Binding Label}" />
                                 </Border>
@@ -56,7 +61,7 @@
 
             <Grid RowDefinitions="auto auto auto" ColumnDefinitions="*">
                 <TextBlock Grid.Row="0" Classes="summary-title" Text="FORK / SHOCK" />
-                <Grid Grid.Row="1" ColumnDefinitions="130,*,*">
+                <Grid Grid.Row="1" ColumnDefinitions="116,*,*">
                     <Border Grid.Column="0" Classes="summary-cell"><TextBlock Classes="summary-header" Text="" /></Border>
                     <Border Grid.Column="1" Classes="summary-cell"><TextBlock Classes="summary-header" Text="FORK" /></Border>
                     <Border Grid.Column="2" Classes="summary-cell"><TextBlock Classes="summary-header" Text="SHOCK" /></Border>
@@ -64,7 +69,7 @@
                 <ItemsControl Grid.Row="2" ItemsSource="{Binding ForkShockRows}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:SummaryComparisonRow">
-                            <Grid ColumnDefinitions="130,*,*">
+                            <Grid ColumnDefinitions="116,*,*">
                                 <Border Grid.Column="0" Classes="summary-cell"><TextBlock Text="{Binding Label}" /></Border>
                                 <Border Grid.Column="1" Classes="summary-cell"><TextBlock HorizontalAlignment="Right" Text="{Binding LeftValue}" /></Border>
                                 <Border Grid.Column="2" Classes="summary-cell"><TextBlock HorizontalAlignment="Right" Text="{Binding RightValue}" /></Border>
@@ -76,7 +81,7 @@
 
             <Grid RowDefinitions="auto auto auto" ColumnDefinitions="*">
                 <TextBlock Grid.Row="0" Classes="summary-title" Text="FRONT WHEEL / REAR WHEEL" />
-                <Grid Grid.Row="1" ColumnDefinitions="130,*,*">
+                <Grid Grid.Row="1" ColumnDefinitions="116,*,*">
                     <Border Grid.Column="0" Classes="summary-cell"><TextBlock Classes="summary-header" Text="" /></Border>
                     <Border Grid.Column="1" Classes="summary-cell"><TextBlock Classes="summary-header" Text="FRONT WHEEL" /></Border>
                     <Border Grid.Column="2" Classes="summary-cell"><TextBlock Classes="summary-header" Text="REAR WHEEL" /></Border>
@@ -84,7 +89,7 @@
                 <ItemsControl Grid.Row="2" ItemsSource="{Binding WheelRows}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:SummaryComparisonRow">
-                            <Grid ColumnDefinitions="130,*,*">
+                            <Grid ColumnDefinitions="116,*,*">
                                 <Border Grid.Column="0" Classes="summary-cell"><TextBlock Text="{Binding Label}" /></Border>
                                 <Border Grid.Column="1" Classes="summary-cell"><TextBlock HorizontalAlignment="Right" Text="{Binding LeftValue}" /></Border>
                                 <Border Grid.Column="2" Classes="summary-cell"><TextBlock HorizontalAlignment="Right" Text="{Binding RightValue}" /></Border>

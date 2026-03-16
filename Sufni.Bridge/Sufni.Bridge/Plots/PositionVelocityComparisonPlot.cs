@@ -81,14 +81,18 @@ public class PositionVelocityComparisonPlot(Plot plot) : TelemetryPlot(plot)
             var frontLegend = Plot.Add.Text("Front", maxTravel, topLimit * 0.95);
             frontLegend.LabelFontColor = FrontColor;
             frontLegend.LabelFontSize = 12;
-            frontLegend.LabelAlignment = Alignment.UpperRight;
+            frontLegend.LabelAlignment = Alignment.UpperRight;            
+            frontLegend.LabelOffsetX = -10; // 1em margin between label right edge and axis
+
         }
         if (telemetryData.Rear.Present)
         {
             var rearLegend = Plot.Add.Text("Rear", maxTravel, topLimit * 0.87);
             rearLegend.LabelFontColor = RearColor;
             rearLegend.LabelFontSize = 12;
-            rearLegend.LabelAlignment = Alignment.UpperRight;
+            rearLegend.LabelAlignment = Alignment.UpperRight;            
+            rearLegend.LabelOffsetX = -10; // 1em margin between label right edge and axis
+   
         }
     }
 }

@@ -80,9 +80,16 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
         base.LoadTelemetryData(telemetryData);
 
         Plot.Axes.Title.Label.Text = type == SuspensionType.Front
-            ? "Front velocity (time% / mm/s)"
-            : "Rear velocity (time% / mm/s)";
-        Plot.Layout.Fixed(new PixelPadding(40, 5, 40, 40));
+            ? "Front velocity"
+            : "Rear velocity";
+        Plot.Layout.Fixed(new PixelPadding(70, 10, 50, 40));
+
+        Plot.Axes.Left.Label.Text = "Velocity (mm/s)";
+        Plot.Axes.Left.Label.FontSize = 12;
+        Plot.Axes.Left.TickLabelStyle.FontSize = 10;
+        Plot.Axes.Bottom.Label.Text = "Time (%)";
+        Plot.Axes.Bottom.Label.FontSize = 12;
+        Plot.Axes.Bottom.TickLabelStyle.FontSize = 10;
 
         var data = telemetryData.CalculateVelocityHistogram(type);
         var step = data.Bins[1] - data.Bins[0];

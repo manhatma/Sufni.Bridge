@@ -66,5 +66,6 @@ public class PositionVelocityPlot(Plot plot, SuspensionType type) : TelemetryPlo
         legend.LabelFontColor = color;
         legend.LabelFontSize = 12;
         legend.LabelAlignment = Alignment.UpperRight;
+        legend.LabelOffsetX = -10; // 1em margin between label right edge and axis
     }
 }

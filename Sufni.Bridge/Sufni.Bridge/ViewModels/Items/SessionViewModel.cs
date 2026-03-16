@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -75,6 +76,13 @@ public partial class SessionViewModel : ItemViewModelBase
         MiscPage.PositionVelocityComparison = cache.PositionVelocityComparison;
         MiscPage.FrontPositionVelocity = cache.FrontPositionVelocity;
         MiscPage.RearPositionVelocity = cache.RearPositionVelocity;
+
+        if (cache.SummaryJson is not null)
+        {
+            var summaryData = JsonSerializer.Deserialize<SummaryCacheData>(cache.SummaryJson);
+            if (summaryData is not null)
+                ApplySummaryData(summaryData);
+        }
 
         return true;
     }
@@ -181,12 +189,12 @@ public partial class SessionViewModel : ItemViewModelBase
 
             var cb = new BalancePlot(new Plot(), BalanceType.Compression);
             cb.LoadTelemetryData(telemetryData);
-            sessionCache.CompressionBalance = cb.Plot.GetSvgXml(width, height);
+            sessionCache.CompressionBalance = cb.Plot.GetSvgXml(width - 40, height);
             Dispatcher.UIThread.Post(() => { BalancePage.CompressionBalance = sessionCache.CompressionBalance; });
 
             var rb = new BalancePlot(new Plot(), BalanceType.Rebound);
             rb.LoadTelemetryData(telemetryData);
-            sessionCache.ReboundBalance = rb.Plot.GetSvgXml(width, height);
+            sessionCache.ReboundBalance = rb.Plot.GetSvgXml(width - 40, height);
             Dispatcher.UIThread.Post(() => { BalancePage.ReboundBalance = sessionCache.ReboundBalance; });
         }
         else
@@ -197,7 +205,7 @@ public partial class SessionViewModel : ItemViewModelBase
         // BYB diagrams
         var vdc = new VelocityDistributionComparisonPlot(new Plot());
         vdc.LoadTelemetryData(telemetryData);
-        sessionCache.VelocityDistributionComparison = vdc.Plot.GetSvgXml(width, height);
+        sessionCache.VelocityDistributionComparison = vdc.Plot.GetSvgXml(width - 40, height);
         Dispatcher.UIThread.Post(() => { MiscPage.VelocityDistributionComparison = sessionCache.VelocityDistributionComparison; });
 
         var pvc = new PositionVelocityComparisonPlot(new Plot());
@@ -220,6 +228,10 @@ public partial class SessionViewModel : ItemViewModelBase
             sessionCache.RearPositionVelocity = rpv.Plot.GetSvgXml(width, height);
             Dispatcher.UIThread.Post(() => { MiscPage.RearPositionVelocity = sessionCache.RearPositionVelocity; });
         }
+
+        var summaryData = BuildSummaryData(telemetryData);
+        sessionCache.SummaryJson = JsonSerializer.Serialize(summaryData);
+        ApplySummaryData(summaryData);
 
         await databaseService.PutSessionCacheAsync(sessionCache);
     }
@@ -431,7 +443,7 @@ public partial class SessionViewModel : ItemViewModelBase
             reboundMax);
     }
 
-    private void PopulateSummary(TelemetryData telemetryData)
+    private SummaryCacheData BuildSummaryData(TelemetryData telemetryData)
     {
         var date = (Timestamp ?? DateTime.UnixEpoch).ToString("yyyy-MM-dd");
         var time = (Timestamp ?? DateTime.UnixEpoch).ToString("HH:mm");
@@ -443,67 +455,76 @@ public partial class SessionViewModel : ItemViewModelBase
             ? duration.ToString(@"h\:mm\:ss")
             : duration.ToString(@"m\:ss");
 
-        SummaryPage.RunDataRows =
-        [
-            new SummaryValueRow("Date", date),
-            new SummaryValueRow("Time", time),
-            new SummaryValueRow("Run duration", $"{runDuration} s")
-        ];
+        var runDataRows = new List<SummaryValueRow>
+        {
+            new("Date", date),
+            new("Time", time),
+            new("Run duration", $"{runDuration} s")
+        };
 
         var forkStats = BuildWheelStats(telemetryData, SuspensionType.Front);
         var shockStats = BuildShockStats(telemetryData);
         var frontWheelStats = BuildWheelStats(telemetryData, SuspensionType.Front);
         var rearWheelStats = BuildWheelStats(telemetryData, SuspensionType.Rear);
 
-        SummaryPage.ForkShockRows =
-        [
-            new SummaryComparisonRow("Pos [AVG]",
+        var forkShockRows = new List<SummaryComparisonRow>
+        {
+            new("Pos [AVG]",
                 forkStats is null ? "-" : FormatTravel(forkStats.AvgTravel, telemetryData.Linkage.MaxFrontTravel),
                 shockStats is null ? "-" : FormatTravel(shockStats.AvgTravel, telemetryData.Linkage.MaxRearStroke ?? 0)),
-            new SummaryComparisonRow("Pos [MAX]",
+            new("Pos [MAX]",
                 forkStats is null ? "-" : FormatTravel(forkStats.MaxTravel, telemetryData.Linkage.MaxFrontTravel),
                 shockStats is null ? "-" : FormatTravel(shockStats.MaxTravel, telemetryData.Linkage.MaxRearStroke ?? 0)),
-            new SummaryComparisonRow("Bottom out",
+            new("Bottom out",
                 forkStats is null ? "-" : FormatBottomouts(forkStats.Bottomouts),
                 shockStats is null ? "-" : FormatBottomouts(shockStats.Bottomouts)),
-            new SummaryComparisonRow("Comp [AVG]",
+            new("Comp [AVG]",
                 forkStats is null ? "-" : FormatVelocity(forkStats.AvgCompression),
                 shockStats is null ? "-" : FormatVelocity(shockStats.AvgCompression)),
-            new SummaryComparisonRow("Comp [MAX]",
+            new("Comp [MAX]",
                 forkStats is null ? "-" : FormatVelocity(forkStats.MaxCompression),
                 shockStats is null ? "-" : FormatVelocity(shockStats.MaxCompression)),
-            new SummaryComparisonRow("Reb [AVG]",
+            new("Reb [AVG]",
                 forkStats is null ? "-" : FormatVelocity(forkStats.AvgRebound),
                 shockStats is null ? "-" : FormatVelocity(shockStats.AvgRebound)),
-            new SummaryComparisonRow("Reb [MAX]",
+            new("Reb [MAX]",
                 forkStats is null ? "-" : FormatVelocity(forkStats.MaxRebound),
                 shockStats is null ? "-" : FormatVelocity(shockStats.MaxRebound))
-        ];
+        };
 
-        SummaryPage.WheelRows =
-        [
-            new SummaryComparisonRow("Pos [AVG]",
+        var wheelRows = new List<SummaryComparisonRow>
+        {
+            new("Pos [AVG]",
                 frontWheelStats is null ? "-" : FormatTravel(frontWheelStats.AvgTravel, telemetryData.Linkage.MaxFrontTravel),
                 rearWheelStats is null ? "-" : FormatTravel(rearWheelStats.AvgTravel, telemetryData.Linkage.MaxRearTravel)),
-            new SummaryComparisonRow("Pos [MAX]",
+            new("Pos [MAX]",
                 frontWheelStats is null ? "-" : FormatTravel(frontWheelStats.MaxTravel, telemetryData.Linkage.MaxFrontTravel),
                 rearWheelStats is null ? "-" : FormatTravel(rearWheelStats.MaxTravel, telemetryData.Linkage.MaxRearTravel)),
-            new SummaryComparisonRow("Bottom out",
+            new("Bottom out",
                 frontWheelStats is null ? "-" : FormatBottomouts(frontWheelStats.Bottomouts),
                 rearWheelStats is null ? "-" : FormatBottomouts(rearWheelStats.Bottomouts)),
-            new SummaryComparisonRow("Comp [AVG]",
+            new("Comp [AVG]",
                 frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.AvgCompression),
                 rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.AvgCompression)),
-            new SummaryComparisonRow("Comp [MAX]",
+            new("Comp [MAX]",
                 frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.MaxCompression),
                 rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.MaxCompression)),
-            new SummaryComparisonRow("Reb [AVG]",
+            new("Reb [AVG]",
                 frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.AvgRebound),
                 rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.AvgRebound)),
-            new SummaryComparisonRow("Reb [MAX]",
+            new("Reb [MAX]",
                 frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.MaxRebound),
                 rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.MaxRebound))
-        ];
+        };
+
+        return new SummaryCacheData(runDataRows, forkShockRows, wheelRows);
+    }
+
+    private void ApplySummaryData(SummaryCacheData data)
+    {
+        SummaryPage.RunDataRows = new ObservableCollection<SummaryValueRow>(data.RunDataRows);
+        SummaryPage.ForkShockRows = new ObservableCollection<SummaryComparisonRow>(data.ForkShockRows);
+        SummaryPage.WheelRows = new ObservableCollection<SummaryComparisonRow>(data.WheelRows);
     }
 
     #endregion
@@ -514,14 +535,14 @@ public partial class SessionViewModel : ItemViewModelBase
     {
         session = new Session();
         IsInDatabase = false;
-        Pages = [SpringPage, DamperPage, BalancePage, MiscPage, SummaryPage, NotesPage];
+        Pages = [SummaryPage, SpringPage, DamperPage, BalancePage, MiscPage, NotesPage];
     }
 
     public SessionViewModel(Session session, bool fromDatabase)
     {
         this.session = session;
         IsInDatabase = fromDatabase;
-        Pages = [SpringPage, DamperPage, BalancePage, MiscPage, SummaryPage, NotesPage];
+        Pages = [SummaryPage, SpringPage, DamperPage, BalancePage, MiscPage, NotesPage];
 
         NotesPage.ForkSettings.PropertyChanged += (_, _) => EvaluateDirtiness();
         NotesPage.ShockSettings.PropertyChanged += (_, _) => EvaluateDirtiness();
@@ -559,11 +580,13 @@ public partial class SessionViewModel : ItemViewModelBase
                 FrontLowSpeedCompression = NotesPage.ForkSettings.LowSpeedCompression,
                 FrontLowSpeedRebound = NotesPage.ForkSettings.LowSpeedRebound,
                 FrontHighSpeedRebound = NotesPage.ForkSettings.HighSpeedRebound,
+                FrontVolSpc = NotesPage.ForkSettings.VolSpc,
                 RearSpringRate = NotesPage.ShockSettings.SpringRate,
                 RearHighSpeedCompression = NotesPage.ShockSettings.HighSpeedCompression,
                 RearLowSpeedCompression = NotesPage.ShockSettings.LowSpeedCompression,
                 RearLowSpeedRebound = NotesPage.ShockSettings.LowSpeedRebound,
                 RearHighSpeedRebound = NotesPage.ShockSettings.HighSpeedRebound,
+                RearVolSpc = NotesPage.ShockSettings.VolSpc,
                 HasProcessedData = IsComplete,
             };
 
@@ -585,12 +608,14 @@ public partial class SessionViewModel : ItemViewModelBase
 
         NotesPage.Description = session.Description;
         NotesPage.ForkSettings.SpringRate = session.FrontSpringRate;
+        NotesPage.ForkSettings.VolSpc = session.FrontVolSpc ?? 0;
         NotesPage.ForkSettings.HighSpeedCompression = session.FrontHighSpeedCompression;
         NotesPage.ForkSettings.LowSpeedCompression = session.FrontLowSpeedCompression;
         NotesPage.ForkSettings.LowSpeedRebound = session.FrontLowSpeedRebound;
         NotesPage.ForkSettings.HighSpeedRebound = session.FrontHighSpeedRebound;
 
         NotesPage.ShockSettings.SpringRate = session.RearSpringRate;
+        NotesPage.ShockSettings.VolSpc = session.RearVolSpc ?? 0;
         NotesPage.ShockSettings.HighSpeedCompression = session.RearHighSpeedCompression;
         NotesPage.ShockSettings.LowSpeedCompression = session.RearLowSpeedCompression;
         NotesPage.ShockSettings.LowSpeedRebound = session.RearLowSpeedRebound;
@@ -659,12 +684,23 @@ public partial class SessionViewModel : ItemViewModelBase
                 }
             }
 
-            var summaryDatabaseService = App.Current?.Services?.GetService<IDatabaseService>();
-            Debug.Assert(summaryDatabaseService != null, nameof(summaryDatabaseService) + " != null");
-            var summaryData = await summaryDatabaseService.GetSessionPsstAsync(Id);
-            if (summaryData is not null)
+            if (SummaryPage.RunDataRows.Count == 0)
             {
-                PopulateSummary(summaryData);
+                var summaryDatabaseService = App.Current?.Services?.GetService<IDatabaseService>();
+                Debug.Assert(summaryDatabaseService != null, nameof(summaryDatabaseService) + " != null");
+                var summaryTelemetry = await summaryDatabaseService.GetSessionPsstAsync(Id);
+                if (summaryTelemetry is not null)
+                {
+                    var data = BuildSummaryData(summaryTelemetry);
+                    ApplySummaryData(data);
+
+                    var cache = await summaryDatabaseService.GetSessionCacheAsync(Id);
+                    if (cache is not null)
+                    {
+                        cache.SummaryJson = JsonSerializer.Serialize(data);
+                        await summaryDatabaseService.PutSessionCacheAsync(cache);
+                    }
+                }
             }
         }
         catch (Exception e)

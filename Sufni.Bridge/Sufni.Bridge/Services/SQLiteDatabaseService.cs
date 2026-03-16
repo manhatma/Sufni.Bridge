@@ -138,6 +138,7 @@ public class SqLiteDatabaseService : IDatabaseService
         }
 
         await EnsureSessionCacheColumns();
+        await EnsureSessionColumns();
         await EnsureDefaultCalibrationMethods();
     }
 
@@ -175,6 +176,20 @@ public class SqLiteDatabaseService : IDatabaseService
         await AddColumnIfMissing("rear_position_velocity");
         await AddColumnIfMissing("velocity_distribution_comparison");
         await AddColumnIfMissing("position_velocity_comparison");
+        await AddColumnIfMissing("summary_json");
+    }
+
+    private async Task EnsureSessionColumns()
+    {
+        var tableInfo = await connection.QueryAsync<TableInfoRecord>("PRAGMA table_info(session)");
+        var columnNames = tableInfo.Select(column => column.Name).ToHashSet();
+        async Task AddColumnIfMissing(string name, string type, string defaultValue)
+        {
+            if (!columnNames.Contains(name))
+                await connection.ExecuteAsync($"ALTER TABLE session ADD COLUMN {name} {type} DEFAULT {defaultValue}");
+        }
+        await AddColumnIfMissing("front_volspc", "INTEGER", "0");
+        await AddColumnIfMissing("rear_volspc", "INTEGER", "0");
     }
 
     private class TableInfoRecord
@@ -472,6 +487,7 @@ public class SqLiteDatabaseService : IDatabaseService
                                  track_id,
                                  front_springrate, front_hsc, front_lsc, front_lsr, front_hsr,
                                  rear_springrate, rear_hsc, rear_lsc, rear_lsr, rear_hsr,
+                                 front_volspc, rear_volspc,
                                  CASE
                                     WHEN data IS NOT NULL THEN 1
                                     ELSE 0
@@ -535,7 +551,8 @@ public class SqLiteDatabaseService : IDatabaseService
                                      name=?,
                                      description=?,
                                      front_springrate=?, front_hsc=?, front_lsc=?, front_lsr=?, front_hsr=?,
-                                     rear_springrate=?, rear_hsc=?, rear_lsc=?, rear_lsr=?, rear_hsr=?
+                                     rear_springrate=?, rear_hsc=?, rear_lsc=?, rear_lsr=?, rear_hsr=?,
+                                     front_volspc=?, rear_volspc=?
                                  WHERE
                                      id=?
                                  """;
@@ -553,6 +570,8 @@ public class SqLiteDatabaseService : IDatabaseService
                     session.RearLowSpeedCompression,
                     session.RearLowSpeedRebound,
                     session.RearHighSpeedRebound,
+                    session.FrontVolSpc,
+                    session.RearVolSpc,
                     session.Id]);
         }
         else

@@ -20,10 +20,14 @@ public class VelocityDistributionComparisonPlot(Plot plot) : TelemetryPlot(plot)
         }
 
         Plot.Axes.Title.Label.Text = "Velocity distribution comparison";
-        Plot.Layout.Fixed(new PixelPadding(40, 5, 40, 40));
+        Plot.Layout.Fixed(new PixelPadding(70, 10, 50, 40));
 
-        Plot.Axes.Left.Label.Text = "";
-        Plot.Axes.Bottom.Label.Text = "";
+        Plot.Axes.Left.Label.Text = "Velocity (mm/s)";
+        Plot.Axes.Left.Label.FontSize = 12;
+        Plot.Axes.Left.TickLabelStyle.FontSize = 10;
+        Plot.Axes.Bottom.Label.Text = "Time (%)";
+        Plot.Axes.Bottom.Label.FontSize = 12;
+        Plot.Axes.Bottom.TickLabelStyle.FontSize = 10;
 
         var maxX = 1.0;
 
@@ -82,15 +86,17 @@ public class VelocityDistributionComparisonPlot(Plot plot) : TelemetryPlot(plot)
         {
             var frontLegend = Plot.Add.Text("Front", limitsRight, -VelocityLimit * 0.95);
             frontLegend.LabelFontColor = FrontColor;
-            frontLegend.LabelFontSize = 12;
+            frontLegend.LabelFontSize = 11;
             frontLegend.LabelAlignment = Alignment.UpperRight;
+            frontLegend.LabelOffsetX = -10; // 1em margin between label right edge and axis
         }
         if (telemetryData.Rear.Present)
         {
             var rearLegend = Plot.Add.Text("Rear", limitsRight, -VelocityLimit * 0.87);
             rearLegend.LabelFontColor = RearColor;
-            rearLegend.LabelFontSize = 12;
+            rearLegend.LabelFontSize = 11;
             rearLegend.LabelAlignment = Alignment.UpperRight;
+            rearLegend.LabelOffsetX = -10; // 1em margin between label right edge and axis
         }
     }
 }

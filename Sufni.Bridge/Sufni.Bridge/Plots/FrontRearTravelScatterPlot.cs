@@ -55,7 +55,12 @@ public class FrontRearTravelScatterPlot(Plot plot) : TelemetryPlot(plot)
             trend.MarkerStyle.IsVisible = false;
             trend.LineStyle.Color = Color.FromHex("#e5df12");
             trend.LineStyle.Width = 2;
-            AddLabel($"a={slope:0.00}", 100, 100 * slope, -8, 0, Alignment.LowerRight);
+            var aLabel = Plot.Add.Text($"a={slope:0.00}", 100, 100 * slope);
+            aLabel.LabelFontColor = Color.FromHex("#e5df12");
+            aLabel.LabelFontSize = 13;
+            aLabel.LabelAlignment = Alignment.LowerRight;
+            aLabel.LabelOffsetX = -8;
+            aLabel.LabelOffsetY = 0;
         }
 
         Plot.Axes.SetLimits(0, 100, 0, 100);

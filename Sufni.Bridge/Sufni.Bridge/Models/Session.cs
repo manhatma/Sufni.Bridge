@@ -101,6 +101,14 @@ public class Session : Synchronizable
     public uint? RearHighSpeedRebound { get; set; }
 
     [JsonIgnore]
+    [Column("front_volspc")]
+    public uint? FrontVolSpc { get; set; }
+
+    [JsonIgnore]
+    [Column("rear_volspc")]
+    public uint? RearVolSpc { get; set; }
+
+    [JsonIgnore]
     [Column("has_data")]
     public bool HasProcessedData { get; set; }
 }

@@ -6,6 +6,7 @@ namespace Sufni.Bridge.ViewModels.SessionPages;
 public partial class SuspensionSettings : ObservableObject
 {
     [ObservableProperty] private string? springRate;
+    [ObservableProperty] private uint? volSpc;
     [ObservableProperty] private uint? highSpeedCompression;
     [ObservableProperty] private uint? lowSpeedCompression;
     [ObservableProperty] private uint? lowSpeedRebound;
@@ -24,11 +25,13 @@ public partial class NotesPageViewModel() : PageViewModelBase("Notes")
         return
             Description != session.Description ||
             (!(ForkSettings.SpringRate is null && session.FrontSpringRate is null) && ForkSettings.SpringRate != session.FrontSpringRate) ||
+            ForkSettings.VolSpc != (session.FrontVolSpc ?? 0) ||
             (!(ForkSettings.HighSpeedCompression is null && session.FrontHighSpeedCompression is null) && ForkSettings.HighSpeedCompression != session.FrontHighSpeedCompression) ||
             (!(ForkSettings.LowSpeedCompression is null && session.FrontLowSpeedCompression is null) && ForkSettings.LowSpeedCompression != session.FrontLowSpeedCompression) ||
             (!(ForkSettings.LowSpeedRebound is null && session.FrontLowSpeedRebound is null) && ForkSettings.LowSpeedRebound != session.FrontLowSpeedRebound) ||
             (!(ForkSettings.HighSpeedRebound is null && session.FrontHighSpeedRebound is null) && ForkSettings.HighSpeedRebound != session.FrontHighSpeedRebound) ||
             (!(ShockSettings.SpringRate is null && session.RearSpringRate is null) && ShockSettings.SpringRate != session.RearSpringRate) ||
+            ShockSettings.VolSpc != (session.RearVolSpc ?? 0) ||
             (!(ShockSettings.HighSpeedCompression is null && session.RearHighSpeedCompression is null) && ShockSettings.HighSpeedCompression != session.RearHighSpeedCompression) ||
             (!(ShockSettings.LowSpeedCompression is null && session.RearLowSpeedCompression is null) && ShockSettings.LowSpeedCompression != session.RearLowSpeedCompression) ||
             (!(ShockSettings.LowSpeedRebound is null && session.RearLowSpeedRebound is null) && ShockSettings.LowSpeedRebound != session.RearLowSpeedRebound) ||

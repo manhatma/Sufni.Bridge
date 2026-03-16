@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 
@@ -22,3 +23,8 @@ public class SummaryComparisonRow(string label, string leftValue, string rightVa
     public string LeftValue { get; } = leftValue;
     public string RightValue { get; } = rightValue;
 }
+
+public record SummaryCacheData(
+    List<SummaryValueRow> RunDataRows,
+    List<SummaryComparisonRow> ForkShockRows,
+    List<SummaryComparisonRow> WheelRows);

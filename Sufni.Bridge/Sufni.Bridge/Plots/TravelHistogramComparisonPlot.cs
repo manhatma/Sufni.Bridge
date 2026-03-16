@@ -79,14 +79,16 @@ public class TravelHistogramComparisonPlot(Plot plot) : TelemetryPlot(plot)
 
         Plot.Axes.SetLimits(left: 0, right: 100, bottom: 0, top: yRangeTop);
 
-        var frontLegend = Plot.Add.Text("Front", 95, yRangeTop * 0.95);
+        var frontLegend = Plot.Add.Text("Front", 100, yRangeTop * 0.95);
         frontLegend.LabelFontColor = FrontColor;
         frontLegend.LabelFontSize = 12;
         frontLegend.LabelAlignment = Alignment.UpperRight;
+        frontLegend.LabelOffsetX = -10; // 1em margin between label right edge and axis
 
-        var rearLegend = Plot.Add.Text("Rear", 95, yRangeTop * 0.87);
+        var rearLegend = Plot.Add.Text("Rear", 100, yRangeTop * 0.87);
         rearLegend.LabelFontColor = RearColor;
         rearLegend.LabelFontSize = 12;
         rearLegend.LabelAlignment = Alignment.UpperRight;
+        rearLegend.LabelOffsetX = -10; // 1em margin between label right edge and axis
     }
 }
