@@ -21,6 +21,9 @@
             <Setter Property="Padding" Value="8,6" />
             <Setter Property="Background" Value="{StaticResource SufniBackground}" />
         </Style>
+        <Style Selector="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+        </Style>
         <Style Selector="TextBlock.summary-title">
             <Setter Property="FontWeight" Value="Bold" />
             <Setter Property="HorizontalAlignment" Value="Center" />
@@ -41,7 +44,7 @@
                 <ItemsControl Grid.Row="1" ItemsSource="{Binding RunDataRows}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:SummaryValueRow">
-                            <Grid ColumnDefinitions="150,*">
+                            <Grid ColumnDefinitions="110,*">
                                 <Border Grid.Column="0" Classes="summary-cell">
                                     <TextBlock Text="{Binding Label}" />
                                 </Border>
@@ -55,16 +58,16 @@
             </Grid>
 
             <Grid RowDefinitions="auto auto auto" ColumnDefinitions="*">
-                <TextBlock Grid.Row="0" Classes="summary-title" Text="FORK / SHOCK" />
-                <Grid Grid.Row="1" ColumnDefinitions="130,*,*">
+                <TextBlock Grid.Row="0" Classes="summary-title" Text="FRONT WHEEL / REAR WHEEL" />
+                <Grid Grid.Row="1" ColumnDefinitions="110,*,*">
                     <Border Grid.Column="0" Classes="summary-cell"><TextBlock Classes="summary-header" Text="" /></Border>
-                    <Border Grid.Column="1" Classes="summary-cell"><TextBlock Classes="summary-header" Text="FORK" /></Border>
-                    <Border Grid.Column="2" Classes="summary-cell"><TextBlock Classes="summary-header" Text="SHOCK" /></Border>
+                    <Border Grid.Column="1" Classes="summary-cell"><TextBlock Classes="summary-header" Text="FRONT WHEEL" /></Border>
+                    <Border Grid.Column="2" Classes="summary-cell"><TextBlock Classes="summary-header" Text="REAR WHEEL" /></Border>
                 </Grid>
-                <ItemsControl Grid.Row="2" ItemsSource="{Binding ForkShockRows}">
+                <ItemsControl Grid.Row="2" ItemsSource="{Binding WheelRows}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:SummaryComparisonRow">
-                            <Grid ColumnDefinitions="130,*,*">
+                            <Grid ColumnDefinitions="110,*,*">
                                 <Border Grid.Column="0" Classes="summary-cell"><TextBlock Text="{Binding Label}" /></Border>
                                 <Border Grid.Column="1" Classes="summary-cell"><TextBlock HorizontalAlignment="Right" Text="{Binding LeftValue}" /></Border>
                                 <Border Grid.Column="2" Classes="summary-cell"><TextBlock HorizontalAlignment="Right" Text="{Binding RightValue}" /></Border>
@@ -75,16 +78,16 @@
             </Grid>
 
             <Grid RowDefinitions="auto auto auto" ColumnDefinitions="*">
-                <TextBlock Grid.Row="0" Classes="summary-title" Text="FRONT WHEEL / REAR WHEEL" />
-                <Grid Grid.Row="1" ColumnDefinitions="130,*,*">
+                <TextBlock Grid.Row="0" Classes="summary-title" Text="FORK / SHOCK" />
+                <Grid Grid.Row="1" ColumnDefinitions="110,*,*">
                     <Border Grid.Column="0" Classes="summary-cell"><TextBlock Classes="summary-header" Text="" /></Border>
-                    <Border Grid.Column="1" Classes="summary-cell"><TextBlock Classes="summary-header" Text="FRONT WHEEL" /></Border>
-                    <Border Grid.Column="2" Classes="summary-cell"><TextBlock Classes="summary-header" Text="REAR WHEEL" /></Border>
+                    <Border Grid.Column="1" Classes="summary-cell"><TextBlock Classes="summary-header" Text="FORK" /></Border>
+                    <Border Grid.Column="2" Classes="summary-cell"><TextBlock Classes="summary-header" Text="SHOCK" /></Border>
                 </Grid>
-                <ItemsControl Grid.Row="2" ItemsSource="{Binding WheelRows}">
+                <ItemsControl Grid.Row="2" ItemsSource="{Binding ForkShockRows}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:SummaryComparisonRow">
-                            <Grid ColumnDefinitions="130,*,*">
+                            <Grid ColumnDefinitions="110,*,*">
                                 <Border Grid.Column="0" Classes="summary-cell"><TextBlock Text="{Binding Label}" /></Border>
                                 <Border Grid.Column="1" Classes="summary-cell"><TextBlock HorizontalAlignment="Right" Text="{Binding LeftValue}" /></Border>
                                 <Border Grid.Column="2" Classes="summary-cell"><TextBlock HorizontalAlignment="Right" Text="{Binding RightValue}" /></Border>

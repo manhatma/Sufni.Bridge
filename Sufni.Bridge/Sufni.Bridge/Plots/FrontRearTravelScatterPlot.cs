@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using ScottPlot;
+using ScottPlot.TickGenerators;
 using Sufni.Bridge.Models.Telemetry;
 
 namespace Sufni.Bridge.Plots;
@@ -55,9 +56,15 @@ public class FrontRearTravelScatterPlot(Plot plot) : TelemetryPlot(plot)
             trend.MarkerStyle.IsVisible = false;
             trend.LineStyle.Color = Color.FromHex("#e5df12");
             trend.LineStyle.Width = 2;
-            AddLabel($"a={slope:0.00}", 100, 100 * slope, -8, 0, Alignment.LowerRight);
+            AddLabel($"a={slope:0.00}", 100, 0, -10, -10, Alignment.LowerRight, "#e5df12");
         }
 
         Plot.Axes.SetLimits(0, 100, 0, 100);
+        Plot.Axes.Bottom.TickGenerator = new NumericManual(
+            [0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0],
+            ["0", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100"]);
+        Plot.Axes.Left.TickGenerator = new NumericManual(
+            [0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0],
+            ["0", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100"]);
     }
 }

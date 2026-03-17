@@ -51,11 +51,11 @@ public class SufniPlot
         Plot.Axes.Bottom.MinorTickStyle.Width = 0;
     }
 
-    protected void AddLabel(string content, double x, double y, int xoffset, int yoffset, Alignment alignment = Alignment.LowerLeft)
+    protected void AddLabel(string content, double x, double y, int xoffset, int yoffset, Alignment alignment = Alignment.LowerLeft, string? colorHex = null)
     {
         var text = Plot.Add.Text(content, x, y);
-        text.LabelFontColor = Color.FromHex("#fefefe");
-        text.LabelFontSize = 13;
+        text.LabelFontColor = Color.FromHex(colorHex ?? "#fefefe");
+        text.LabelFontSize = 12;
         text.LabelAlignment = alignment;
         text.LabelOffsetX = xoffset;
         text.LabelOffsetY = yoffset;
@@ -72,7 +72,7 @@ public class SufniPlot
 
         var text = Plot.Add.Text(content, Plot.Axes.GetLimits().Right, position);
         text.LabelFontColor = Color.FromHex("#fefefe");
-        text.LabelFontSize = 13;
+        text.LabelFontSize = 12;
         text.LabelAlignment = linePosition == LabelLinePosition.Above ? Alignment.UpperRight : Alignment.LowerRight;
         text.LabelOffsetX = -10;
         text.LabelOffsetY = yoffset;

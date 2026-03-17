@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
 using System.Text.Json;
+using MathNet.Numerics.Statistics;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
@@ -295,7 +296,7 @@ public partial class SessionViewModel : ItemViewModelBase
         await Task.WhenAll(tasks);
 
         // Populate summary using already-loaded telemetryData (no extra DB call)
-        var summaryData = PopulateSummary(telemetryData);
+        var summaryData = await PopulateSummary(telemetryData);
         sessionCache.SummaryJson = JsonSerializer.Serialize(summaryData);
 
         await databaseService.PutSessionCacheAsync(sessionCache);
@@ -307,8 +308,10 @@ public partial class SessionViewModel : ItemViewModelBase
         int Bottomouts,
         double AvgCompression,
         double MaxCompression,
+        double Comp95th,
         double AvgRebound,
-        double MaxRebound);
+        double MaxRebound,
+        double Reb95th);
 
     private sealed record CachedSummaryData(
         string[][] RunDataRows,
@@ -398,14 +401,24 @@ public partial class SessionViewModel : ItemViewModelBase
 
         var travelStats = telemetryData.CalculateTravelStatistics(type);
         var velocityStats = telemetryData.CalculateVelocityStatistics(type);
+
+        var compressionVels = suspension.Strokes.Compressions
+            .SelectMany(s => suspension.Velocity[s.Start..(s.End + 1)])
+            .ToList();
+        var reboundVels = suspension.Strokes.Rebounds
+            .SelectMany(s => suspension.Velocity[s.Start..(s.End + 1)].Select(Math.Abs))
+            .ToList();
+
         return new SuspensionSummaryStats(
             travelStats.Max,
             travelStats.Average,
             travelStats.Bottomouts,
             velocityStats.AverageCompression,
             velocityStats.MaxCompression,
+            compressionVels.Count > 0 ? compressionVels.Percentile(95) : 0.0,
             velocityStats.AverageRebound,
-            velocityStats.MaxRebound);
+            velocityStats.MaxRebound,
+            reboundVels.Count > 0 ? -reboundVels.Percentile(95) : 0.0);
     }
 
     private static SuspensionSummaryStats? BuildShockStats(TelemetryData telemetryData)
@@ -436,9 +449,11 @@ public partial class SessionViewModel : ItemViewModelBase
         double compressionSum = 0.0;
         var compressionCount = 0;
         double compressionMax = 0.0;
+        var compressionVels = new List<double>();
         double reboundSum = 0.0;
         var reboundCount = 0;
         double reboundMax = 0.0;
+        var reboundVels = new List<double>();
 
         foreach (var stroke in telemetryData.Rear.Strokes.Compressions.Concat(telemetryData.Rear.Strokes.Rebounds))
         {
@@ -461,6 +476,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 var v = shockVelocity[i];
                 compressionSum += v;
                 compressionCount++;
+                compressionVels.Add(v);
                 if (v > compressionMax)
                 {
                     compressionMax = v;
@@ -475,6 +491,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 var v = shockVelocity[i];
                 reboundSum += v;
                 reboundCount++;
+                reboundVels.Add(Math.Abs(v));
                 if (v < reboundMax)
                 {
                     reboundMax = v;
@@ -509,11 +526,13 @@ public partial class SessionViewModel : ItemViewModelBase
             bottomouts,
             compressionCount > 0 ? compressionSum / compressionCount : 0.0,
             compressionMax,
+            compressionVels.Count > 0 ? compressionVels.Percentile(95) : 0.0,
             reboundCount > 0 ? reboundSum / reboundCount : 0.0,
-            reboundMax);
+            reboundMax,
+            reboundVels.Count > 0 ? -reboundVels.Percentile(95) : 0.0);
     }
 
-    private CachedSummaryData PopulateSummary(TelemetryData telemetryData)
+    private async Task<CachedSummaryData> PopulateSummary(TelemetryData telemetryData)
     {
         var date = (Timestamp ?? DateTime.UnixEpoch).ToString("yyyy-MM-dd");
         var time = (Timestamp ?? DateTime.UnixEpoch).ToString("HH:mm");
@@ -532,10 +551,16 @@ public partial class SessionViewModel : ItemViewModelBase
             new SummaryValueRow("Run duration", $"{runDuration} s")
         ];
 
-        var forkStats = BuildWheelStats(telemetryData, SuspensionType.Front);
-        var shockStats = BuildShockStats(telemetryData);
-        var frontWheelStats = BuildWheelStats(telemetryData, SuspensionType.Front);
-        var rearWheelStats = BuildWheelStats(telemetryData, SuspensionType.Rear);
+        // Run the three independent (read-only) computations in parallel
+        var forkStatsTask = Task.Run(() => BuildWheelStats(telemetryData, SuspensionType.Front));
+        var shockStatsTask = Task.Run(() => BuildShockStats(telemetryData));
+        var rearWheelStatsTask = Task.Run(() => BuildWheelStats(telemetryData, SuspensionType.Rear));
+        await Task.WhenAll(forkStatsTask, shockStatsTask, rearWheelStatsTask);
+
+        var forkStats = forkStatsTask.Result;
+        var shockStats = shockStatsTask.Result;
+        var frontWheelStats = forkStats;  // Front wheel stats == fork stats — same data
+        var rearWheelStats = rearWheelStatsTask.Result;
 
         SummaryPage.ForkShockRows =
         [
@@ -551,12 +576,18 @@ public partial class SessionViewModel : ItemViewModelBase
             new SummaryComparisonRow("Comp [AVG]",
                 forkStats is null ? "-" : FormatVelocity(forkStats.AvgCompression),
                 shockStats is null ? "-" : FormatVelocity(shockStats.AvgCompression)),
+            new SummaryComparisonRow("Comp [95th]",
+                forkStats is null ? "-" : FormatVelocity(forkStats.Comp95th),
+                shockStats is null ? "-" : FormatVelocity(shockStats.Comp95th)),
             new SummaryComparisonRow("Comp [MAX]",
                 forkStats is null ? "-" : FormatVelocity(forkStats.MaxCompression),
                 shockStats is null ? "-" : FormatVelocity(shockStats.MaxCompression)),
             new SummaryComparisonRow("Reb [AVG]",
                 forkStats is null ? "-" : FormatVelocity(forkStats.AvgRebound),
                 shockStats is null ? "-" : FormatVelocity(shockStats.AvgRebound)),
+            new SummaryComparisonRow("Reb [95th]",
+                forkStats is null ? "-" : FormatVelocity(forkStats.Reb95th),
+                shockStats is null ? "-" : FormatVelocity(shockStats.Reb95th)),
             new SummaryComparisonRow("Reb [MAX]",
                 forkStats is null ? "-" : FormatVelocity(forkStats.MaxRebound),
                 shockStats is null ? "-" : FormatVelocity(shockStats.MaxRebound))
@@ -576,12 +607,18 @@ public partial class SessionViewModel : ItemViewModelBase
             new SummaryComparisonRow("Comp [AVG]",
                 frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.AvgCompression),
                 rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.AvgCompression)),
+            new SummaryComparisonRow("Comp [95th]",
+                frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.Comp95th),
+                rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.Comp95th)),
             new SummaryComparisonRow("Comp [MAX]",
                 frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.MaxCompression),
                 rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.MaxCompression)),
             new SummaryComparisonRow("Reb [AVG]",
                 frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.AvgRebound),
                 rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.AvgRebound)),
+            new SummaryComparisonRow("Reb [95th]",
+                frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.Reb95th),
+                rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.Reb95th)),
             new SummaryComparisonRow("Reb [MAX]",
                 frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.MaxRebound),
                 rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.MaxRebound))
@@ -741,7 +778,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 else if (telemetryData is not null && needsSummary)
                 {
                     // Cache was valid but summary was missing (old cache without summary_json)
-                    var summaryData = PopulateSummary(telemetryData);
+                    var summaryData = await PopulateSummary(telemetryData);
 
                     var cache = await databaseService.GetSessionCacheAsync(Id);
                     if (cache is not null)

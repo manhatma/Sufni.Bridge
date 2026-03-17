@@ -17,10 +17,7 @@ public class BalancePlot(Plot plot, BalanceType type) : TelemetryPlot(plot)
         var msd = balance.MeanSignedDeviation / maxVelocity * 100.0;
         var msdString = $"MSD: {msd:+0.00;-#.00} %";
 
-        if (type == BalanceType.Rebound)
-            AddLabel(msdString, 100, -roundedMaxVelocity, -10, -5, Alignment.LowerRight);
-        else
-            AddLabel(msdString, 100, 0, -10, -5, Alignment.LowerRight);
+        AddLabel(msdString, 100, 0, -10, -5, Alignment.LowerRight);
     }
 
     public override void LoadTelemetryData(TelemetryData telemetryData)
@@ -29,10 +26,10 @@ public class BalancePlot(Plot plot, BalanceType type) : TelemetryPlot(plot)
 
         Plot.Axes.Title.Label.Text = type == BalanceType.Compression ? "Compression balance" : "Rebound balance";
         Plot.Axes.Bottom.Label.Text = "Suspension travel (%)";
-        Plot.Axes.Bottom.Label.ForeColor = Colors.Gray;
-        Plot.Axes.Left.Label.Text = "Suspension velocity (mm/s)";
-        Plot.Axes.Left.Label.ForeColor = Colors.Gray;
-        Plot.Layout.Fixed(new PixelPadding(50, 10, 40, 50));
+        Plot.Axes.Bottom.Label.ForeColor = Color.FromHex("#D0D0D0");
+        Plot.Axes.Left.Label.Text = type == BalanceType.Compression ? "Compression velocity (mm/s)" : "Rebound velocity (mm/s)";
+        Plot.Axes.Left.Label.ForeColor = Color.FromHex("#D0D0D0");
+        Plot.Layout.Fixed(new PixelPadding(70, 10, 40, 50));
 
         var balance = telemetryData.CalculateBalance(type);
 
@@ -42,7 +39,7 @@ public class BalancePlot(Plot plot, BalanceType type) : TelemetryPlot(plot)
         var roundedMaxVelocity = (int)Math.Ceiling(maxVelocity / 100.0) * 100;
 
         if (type == BalanceType.Rebound)
-            Plot.Axes.SetLimits(0, 100, -roundedMaxVelocity, 0);
+            Plot.Axes.SetLimits(0, 100, 0, -roundedMaxVelocity);  // inverted: 0 at bottom, -max at top
         else
             Plot.Axes.SetLimits(0, 100, 0, roundedMaxVelocity);
 
@@ -52,11 +49,13 @@ public class BalancePlot(Plot plot, BalanceType type) : TelemetryPlot(plot)
             [0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0],
             ["0", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100"]);
 
+        var dotSize = 2;
+
         var front = Plot.Add.Scatter(balance.FrontTravel, balance.FrontVelocity);
         front.LineStyle.IsVisible = false;
         front.MarkerStyle.LineColor = FrontColor.WithOpacity();
         front.MarkerStyle.FillColor = FrontColor.WithOpacity();
-        front.MarkerStyle.Size = 5;
+        front.MarkerStyle.Size = dotSize;
 
         var frontTrend = Plot.Add.Scatter(balance.FrontTravel, balance.FrontTrend);
         frontTrend.MarkerStyle.IsVisible = false;
@@ -67,7 +66,7 @@ public class BalancePlot(Plot plot, BalanceType type) : TelemetryPlot(plot)
         rear.LineStyle.IsVisible = false;
         rear.MarkerStyle.LineColor = RearColor.WithOpacity();
         rear.MarkerStyle.FillColor = RearColor.WithOpacity();
-        rear.MarkerStyle.Size = 5;
+        rear.MarkerStyle.Size = dotSize;
 
         var rearTrend = Plot.Add.Scatter(balance.RearTravel, balance.RearTrend);
         rearTrend.MarkerStyle.IsVisible = false;
@@ -79,10 +78,10 @@ public class BalancePlot(Plot plot, BalanceType type) : TelemetryPlot(plot)
         // Legend labels
         var legendY1 = type == BalanceType.Compression
             ? roundedMaxVelocity * 0.95
-            : -roundedMaxVelocity * 0.05;
+            : -roundedMaxVelocity * 0.95;
         var legendY2 = type == BalanceType.Compression
             ? roundedMaxVelocity * 0.87
-            : -roundedMaxVelocity * 0.13;
+            : -roundedMaxVelocity * 0.87;
 
         var frontLegend = Plot.Add.Text("Front", 100, legendY1);
         frontLegend.LabelFontColor = FrontColor;

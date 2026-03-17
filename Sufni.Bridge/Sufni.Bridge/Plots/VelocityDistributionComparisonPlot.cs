@@ -20,10 +20,10 @@ public class VelocityDistributionComparisonPlot(Plot plot) : TelemetryPlot(plot)
         }
 
         Plot.Axes.Title.Label.Text = "Velocity distribution comparison";
-        Plot.Layout.Fixed(new PixelPadding(40, 5, 40, 40));
+        Plot.Layout.Fixed(new PixelPadding(80, 10, 50, 40));
 
-        Plot.Axes.Left.Label.Text = "";
-        Plot.Axes.Bottom.Label.Text = "";
+        Plot.Axes.Left.Label.Text = "Velocity (mm/s)";
+        Plot.Axes.Bottom.Label.Text = "Time (%)";
 
         var maxX = 1.0;
 

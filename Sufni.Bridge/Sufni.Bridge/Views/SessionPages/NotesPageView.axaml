@@ -25,6 +25,13 @@
                 <Setter Property="Minimum" Value="0" />
                 <Setter Property="Increment" Value="1" />
                 <Setter Property="Margin" Value="2" />
+                <Setter Property="FontSize" Value="12" />
+            </Style>
+            <Style Selector="Label">
+                <Setter Property="FontSize" Value="12" />
+            </Style>
+            <Style Selector="TextBox">
+                <Setter Property="FontSize" Value="12" />
             </Style>
         </Grid.Styles>
 

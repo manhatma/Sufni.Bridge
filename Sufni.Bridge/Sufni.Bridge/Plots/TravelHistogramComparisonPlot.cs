@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using ScottPlot;
+using ScottPlot.TickGenerators;
 using Sufni.Bridge.Models.Telemetry;
 
 namespace Sufni.Bridge.Plots;
@@ -78,6 +79,9 @@ public class TravelHistogramComparisonPlot(Plot plot) : TelemetryPlot(plot)
         }
 
         Plot.Axes.SetLimits(left: 0, right: 100, bottom: 0, top: yRangeTop);
+        Plot.Axes.Bottom.TickGenerator = new NumericManual(
+            [0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0],
+            ["0", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100"]);
 
         var frontLegend = Plot.Add.Text("Front", 95, yRangeTop * 0.95);
         frontLegend.LabelFontColor = FrontColor;
