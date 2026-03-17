@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
+using Avalonia.Svg.Skia;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Extensions.DependencyInjection;
@@ -35,6 +36,14 @@ public partial class SessionViewModel : ItemViewModelBase
 
     #region Private methods
 
+    // Call on background thread — SvgSource : Object, thread-safe
+    private static SvgSource? SvgToSource(string? svgXml) =>
+        svgXml is null ? null : SvgSource.LoadFromSvg(svgXml);
+
+    // Call on UI thread — SvgImage : AvaloniaObject, requires UI thread
+    private static SvgImage? SourceToImage(SvgSource? source) =>
+        source is null ? null : new SvgImage { Source = source };
+
     private async Task<bool> LoadCache()
     {
         var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
@@ -49,13 +58,33 @@ public partial class SessionViewModel : ItemViewModelBase
 
         Debug.WriteLine($"Session {Id}: Cache PositionVelocityComparison={(cache.PositionVelocityComparison?.Length ?? 0)} chars");
 
-        SpringPage.TravelComparisonHistogram = cache.TravelComparisonHistogram;
-        SpringPage.FrontRearTravelScatter = cache.FrontRearTravelScatter;
-        SpringPage.FrontTravelHistogram = cache.FrontTravelHistogram;
-        SpringPage.RearTravelHistogram = cache.RearTravelHistogram;
+        // Parse SVG XML to SvgSource on a background thread (SvgSource is thread-safe)
+        var (travelCompSrc, frontRearScatterSrc, frontTravelHistSrc, rearTravelHistSrc,
+             frontVelocityHistSrc, rearVelocityHistSrc, compressionBalanceSrc, reboundBalanceSrc,
+             velDistCompSrc, posVelCompSrc, frontPosVelSrc, rearPosVelSrc) =
+            await Task.Run(() => (
+                SvgToSource(cache.TravelComparisonHistogram),
+                SvgToSource(cache.FrontRearTravelScatter),
+                SvgToSource(cache.FrontTravelHistogram),
+                SvgToSource(cache.RearTravelHistogram),
+                SvgToSource(cache.FrontVelocityHistogram),
+                SvgToSource(cache.RearVelocityHistogram),
+                SvgToSource(cache.CompressionBalance),
+                SvgToSource(cache.ReboundBalance),
+                SvgToSource(cache.VelocityDistributionComparison),
+                SvgToSource(cache.PositionVelocityComparison),
+                SvgToSource(cache.FrontPositionVelocity),
+                SvgToSource(cache.RearPositionVelocity)
+            ));
 
-        DamperPage.FrontVelocityHistogram = cache.FrontVelocityHistogram;
-        DamperPage.RearVelocityHistogram = cache.RearVelocityHistogram;
+        // Create SvgImage on UI thread (SvgImage : AvaloniaObject requires UI thread)
+        SpringPage.TravelComparisonHistogram = SourceToImage(travelCompSrc);
+        SpringPage.FrontRearTravelScatter = SourceToImage(frontRearScatterSrc);
+        SpringPage.FrontTravelHistogram = SourceToImage(frontTravelHistSrc);
+        SpringPage.RearTravelHistogram = SourceToImage(rearTravelHistSrc);
+
+        DamperPage.FrontVelocityHistogram = SourceToImage(frontVelocityHistSrc);
+        DamperPage.RearVelocityHistogram = SourceToImage(rearVelocityHistSrc);
         DamperPage.FrontHscPercentage = cache.FrontHscPercentage;
         DamperPage.RearHscPercentage = cache.RearHscPercentage;
         DamperPage.FrontLscPercentage = cache.FrontLscPercentage;
@@ -65,20 +94,20 @@ public partial class SessionViewModel : ItemViewModelBase
         DamperPage.FrontHsrPercentage = cache.FrontHsrPercentage;
         DamperPage.RearHsrPercentage = cache.RearHsrPercentage;
 
-        if (cache.CompressionBalance is not null)
+        if (compressionBalanceSrc is not null)
         {
-            BalancePage.CompressionBalance = cache.CompressionBalance;
-            BalancePage.ReboundBalance = cache.ReboundBalance;
+            BalancePage.CompressionBalance = SourceToImage(compressionBalanceSrc);
+            BalancePage.ReboundBalance = SourceToImage(reboundBalanceSrc);
         }
         else
         {
             Pages.Remove(BalancePage);
         }
 
-        MiscPage.VelocityDistributionComparison = cache.VelocityDistributionComparison;
-        MiscPage.PositionVelocityComparison = cache.PositionVelocityComparison;
-        MiscPage.FrontPositionVelocity = cache.FrontPositionVelocity;
-        MiscPage.RearPositionVelocity = cache.RearPositionVelocity;
+        MiscPage.VelocityDistributionComparison = SourceToImage(velDistCompSrc);
+        MiscPage.PositionVelocityComparison = SourceToImage(posVelCompSrc);
+        MiscPage.FrontPositionVelocity = SourceToImage(frontPosVelSrc);
+        MiscPage.RearPositionVelocity = SourceToImage(rearPosVelSrc);
 
         if (cache.SummaryJson is not null)
         {
@@ -112,54 +141,58 @@ public partial class SessionViewModel : ItemViewModelBase
         var b = (Rect)bounds!;
         var (width, height) = ((int)b.Width, (int)(b.Height / 2.0));
 
-        var sessionCache = await Task.Run(() =>
-        {
-            var cache = new SessionCache { SessionId = Id };
+        var sessionCache = new SessionCache { SessionId = Id };
+        var tasks = new List<Task>();
 
-            if (telemetryData.Front.Present && telemetryData.Rear.Present)
+        // Gruppe A: Spring comparison plots (Front+Rear)
+        if (telemetryData.Front.Present && telemetryData.Rear.Present)
+        {
+            tasks.Add(Task.Run(() =>
             {
                 var tcmp = new TravelHistogramComparisonPlot(new Plot());
                 tcmp.LoadTelemetryData(telemetryData);
-                cache.TravelComparisonHistogram = tcmp.Plot.GetSvgXml(width, height);
-                Dispatcher.UIThread.Post(() =>
-                {
-                    SpringPage.TravelComparisonHistogram = cache.TravelComparisonHistogram;
-                });
+                sessionCache.TravelComparisonHistogram = tcmp.Plot.GetSvgXml(width, height);
+                var travelCompSrc = SvgToSource(sessionCache.TravelComparisonHistogram);
+                Dispatcher.UIThread.Post(() => { SpringPage.TravelComparisonHistogram = SourceToImage(travelCompSrc); });
 
                 var frs = new FrontRearTravelScatterPlot(new Plot());
                 frs.LoadTelemetryData(telemetryData);
-                cache.FrontRearTravelScatter = frs.Plot.GetSvgXml(width, height);
-                Dispatcher.UIThread.Post(() =>
-                {
-                    SpringPage.FrontRearTravelScatter = cache.FrontRearTravelScatter;
-                });
-            }
-            else
+                sessionCache.FrontRearTravelScatter = frs.Plot.GetSvgXml(width, height);
+                var frontRearScatterSrc = SvgToSource(sessionCache.FrontRearTravelScatter);
+                Dispatcher.UIThread.Post(() => { SpringPage.FrontRearTravelScatter = SourceToImage(frontRearScatterSrc); });
+            }));
+        }
+        else
+        {
+            Dispatcher.UIThread.Post(() =>
             {
-                Dispatcher.UIThread.Post(() =>
-                {
-                    SpringPage.TravelComparisonHistogram = null;
-                    SpringPage.FrontRearTravelScatter = null;
-                });
-            }
+                SpringPage.TravelComparisonHistogram = null;
+                SpringPage.FrontRearTravelScatter = null;
+            });
+        }
 
-            if (telemetryData.Front.Present)
+        // Gruppe B: Front travel + velocity
+        if (telemetryData.Front.Present)
+        {
+            tasks.Add(Task.Run(() =>
             {
                 var fth = new TravelHistogramPlot(new Plot(), SuspensionType.Front);
                 fth.LoadTelemetryData(telemetryData);
-                cache.FrontTravelHistogram = fth.Plot.GetSvgXml(width, height);
-                Dispatcher.UIThread.Post(() => { SpringPage.FrontTravelHistogram = cache.FrontTravelHistogram; });
+                sessionCache.FrontTravelHistogram = fth.Plot.GetSvgXml(width, height);
+                var frontTravelHistSrc = SvgToSource(sessionCache.FrontTravelHistogram);
+                Dispatcher.UIThread.Post(() => { SpringPage.FrontTravelHistogram = SourceToImage(frontTravelHistSrc); });
 
                 var fvh = new VelocityHistogramPlot(new Plot(), SuspensionType.Front);
                 fvh.LoadTelemetryData(telemetryData);
-                cache.FrontVelocityHistogram = fvh.Plot.GetSvgXml(width - 64, 478);
-                Dispatcher.UIThread.Post(() => { DamperPage.FrontVelocityHistogram = cache.FrontVelocityHistogram; });
+                sessionCache.FrontVelocityHistogram = fvh.Plot.GetSvgXml(width - 64, 478);
+                var frontVelocityHistSrc = SvgToSource(sessionCache.FrontVelocityHistogram);
+                Dispatcher.UIThread.Post(() => { DamperPage.FrontVelocityHistogram = SourceToImage(frontVelocityHistSrc); });
 
                 var fvb = telemetryData.CalculateVelocityBands(SuspensionType.Front, 200);
-                cache.FrontHsrPercentage = fvb.HighSpeedRebound;
-                cache.FrontLsrPercentage = fvb.LowSpeedRebound;
-                cache.FrontLscPercentage = fvb.LowSpeedCompression;
-                cache.FrontHscPercentage = fvb.HighSpeedCompression;
+                sessionCache.FrontHsrPercentage = fvb.HighSpeedRebound;
+                sessionCache.FrontLsrPercentage = fvb.LowSpeedRebound;
+                sessionCache.FrontLscPercentage = fvb.LowSpeedCompression;
+                sessionCache.FrontHscPercentage = fvb.HighSpeedCompression;
                 Dispatcher.UIThread.Post(() =>
                 {
                     DamperPage.FrontHsrPercentage = fvb.HighSpeedRebound;
@@ -167,25 +200,31 @@ public partial class SessionViewModel : ItemViewModelBase
                     DamperPage.FrontLscPercentage = fvb.LowSpeedCompression;
                     DamperPage.FrontHscPercentage = fvb.HighSpeedCompression;
                 });
-            }
+            }));
+        }
 
-            if (telemetryData.Rear.Present)
+        // Gruppe C: Rear travel + velocity (parallel zu Gruppe B)
+        if (telemetryData.Rear.Present)
+        {
+            tasks.Add(Task.Run(() =>
             {
                 var rth = new TravelHistogramPlot(new Plot(), SuspensionType.Rear);
                 rth.LoadTelemetryData(telemetryData);
-                cache.RearTravelHistogram = rth.Plot.GetSvgXml(width, height);
-                Dispatcher.UIThread.Post(() => { SpringPage.RearTravelHistogram = cache.RearTravelHistogram; });
+                sessionCache.RearTravelHistogram = rth.Plot.GetSvgXml(width, height);
+                var rearTravelHistSrc = SvgToSource(sessionCache.RearTravelHistogram);
+                Dispatcher.UIThread.Post(() => { SpringPage.RearTravelHistogram = SourceToImage(rearTravelHistSrc); });
 
                 var rvh = new VelocityHistogramPlot(new Plot(), SuspensionType.Rear);
                 rvh.LoadTelemetryData(telemetryData);
-                cache.RearVelocityHistogram = rvh.Plot.GetSvgXml(width - 64, 478);
-                Dispatcher.UIThread.Post(() => { DamperPage.RearVelocityHistogram = cache.RearVelocityHistogram; });
+                sessionCache.RearVelocityHistogram = rvh.Plot.GetSvgXml(width - 64, 478);
+                var rearVelocityHistSrc = SvgToSource(sessionCache.RearVelocityHistogram);
+                Dispatcher.UIThread.Post(() => { DamperPage.RearVelocityHistogram = SourceToImage(rearVelocityHistSrc); });
 
                 var rvb = telemetryData.CalculateVelocityBands(SuspensionType.Rear, 200);
-                cache.RearHsrPercentage = rvb.HighSpeedRebound;
-                cache.RearLsrPercentage = rvb.LowSpeedRebound;
-                cache.RearLscPercentage = rvb.LowSpeedCompression;
-                cache.RearHscPercentage = rvb.HighSpeedCompression;
+                sessionCache.RearHsrPercentage = rvb.HighSpeedRebound;
+                sessionCache.RearLsrPercentage = rvb.LowSpeedRebound;
+                sessionCache.RearLscPercentage = rvb.LowSpeedCompression;
+                sessionCache.RearHscPercentage = rvb.HighSpeedCompression;
                 Dispatcher.UIThread.Post(() =>
                 {
                     DamperPage.RearHsrPercentage = rvb.HighSpeedRebound;
@@ -193,54 +232,67 @@ public partial class SessionViewModel : ItemViewModelBase
                     DamperPage.RearLscPercentage = rvb.LowSpeedCompression;
                     DamperPage.RearHscPercentage = rvb.HighSpeedCompression;
                 });
-            }
+            }));
+        }
 
-            if (telemetryData.Front.Present && telemetryData.Rear.Present)
+        // Gruppe D: Balance plots (Front+Rear)
+        if (telemetryData.Front.Present && telemetryData.Rear.Present)
+        {
+            tasks.Add(Task.Run(() =>
             {
                 var cb = new BalancePlot(new Plot(), BalanceType.Compression);
                 cb.LoadTelemetryData(telemetryData);
-                cache.CompressionBalance = cb.Plot.GetSvgXml(width, height);
-                Dispatcher.UIThread.Post(() => { BalancePage.CompressionBalance = cache.CompressionBalance; });
+                sessionCache.CompressionBalance = cb.Plot.GetSvgXml(width, height);
+                var compressionBalanceSrc = SvgToSource(sessionCache.CompressionBalance);
+                Dispatcher.UIThread.Post(() => { BalancePage.CompressionBalance = SourceToImage(compressionBalanceSrc); });
 
                 var rb = new BalancePlot(new Plot(), BalanceType.Rebound);
                 rb.LoadTelemetryData(telemetryData);
-                cache.ReboundBalance = rb.Plot.GetSvgXml(width, height);
-                Dispatcher.UIThread.Post(() => { BalancePage.ReboundBalance = cache.ReboundBalance; });
-            }
-            else
-            {
-                Dispatcher.UIThread.Post(() => { Pages.Remove(BalancePage); });
-            }
+                sessionCache.ReboundBalance = rb.Plot.GetSvgXml(width, height);
+                var reboundBalanceSrc = SvgToSource(sessionCache.ReboundBalance);
+                Dispatcher.UIThread.Post(() => { BalancePage.ReboundBalance = SourceToImage(reboundBalanceSrc); });
+            }));
+        }
+        else
+        {
+            Dispatcher.UIThread.Post(() => { Pages.Remove(BalancePage); });
+        }
 
-            // BYB diagrams
+        // Gruppe E: BYB Misc plots
+        tasks.Add(Task.Run(() =>
+        {
             var vdc = new VelocityDistributionComparisonPlot(new Plot());
             vdc.LoadTelemetryData(telemetryData);
-            cache.VelocityDistributionComparison = vdc.Plot.GetSvgXml(width, height);
-            Dispatcher.UIThread.Post(() => { MiscPage.VelocityDistributionComparison = cache.VelocityDistributionComparison; });
+            sessionCache.VelocityDistributionComparison = vdc.Plot.GetSvgXml(width, height);
+            var velDistCompSrc = SvgToSource(sessionCache.VelocityDistributionComparison);
+            Dispatcher.UIThread.Post(() => { MiscPage.VelocityDistributionComparison = SourceToImage(velDistCompSrc); });
 
             var pvc = new PositionVelocityComparisonPlot(new Plot());
             pvc.LoadTelemetryData(telemetryData);
-            cache.PositionVelocityComparison = pvc.Plot.GetSvgXml(width, height);
-            Dispatcher.UIThread.Post(() => { MiscPage.PositionVelocityComparison = cache.PositionVelocityComparison; });
+            sessionCache.PositionVelocityComparison = pvc.Plot.GetSvgXml(width, height);
+            var posVelCompSrc = SvgToSource(sessionCache.PositionVelocityComparison);
+            Dispatcher.UIThread.Post(() => { MiscPage.PositionVelocityComparison = SourceToImage(posVelCompSrc); });
 
             if (telemetryData.Front.Present)
             {
                 var fpv = new PositionVelocityPlot(new Plot(), SuspensionType.Front);
                 fpv.LoadTelemetryData(telemetryData);
-                cache.FrontPositionVelocity = fpv.Plot.GetSvgXml(width, height);
-                Dispatcher.UIThread.Post(() => { MiscPage.FrontPositionVelocity = cache.FrontPositionVelocity; });
+                sessionCache.FrontPositionVelocity = fpv.Plot.GetSvgXml(width, height);
+                var frontPosVelSrc = SvgToSource(sessionCache.FrontPositionVelocity);
+                Dispatcher.UIThread.Post(() => { MiscPage.FrontPositionVelocity = SourceToImage(frontPosVelSrc); });
             }
 
             if (telemetryData.Rear.Present)
             {
                 var rpv = new PositionVelocityPlot(new Plot(), SuspensionType.Rear);
                 rpv.LoadTelemetryData(telemetryData);
-                cache.RearPositionVelocity = rpv.Plot.GetSvgXml(width, height);
-                Dispatcher.UIThread.Post(() => { MiscPage.RearPositionVelocity = cache.RearPositionVelocity; });
+                sessionCache.RearPositionVelocity = rpv.Plot.GetSvgXml(width, height);
+                var rearPosVelSrc = SvgToSource(sessionCache.RearPositionVelocity);
+                Dispatcher.UIThread.Post(() => { MiscPage.RearPositionVelocity = SourceToImage(rearPosVelSrc); });
             }
+        }));
 
-            return cache;
-        });
+        await Task.WhenAll(tasks);
 
         // Populate summary using already-loaded telemetryData (no extra DB call)
         var summaryData = PopulateSummary(telemetryData);
@@ -549,14 +601,14 @@ public partial class SessionViewModel : ItemViewModelBase
     {
         session = new Session();
         IsInDatabase = false;
-        Pages = [SpringPage, DamperPage, BalancePage, MiscPage, SummaryPage, NotesPage];
+        Pages = [SummaryPage, SpringPage, DamperPage, BalancePage, MiscPage, NotesPage];
     }
 
     public SessionViewModel(Session session, bool fromDatabase)
     {
         this.session = session;
         IsInDatabase = fromDatabase;
-        Pages = [SpringPage, DamperPage, BalancePage, MiscPage, SummaryPage, NotesPage];
+        Pages = [SummaryPage, SpringPage, DamperPage, BalancePage, MiscPage, NotesPage];
 
         NotesPage.ForkSettings.PropertyChanged += (_, _) => EvaluateDirtiness();
         NotesPage.ShockSettings.PropertyChanged += (_, _) => EvaluateDirtiness();
@@ -590,11 +642,13 @@ public partial class SessionViewModel : ItemViewModelBase
                 setup: session.Setup)
             {
                 FrontSpringRate = NotesPage.ForkSettings.SpringRate,
+                FrontVolSpc = NotesPage.ForkSettings.VolSpc,
                 FrontHighSpeedCompression = NotesPage.ForkSettings.HighSpeedCompression,
                 FrontLowSpeedCompression = NotesPage.ForkSettings.LowSpeedCompression,
                 FrontLowSpeedRebound = NotesPage.ForkSettings.LowSpeedRebound,
                 FrontHighSpeedRebound = NotesPage.ForkSettings.HighSpeedRebound,
                 RearSpringRate = NotesPage.ShockSettings.SpringRate,
+                RearVolSpc = NotesPage.ShockSettings.VolSpc,
                 RearHighSpeedCompression = NotesPage.ShockSettings.HighSpeedCompression,
                 RearLowSpeedCompression = NotesPage.ShockSettings.LowSpeedCompression,
                 RearLowSpeedRebound = NotesPage.ShockSettings.LowSpeedRebound,
@@ -620,12 +674,14 @@ public partial class SessionViewModel : ItemViewModelBase
 
         NotesPage.Description = session.Description;
         NotesPage.ForkSettings.SpringRate = session.FrontSpringRate;
+        NotesPage.ForkSettings.VolSpc = session.FrontVolSpc;
         NotesPage.ForkSettings.HighSpeedCompression = session.FrontHighSpeedCompression;
         NotesPage.ForkSettings.LowSpeedCompression = session.FrontLowSpeedCompression;
         NotesPage.ForkSettings.LowSpeedRebound = session.FrontLowSpeedRebound;
         NotesPage.ForkSettings.HighSpeedRebound = session.FrontHighSpeedRebound;
 
         NotesPage.ShockSettings.SpringRate = session.RearSpringRate;
+        NotesPage.ShockSettings.VolSpc = session.RearVolSpc;
         NotesPage.ShockSettings.HighSpeedCompression = session.RearHighSpeedCompression;
         NotesPage.ShockSettings.LowSpeedCompression = session.RearLowSpeedCompression;
         NotesPage.ShockSettings.LowSpeedRebound = session.RearLowSpeedRebound;

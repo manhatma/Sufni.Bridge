@@ -6,6 +6,7 @@ namespace Sufni.Bridge.ViewModels.SessionPages;
 public partial class SuspensionSettings : ObservableObject
 {
     [ObservableProperty] private string? springRate;
+    [ObservableProperty] private uint? volSpc;
     [ObservableProperty] private uint? highSpeedCompression;
     [ObservableProperty] private uint? lowSpeedCompression;
     [ObservableProperty] private uint? lowSpeedRebound;
@@ -28,10 +29,12 @@ public partial class NotesPageViewModel() : PageViewModelBase("Notes")
             (!(ForkSettings.LowSpeedCompression is null && session.FrontLowSpeedCompression is null) && ForkSettings.LowSpeedCompression != session.FrontLowSpeedCompression) ||
             (!(ForkSettings.LowSpeedRebound is null && session.FrontLowSpeedRebound is null) && ForkSettings.LowSpeedRebound != session.FrontLowSpeedRebound) ||
             (!(ForkSettings.HighSpeedRebound is null && session.FrontHighSpeedRebound is null) && ForkSettings.HighSpeedRebound != session.FrontHighSpeedRebound) ||
+            (ForkSettings.VolSpc ?? 0) != (session.FrontVolSpc ?? 0) ||
             (!(ShockSettings.SpringRate is null && session.RearSpringRate is null) && ShockSettings.SpringRate != session.RearSpringRate) ||
             (!(ShockSettings.HighSpeedCompression is null && session.RearHighSpeedCompression is null) && ShockSettings.HighSpeedCompression != session.RearHighSpeedCompression) ||
             (!(ShockSettings.LowSpeedCompression is null && session.RearLowSpeedCompression is null) && ShockSettings.LowSpeedCompression != session.RearLowSpeedCompression) ||
             (!(ShockSettings.LowSpeedRebound is null && session.RearLowSpeedRebound is null) && ShockSettings.LowSpeedRebound != session.RearLowSpeedRebound) ||
-            (!(ShockSettings.HighSpeedRebound is null && session.RearHighSpeedRebound is null) && ShockSettings.HighSpeedRebound != session.RearHighSpeedRebound);
+            (!(ShockSettings.HighSpeedRebound is null && session.RearHighSpeedRebound is null) && ShockSettings.HighSpeedRebound != session.RearHighSpeedRebound) ||
+            (ShockSettings.VolSpc ?? 0) != (session.RearVolSpc ?? 0);
     }
 }

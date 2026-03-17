@@ -16,10 +16,10 @@
 
     <ScrollViewer Width="{Binding $parent[ScrollViewer].Bounds.Width}" Height="{Binding $parent[ScrollViewer].Bounds.Height}" IsScrollChainingEnabled="False">
         <StackPanel Orientation="Vertical">
-            <Svg IsVisible="{Binding VelocityDistributionComparison, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding VelocityDistributionComparison}" />
-            <Svg IsVisible="{Binding PositionVelocityComparison, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding PositionVelocityComparison}" />
-            <Svg IsVisible="{Binding FrontPositionVelocity, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontPositionVelocity}" />
-            <Svg IsVisible="{Binding RearPositionVelocity, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearPositionVelocity}" />
+            <Image IsVisible="{Binding VelocityDistributionComparison, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding VelocityDistributionComparison}" />
+            <Image IsVisible="{Binding PositionVelocityComparison, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding PositionVelocityComparison}" />
+            <Image IsVisible="{Binding FrontPositionVelocity, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontPositionVelocity}" />
+            <Image IsVisible="{Binding RearPositionVelocity, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearPositionVelocity}" />
         </StackPanel>
     </ScrollViewer>
 

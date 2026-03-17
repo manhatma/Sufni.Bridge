@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleDisplayName</key>
-	<string>Sufni.Bridge</string>
+	<string>Sufni.Bridge DEV</string>
 	<key>CFBundleIdentifier</key>
 	<string>de.nielsbarth.sufnibridge-dev</string>
 	<key>CFBundleShortVersionString</key>

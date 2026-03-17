@@ -1,11 +1,12 @@
+using Avalonia.Svg.Skia;
 using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace Sufni.Bridge.ViewModels.SessionPages;
 
 public partial class MiscPageViewModel() : PageViewModelBase("Misc")
 {
-    [ObservableProperty] private string? velocityDistributionComparison;
-    [ObservableProperty] private string? positionVelocityComparison;
-    [ObservableProperty] private string? frontPositionVelocity;
-    [ObservableProperty] private string? rearPositionVelocity;
+    [ObservableProperty] private SvgImage? velocityDistributionComparison;
+    [ObservableProperty] private SvgImage? positionVelocityComparison;
+    [ObservableProperty] private SvgImage? frontPositionVelocity;
+    [ObservableProperty] private SvgImage? rearPositionVelocity;
 }

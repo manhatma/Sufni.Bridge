@@ -137,6 +137,7 @@ public class SqLiteDatabaseService : IDatabaseService
             await connection.QueryAsync<Synchronization>("INSERT INTO sync VALUES (0)");
         }
 
+        await EnsureSessionColumns();
         await EnsureSessionCacheColumns();
         await EnsureDefaultCalibrationMethods();
     }
@@ -154,6 +155,19 @@ public class SqLiteDatabaseService : IDatabaseService
                 await connection.InsertAsync(method);
             }
         }
+    }
+
+    private async Task EnsureSessionColumns()
+    {
+        var tableInfo = await connection.QueryAsync<TableInfoRecord>("PRAGMA table_info(session)");
+        var columnNames = tableInfo.Select(column => column.Name).ToHashSet();
+        async Task AddColumnIfMissing(string name, string type = "INTEGER")
+        {
+            if (!columnNames.Contains(name))
+                await connection.ExecuteAsync($"ALTER TABLE session ADD COLUMN {name} {type} DEFAULT 0");
+        }
+        await AddColumnIfMissing("front_volspc");
+        await AddColumnIfMissing("rear_volspc");
     }
 
     private async Task EnsureSessionCacheColumns()
@@ -471,8 +485,8 @@ public class SqLiteDatabaseService : IDatabaseService
                                  description,
                                  timestamp,
                                  track_id,
-                                 front_springrate, front_hsc, front_lsc, front_lsr, front_hsr,
-                                 rear_springrate, rear_hsc, rear_lsc, rear_lsr, rear_hsr,
+                                 front_springrate, front_volspc, front_hsc, front_lsc, front_lsr, front_hsr,
+                                 rear_springrate, rear_volspc, rear_hsc, rear_lsc, rear_lsr, rear_hsr,
                                  CASE
                                     WHEN data IS NOT NULL THEN 1
                                     ELSE 0
@@ -535,8 +549,8 @@ public class SqLiteDatabaseService : IDatabaseService
                                  SET
                                      name=?,
                                      description=?,
-                                     front_springrate=?, front_hsc=?, front_lsc=?, front_lsr=?, front_hsr=?,
-                                     rear_springrate=?, rear_hsc=?, rear_lsc=?, rear_lsr=?, rear_hsr=?
+                                     front_springrate=?, front_volspc=?, front_hsc=?, front_lsc=?, front_lsr=?, front_hsr=?,
+                                     rear_springrate=?, rear_volspc=?, rear_hsc=?, rear_lsc=?, rear_lsr=?, rear_hsr=?
                                  WHERE
                                      id=?
                                  """;
@@ -545,11 +559,13 @@ public class SqLiteDatabaseService : IDatabaseService
                     session.Name,
                     session.Description,
                     session.FrontSpringRate,
+                    session.FrontVolSpc,
                     session.FrontHighSpeedCompression,
                     session.FrontLowSpeedCompression,
                     session.FrontLowSpeedRebound,
                     session.FrontHighSpeedRebound,
                     session.RearSpringRate,
+                    session.RearVolSpc,
                     session.RearHighSpeedCompression,
                     session.RearLowSpeedCompression,
                     session.RearLowSpeedRebound,

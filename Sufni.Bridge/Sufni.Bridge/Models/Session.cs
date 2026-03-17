@@ -69,6 +69,14 @@ public class Session : Synchronizable
     public string? RearSpringRate { get; set; }
 
     [JsonIgnore]
+    [Column("front_volspc")]
+    public uint? FrontVolSpc { get; set; }
+
+    [JsonIgnore]
+    [Column("rear_volspc")]
+    public uint? RearVolSpc { get; set; }
+
+    [JsonIgnore]
     [Column("front_hsc")]
     public uint? FrontHighSpeedCompression { get; set; }
 

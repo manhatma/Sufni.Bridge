@@ -8,10 +8,8 @@ namespace Sufni.Bridge.Plots;
 
 public class BalancePlot(Plot plot, BalanceType type) : TelemetryPlot(plot)
 {
-    private void AddStatistics(TelemetryData telemetryData, int roundedMaxVelocity)
+    private void AddStatistics(BalanceData balance, int roundedMaxVelocity)
     {
-        var balance = telemetryData.CalculateBalance(type);
-
         var maxVelocity = Math.Max(
             balance.FrontVelocity.Select(Math.Abs).DefaultIfEmpty(0).Max(),
             balance.RearVelocity.Select(Math.Abs).DefaultIfEmpty(0).Max());
@@ -76,7 +74,7 @@ public class BalancePlot(Plot plot, BalanceType type) : TelemetryPlot(plot)
         rearTrend.LineStyle.Color = RearColor;
         rearTrend.LineStyle.Width = 2;
 
-        AddStatistics(telemetryData, roundedMaxVelocity);
+        AddStatistics(balance, roundedMaxVelocity);
 
         // Legend labels
         var legendY1 = type == BalanceType.Compression

@@ -19,7 +19,7 @@
         <StackPanel Orientation="Vertical">
             <!--  Front velocity histogram  -->
             <Grid ColumnDefinitions="* auto" IsVisible="{Binding FrontVelocityHistogram, Converter={x:Static ObjectConverters.IsNotNull}}">
-                <Svg Grid.Column="0" Source="{Binding FrontVelocityHistogram}" />
+                <Image Grid.Column="0" Source="{Binding FrontVelocityHistogram}" />
                 <plots:VelocityBandView
                     Grid.Column="1"
                     HscPercentage="{Binding FrontHscPercentage}"
@@ -30,7 +30,7 @@
 
             <!--  Rear velocity histogram  -->
             <Grid ColumnDefinitions="* auto" IsVisible="{Binding RearVelocityHistogram, Converter={x:Static ObjectConverters.IsNotNull}}">
-                <Svg Grid.Column="0" Source="{Binding RearVelocityHistogram}" />
+                <Image Grid.Column="0" Source="{Binding RearVelocityHistogram}" />
                 <plots:VelocityBandView
                     Grid.Column="1"
                     HscPercentage="{Binding RearHscPercentage}"
