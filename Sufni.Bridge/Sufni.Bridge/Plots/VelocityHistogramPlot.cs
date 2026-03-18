@@ -1,4 +1,6 @@
 using System.Collections.Generic;
+using System.Linq;
+using MathNet.Numerics.Statistics;
 using ScottPlot;
 using ScottPlot.TickGenerators;
 using Sufni.Bridge.Models.Telemetry;
@@ -7,7 +9,9 @@ namespace Sufni.Bridge.Plots;
 
 public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPlot(plot)
 {
-    private const double VelocityLimit = 2000.0;
+    // Display range ±2 m/s — matches VelocityDistributionComparisonPlot
+    private const double VelocityLimitMs = 2.0;
+
     private readonly List<Color> palette =
     [
         Color.FromHex("#3288bd"),
@@ -22,57 +26,51 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
         Color.FromHex("#9e0142"),
     ];
 
-    private void AddStatistics(TelemetryData telemetryData)
+    private static readonly Color StatColor = Color.FromHex("#FFD700");
+
+    /// <summary>
+    /// Stats box with avg/95th/max in mm/s — placed in the top padding area just below the title.
+    /// </summary>
+    private void AddStatsBox(TelemetryData telemetryData, double yRangeTop)
     {
-        var statistics = telemetryData.CalculateVelocityStatistics(type);
+        var stats = telemetryData.CalculateVelocityStatistics(type);
+        var suspension = type == SuspensionType.Front ? telemetryData.Front : telemetryData.Rear;
 
-        var maxReboundVelString = $"{statistics.MaxRebound:0.00} mm/s";
-        var avgReboundVelString = $"{statistics.AverageRebound:0.00} mm/s";
-        var avgCompVelString = $"{statistics.AverageCompression:0.00} mm/s";
-        var maxCompVelString = $"{statistics.MaxCompression:0.00} mm/s";
+        var compVels = suspension.Strokes.Compressions
+            .SelectMany(s => suspension.Velocity[s.Start..(s.End + 1)])
+            .ToList();
+        var rebVels = suspension.Strokes.Rebounds
+            .SelectMany(s => suspension.Velocity[s.Start..(s.End + 1)].Select(System.Math.Abs))
+            .ToList();
 
-        // If max rebound is lower than -VelocityLimit (which is the hardcoded axis limit),
-        // we draw the the label at -VelocityLimit, and omit the line.
-        if (statistics.MaxRebound < -VelocityLimit)
-        {
-            AddLabel(
-                maxReboundVelString,
-                Plot.Axes.GetLimits().Right,
-                -2000.0,
-                -10,
-                5,
-                Alignment.UpperRight);
-        }
-        else
-        {
-            AddLabelWithHorizontalLine(maxReboundVelString,
-                statistics.MaxRebound,
-                LabelLinePosition.Above);
-        }
+        var p95Comp = compVels.Count > 0 ? compVels.Percentile(95) : 0.0;
+        var p95Reb  = rebVels.Count  > 0 ? rebVels.Percentile(95)  : 0.0;
 
-        // Average values should be between the hardcoded limits, it's safe to draw them 
-        // at their actual position.
-        AddLabelWithHorizontalLine(avgReboundVelString, statistics.AverageRebound, LabelLinePosition.Below);
-        AddLabelWithHorizontalLine(avgCompVelString, statistics.AverageCompression, LabelLinePosition.Above);
+        // Non-breaking spaces keep columns aligned in ScottPlot SVG rendering
+        static string N(double v, int w = 7) =>
+            v.ToString("F1").PadLeft(w).Replace(' ', '\u00A0');
 
-        // If max compression is more than VelocityLimit (which is the hardcoded axis limit),
-        // we draw the the label at VelocityLimit, and omit the line.
-        if (statistics.MaxCompression > VelocityLimit)
-        {
-            AddLabel(
-                maxCompVelString,
-                Plot.Axes.GetLimits().Right,
-                2000.0,
-                -10,
-                -5,
-                Alignment.LowerRight);
-        }
-        else
-        {
-            AddLabelWithHorizontalLine(maxCompVelString,
-                statistics.MaxCompression,
-                LabelLinePosition.Below);
-        }
+        var statsText =
+            $"Comp\u00A0avg:\u00A0\u00A0{N(stats.AverageCompression)}\u00A0mm/s\n" +
+            $"Comp\u00A095th:\u00A0{N(p95Comp)}\u00A0mm/s\n" +
+            $"Comp\u00A0max:\u00A0\u00A0{N(stats.MaxCompression)}\u00A0mm/s\n" +
+            $"Reb\u00A0avg:\u00A0\u00A0\u00A0{N(System.Math.Abs(stats.AverageRebound))}\u00A0mm/s\n" +
+            $"Reb\u00A095th:\u00A0\u00A0{N(p95Reb)}\u00A0mm/s\n" +
+            $"Reb\u00A0max:\u00A0\u00A0\u00A0{N(System.Math.Abs(stats.MaxRebound))}\u00A0mm/s";
+
+        // LowerLeft alignment at y=yRangeTop → text extends upward into the 100px top padding
+        var box = Plot.Add.Text(statsText, -VelocityLimitMs, yRangeTop);
+        box.LabelFontColor = StatColor;
+        box.LabelFontSize = 10;
+        box.LabelFontName = "Menlo";
+        box.LabelAlignment = Alignment.LowerLeft;
+        box.LabelOffsetX = 5;
+        box.LabelOffsetY = -4;
+        box.LabelBold = true;
+        box.LabelBackgroundColor = Color.FromHex("#15191C").WithAlpha(220);
+        box.LabelBorderColor = StatColor.WithAlpha(80);
+        box.LabelBorderWidth = 1;
+        box.LabelPadding = 5;
     }
 
     public override void LoadTelemetryData(TelemetryData telemetryData)
@@ -80,60 +78,63 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
         base.LoadTelemetryData(telemetryData);
 
         Plot.Axes.Title.Label.Text = type == SuspensionType.Front
-            ? "Front velocity (time% / mm/s)"
-            : "Rear velocity (time% / mm/s)";
-        Plot.Layout.Fixed(new PixelPadding(40, 5, 40, 40));
+            ? "Front velocity"
+            : "Rear velocity";
+
+        // Left=70 (Y-axis label), Right=20, Bottom=50, Top=100 (stats zone below title)
+        Plot.Layout.Fixed(new PixelPadding(70, 20, 50, 100));
+
+        Plot.Axes.Bottom.Label.Text = "Velocity (m/s)";
+        Plot.Axes.Left.Label.Text = "Time (%)";
 
         var data = telemetryData.CalculateVelocityHistogram(type);
         var step = data.Bins[1] - data.Bins[0];
+        var maxY = 0.0;
 
         for (var i = 0; i < data.Values.Count; ++i)
         {
             double nextBarBase = 0;
+            double colTotal = 0;
+            for (var j = 0; j < TelemetryData.TravelBinsForVelocityHistogram; j++)
+                colTotal += data.Values[i][j];
+            if (colTotal > maxY) maxY = colTotal;
 
             for (var j = 0; j < TelemetryData.TravelBinsForVelocityHistogram; j++)
             {
-                if (data.Values[i][j] == 0)
-                {
-                    continue;
-                }
+                if (data.Values[i][j] == 0) continue;
 
                 Plot.Add.Bar(new Bar
                 {
-                    Position = data.Bins[i],
+                    Position = data.Bins[i] / 1000.0,   // mm/s → m/s on X axis
                     ValueBase = nextBarBase,
                     Value = nextBarBase + data.Values[i][j],
                     FillColor = palette[j].WithOpacity(0.8),
                     LineColor = Colors.Black,
                     LineWidth = 0.5f,
-                    Orientation = Orientation.Horizontal,
-                    Size = step * 0.95,
+                    Orientation = Orientation.Vertical,  // velocity on X, time% on Y
+                    Size = step / 1000.0 * 0.95,         // mm/s → m/s
                 });
 
                 nextBarBase += data.Values[i][j];
             }
         }
 
-        Plot.Axes.AutoScale(invertY: true);
+        var yRangeTop = System.Math.Max(1.0, maxY) * 1.3;
 
-        // Set left axis limit to 0.1 to hide the border line at 0 values. Otherwise
-        // it would seem that there are actual measure travel data there too.
-        // Also set a hardcoded limit for the velocity range.
-        Plot.Axes.SetLimits(left: 0.1,
-            bottom: VelocityLimit,
-            top: -VelocityLimit);
+        // X: ±2 m/s with 0.5 m/s ticks — same scale as VelocityDistributionComparison
+        Plot.Axes.SetLimits(left: -VelocityLimitMs, right: VelocityLimitMs, bottom: 0, top: yRangeTop);
+        Plot.Axes.Bottom.TickGenerator = new NumericFixedInterval(0.5);
 
-        Plot.Axes.Left.TickGenerator = new NumericFixedInterval(500);
-
+        // Normal distribution: X=velocity (m/s), Y=pdf (time%)
         var normalData = telemetryData.CalculateNormalDistribution(type);
         var normal = Plot.Add.Scatter(
-            normalData.Pdf.ToArray(),
-            normalData.Y.ToArray());
+            normalData.Y.Select(v => v / 1000.0).ToArray(),
+            normalData.Pdf.ToArray());
         normal.Color = Color.FromHex("#d53e4f");
         normal.MarkerStyle.IsVisible = false;
         normal.LineStyle.Width = 3;
         normal.LineStyle.Pattern = LinePattern.Dotted;
 
-        AddStatistics(telemetryData);
+        AddStatsBox(telemetryData, yRangeTop);
     }
 }

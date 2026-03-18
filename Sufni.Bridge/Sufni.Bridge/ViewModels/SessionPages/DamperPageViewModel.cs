@@ -5,6 +5,7 @@ namespace Sufni.Bridge.ViewModels.SessionPages;
 
 public partial class DamperPageViewModel() : PageViewModelBase("Damper")
 {
+    [ObservableProperty] private SvgImage? velocityDistributionComparison;
     [ObservableProperty] private SvgImage? frontVelocityHistogram;
     [ObservableProperty] private SvgImage? rearVelocityHistogram;
     [ObservableProperty] private double? frontHscPercentage;

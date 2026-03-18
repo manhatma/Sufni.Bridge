@@ -31,9 +31,16 @@
             <Setter Property="Foreground" Value="#15191c" />
             <Setter Property="Padding" Value="8,4" />
         </Style>
-        <Style Selector="TextBlock.summary-header">
+        <Style Selector="Border.summary-header-cell">
+            <Setter Property="Background" Value="#00c7a0" />
+            <Setter Property="BorderBrush" Value="{StaticResource SufniBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="8,6" />
+        </Style>
+        <Style Selector="Border.summary-header-cell TextBlock">
             <Setter Property="FontWeight" Value="Bold" />
             <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="#15191c" />
         </Style>
     </UserControl.Styles>
 
@@ -57,14 +64,13 @@
                 </ItemsControl>
             </Grid>
 
-            <Grid RowDefinitions="auto auto auto" ColumnDefinitions="*">
-                <TextBlock Grid.Row="0" Classes="summary-title" Text="FRONT WHEEL / REAR WHEEL" />
-                <Grid Grid.Row="1" ColumnDefinitions="110,*,*">
-                    <Border Grid.Column="0" Classes="summary-cell"><TextBlock Classes="summary-header" Text="" /></Border>
-                    <Border Grid.Column="1" Classes="summary-cell"><TextBlock Classes="summary-header" Text="FRONT WHEEL" /></Border>
-                    <Border Grid.Column="2" Classes="summary-cell"><TextBlock Classes="summary-header" Text="REAR WHEEL" /></Border>
+            <Grid RowDefinitions="auto auto" ColumnDefinitions="*">
+                <Grid Grid.Row="0" ColumnDefinitions="110,*,*">
+                    <Border Grid.Column="0" Classes="summary-header-cell"><TextBlock Text="" /></Border>
+                    <Border Grid.Column="1" Classes="summary-header-cell"><TextBlock Text="FRONT WHEEL" /></Border>
+                    <Border Grid.Column="2" Classes="summary-header-cell"><TextBlock Text="REAR WHEEL" /></Border>
                 </Grid>
-                <ItemsControl Grid.Row="2" ItemsSource="{Binding WheelRows}">
+                <ItemsControl Grid.Row="1" ItemsSource="{Binding WheelRows}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:SummaryComparisonRow">
                             <Grid ColumnDefinitions="110,*,*">
@@ -77,14 +83,13 @@
                 </ItemsControl>
             </Grid>
 
-            <Grid RowDefinitions="auto auto auto" ColumnDefinitions="*">
-                <TextBlock Grid.Row="0" Classes="summary-title" Text="FORK / SHOCK" />
-                <Grid Grid.Row="1" ColumnDefinitions="110,*,*">
-                    <Border Grid.Column="0" Classes="summary-cell"><TextBlock Classes="summary-header" Text="" /></Border>
-                    <Border Grid.Column="1" Classes="summary-cell"><TextBlock Classes="summary-header" Text="FORK" /></Border>
-                    <Border Grid.Column="2" Classes="summary-cell"><TextBlock Classes="summary-header" Text="SHOCK" /></Border>
+            <Grid RowDefinitions="auto auto" ColumnDefinitions="*">
+                <Grid Grid.Row="0" ColumnDefinitions="110,*,*">
+                    <Border Grid.Column="0" Classes="summary-header-cell"><TextBlock Text="" /></Border>
+                    <Border Grid.Column="1" Classes="summary-header-cell"><TextBlock Text="FORK" /></Border>
+                    <Border Grid.Column="2" Classes="summary-header-cell"><TextBlock Text="SHOCK" /></Border>
                 </Grid>
-                <ItemsControl Grid.Row="2" ItemsSource="{Binding ForkShockRows}">
+                <ItemsControl Grid.Row="1" ItemsSource="{Binding ForkShockRows}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:SummaryComparisonRow">
                             <Grid ColumnDefinitions="110,*,*">

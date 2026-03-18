@@ -13,7 +13,12 @@ public partial class SessionView : UserControl
         InitializeComponent();
         TabHeaders.Items.CollectionChanged += (_, _) => 
         {
-            if (TabHeaders.ItemCount > 0) 
+            // Start on Spring tab (index 1) so plots are immediately visible
+            if (TabHeaders.ItemCount > 1)
+            {
+                (TabHeaders.Items[1] as PageViewModelBase)!.Selected = true;
+            }
+            else if (TabHeaders.ItemCount > 0)
             {
                 (TabHeaders.Items[0] as PageViewModelBase)!.Selected = true;
             }

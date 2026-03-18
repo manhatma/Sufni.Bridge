@@ -16,8 +16,8 @@
 
     <ScrollViewer Width="{Binding $parent[ScrollViewer].Bounds.Width}" Height="{Binding $parent[ScrollViewer].Bounds.Height}" IsScrollChainingEnabled="False">
         <StackPanel Orientation="Vertical">
-            <Image IsVisible="{Binding TravelComparisonHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding TravelComparisonHistogram}" />
             <Image IsVisible="{Binding FrontRearTravelScatter, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontRearTravelScatter}" />
+            <Image IsVisible="{Binding TravelComparisonHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding TravelComparisonHistogram}" />
             <Image IsVisible="{Binding FrontTravelHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontTravelHistogram}" />
             <Image IsVisible="{Binding RearTravelHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearTravelHistogram}" />
         </StackPanel>

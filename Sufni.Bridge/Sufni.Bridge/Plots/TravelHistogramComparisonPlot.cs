@@ -10,6 +10,46 @@ public class TravelHistogramComparisonPlot(Plot plot) : TelemetryPlot(plot)
 {
     private const double HistogramRangeMultiplier = 1.3;
 
+    private void AddStatLines(TelemetryData telemetryData, SuspensionType type, double yRangeTop)
+    {
+        var stats = telemetryData.CalculateDetailedTravelStatistics(type);
+        var mx = type == SuspensionType.Front
+            ? telemetryData.Linkage.MaxFrontTravel
+            : telemetryData.Linkage.MaxRearTravel;
+
+        if (mx <= 0) return;
+
+        var avgPct = stats.Average / mx * 100.0;
+        var p95Pct = stats.P95 / mx * 100.0;
+        var maxPct = stats.Max / mx * 100.0;
+
+        var color = type == SuspensionType.Front ? FrontColor : RearColor;
+
+        Plot.Add.VerticalLine(avgPct, 2f, color, LinePattern.Dashed);
+        Plot.Add.VerticalLine(p95Pct, 2f, color, LinePattern.Dashed);
+        Plot.Add.VerticalLine(maxPct, 2f, color, LinePattern.Dashed);
+
+        // Front labels: left of line (UpperRight alignment = text ends at the x position)
+        // Rear labels:  right of line (UpperLeft alignment = text starts at the x position), lower y
+        bool isFront = type == SuspensionType.Front;
+        var labelY = isFront ? yRangeTop * 0.92 : yRangeTop * 0.72;
+        var labelAlignment = isFront ? Alignment.UpperRight : Alignment.UpperLeft;
+        var xOffset = isFront ? -4 : 4;
+
+        void AddLabel(string text, double x)
+        {
+            var t = Plot.Add.Text(text, x, labelY);
+            t.LabelFontColor = color;
+            t.LabelFontSize = 11;
+            t.LabelAlignment = labelAlignment;
+            t.LabelOffsetX = xOffset;
+        }
+
+        AddLabel("avg", avgPct);
+        AddLabel("95th", p95Pct);
+        AddLabel("max", maxPct);
+    }
+
     public override void LoadTelemetryData(TelemetryData telemetryData)
     {
         base.LoadTelemetryData(telemetryData);
@@ -20,7 +60,7 @@ public class TravelHistogramComparisonPlot(Plot plot) : TelemetryPlot(plot)
         }
 
         Plot.Axes.Title.Label.Text = "Travel histogram comparison";
-        Plot.Layout.Fixed(new PixelPadding(70, 10, 50, 40));
+        Plot.Layout.Fixed(new PixelPadding(70, 20, 50, 40));
 
         Plot.Axes.Bottom.Label.Text = "Travel (%)";
         Plot.Axes.Left.Label.Text = "Time (%)";
@@ -83,14 +123,19 @@ public class TravelHistogramComparisonPlot(Plot plot) : TelemetryPlot(plot)
             [0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0],
             ["0", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100"]);
 
-        var frontLegend = Plot.Add.Text("Front", 95, yRangeTop * 0.95);
+        // Legend — top-right
+        var frontLegend = Plot.Add.Text("Front", 98, yRangeTop * 0.97);
         frontLegend.LabelFontColor = FrontColor;
         frontLegend.LabelFontSize = 12;
         frontLegend.LabelAlignment = Alignment.UpperRight;
 
-        var rearLegend = Plot.Add.Text("Rear", 95, yRangeTop * 0.87);
+        var rearLegend = Plot.Add.Text("Rear", 98, yRangeTop * 0.87);
         rearLegend.LabelFontColor = RearColor;
         rearLegend.LabelFontSize = 12;
         rearLegend.LabelAlignment = Alignment.UpperRight;
+
+        // Stat lines (front above, rear below so labels don't overlap)
+        AddStatLines(telemetryData, SuspensionType.Front, yRangeTop);
+        AddStatLines(telemetryData, SuspensionType.Rear, yRangeTop);
     }
 }
