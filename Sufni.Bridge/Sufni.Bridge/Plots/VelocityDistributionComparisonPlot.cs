@@ -19,63 +19,63 @@ public class VelocityDistributionComparisonPlot(Plot plot) : TelemetryPlot(plot)
         static string N(double v, int w = 7) =>
             v.ToString("F1").PadLeft(w).Replace(' ', '\u00A0');
 
-        string BuildStats(SuspensionType type, TelemetryData td)
+        (double ac, double p5c, double mc, double ar, double p5r, double mr)
+            GetStats(SuspensionType type)
         {
-            var stats = td.CalculateVelocityStatistics(type);
-            var suspension = type == SuspensionType.Front ? td.Front : td.Rear;
-
-            var compVels = suspension.Strokes.Compressions
-                .SelectMany(s => suspension.Velocity[s.Start..(s.End + 1)])
-                .ToList();
-            var rebVels = suspension.Strokes.Rebounds
-                .SelectMany(s => suspension.Velocity[s.Start..(s.End + 1)].Select(Math.Abs))
-                .ToList();
-
-            var p95Comp = compVels.Count > 0 ? compVels.Percentile(95) : 0.0;
-            var p95Reb  = rebVels.Count  > 0 ? rebVels.Percentile(95)  : 0.0;
-            var label   = type == SuspensionType.Front ? "Front" : "Rear";
-
-            return
-                $"{label}\n" +
-                $"Comp\u00A0avg:\u00A0\u00A0{N(stats.AverageCompression)}\u00A0mm/s\n" +
-                $"Comp\u00A095th:\u00A0{N(p95Comp)}\u00A0mm/s\n" +
-                $"Comp\u00A0max:\u00A0\u00A0{N(stats.MaxCompression)}\u00A0mm/s\n" +
-                $"Reb\u00A0avg:\u00A0\u00A0\u00A0{N(Math.Abs(stats.AverageRebound))}\u00A0mm/s\n" +
-                $"Reb\u00A095th:\u00A0\u00A0{N(p95Reb)}\u00A0mm/s\n" +
-                $"Reb\u00A0max:\u00A0\u00A0\u00A0{N(Math.Abs(stats.MaxRebound))}\u00A0mm/s";
+            var s = telemetryData.CalculateVelocityStatistics(type);
+            var sus = type == SuspensionType.Front ? telemetryData.Front : telemetryData.Rear;
+            var cv = sus.Strokes.Compressions
+                .SelectMany(x => sus.Velocity[x.Start..(x.End + 1)]).ToList();
+            var rv = sus.Strokes.Rebounds
+                .SelectMany(x => sus.Velocity[x.Start..(x.End + 1)].Select(Math.Abs)).ToList();
+            return (s.AverageCompression,
+                    cv.Count > 0 ? cv.Percentile(95) : 0.0,
+                    s.MaxCompression,
+                    Math.Abs(s.AverageRebound),
+                    rv.Count > 0 ? rv.Percentile(95) : 0.0,
+                    Math.Abs(s.MaxRebound));
         }
 
-        // Rear stats box: lower-right
-        if (telemetryData.Rear.Present)
+        // Single merged box — "mm/s" in the header saves repeating the unit per line
+        string statsText;
+        if (telemetryData.Front.Present && telemetryData.Rear.Present)
         {
-            var rearBox = Plot.Add.Text(BuildStats(SuspensionType.Rear, telemetryData), VelocityLimitMs, topLimit * 0.60);
-            rearBox.LabelFontColor = RearColor;
-            rearBox.LabelFontSize = 10;
-            rearBox.LabelFontName = "Menlo";
-            rearBox.LabelAlignment = Alignment.UpperRight;
-            rearBox.LabelOffsetX = -5;
-            rearBox.LabelBold = true;
-            rearBox.LabelBackgroundColor = Color.FromHex("#15191C").WithAlpha(200);
-            rearBox.LabelBorderColor = RearColor.WithAlpha(80);
-            rearBox.LabelBorderWidth = 1;
-            rearBox.LabelPadding = 5;
+            var (fac, fp5c, fmc, far, fp5r, fmr) = GetStats(SuspensionType.Front);
+            var (rac, rp5c, rmc, rar, rp5r, rmr) = GetStats(SuspensionType.Rear);
+            statsText =
+                $"mm/s\u00A0\u00A0\u00A0\u00A0\u00A0Front\u00A0\u00A0\u00A0\u00A0\u00A0Rear\n" +
+                $"C\u00A0avg:{N(fac)}\u00A0{N(rac)}\n" +
+                $"C\u00A095th:{N(fp5c)}\u00A0{N(rp5c)}\n" +
+                $"C\u00A0max:{N(fmc)}\u00A0{N(rmc)}\n" +
+                $"R\u00A0avg:{N(far)}\u00A0{N(rar)}\n" +
+                $"R\u00A095th:{N(fp5r)}\u00A0{N(rp5r)}\n" +
+                $"R\u00A0max:{N(fmr)}\u00A0{N(rmr)}";
+        }
+        else
+        {
+            var type = telemetryData.Front.Present ? SuspensionType.Front : SuspensionType.Rear;
+            var (ac, p5c, mc, ar, p5r, mr) = GetStats(type);
+            statsText =
+                $"mm/s\n" +
+                $"C\u00A0avg:{N(ac)}\n" +
+                $"C\u00A095th:{N(p5c)}\n" +
+                $"C\u00A0max:{N(mc)}\n" +
+                $"R\u00A0avg:{N(ar)}\n" +
+                $"R\u00A095th:{N(p5r)}\n" +
+                $"R\u00A0max:{N(mr)}";
         }
 
-        // Front stats box: upper-right
-        if (telemetryData.Front.Present)
-        {
-            var frontBox = Plot.Add.Text(BuildStats(SuspensionType.Front, telemetryData), VelocityLimitMs, topLimit * 0.97);
-            frontBox.LabelFontColor = FrontColor;
-            frontBox.LabelFontSize = 10;
-            frontBox.LabelFontName = "Menlo";
-            frontBox.LabelAlignment = Alignment.UpperRight;
-            frontBox.LabelOffsetX = -5;
-            frontBox.LabelBold = true;
-            frontBox.LabelBackgroundColor = Color.FromHex("#15191C").WithAlpha(200);
-            frontBox.LabelBorderColor = FrontColor.WithAlpha(80);
-            frontBox.LabelBorderWidth = 1;
-            frontBox.LabelPadding = 5;
-        }
+        var box = Plot.Add.Text(statsText, VelocityLimitMs, topLimit * 0.97);
+        box.LabelFontColor = Color.FromHex("#D0D0D0");
+        box.LabelFontSize = 9;
+        box.LabelFontName = "Menlo";
+        box.LabelAlignment = Alignment.UpperRight;
+        box.LabelOffsetX = -5;
+        box.LabelBold = true;
+        box.LabelBackgroundColor = Color.FromHex("#15191C").WithAlpha(210);
+        box.LabelBorderColor = Color.FromHex("#808080").WithAlpha(80);
+        box.LabelBorderWidth = 1;
+        box.LabelPadding = 5;
     }
 
     public override void LoadTelemetryData(TelemetryData telemetryData)
@@ -87,7 +87,7 @@ public class VelocityDistributionComparisonPlot(Plot plot) : TelemetryPlot(plot)
             return;
         }
 
-        Plot.Axes.Title.Label.Text = "Velocity distribution comparison";
+        SetTitle("Velocity distribution comparison");
         // Match Spring tab padding: left=70, right=20, bottom=50, top=40
         Plot.Layout.Fixed(new PixelPadding(70, 20, 50, 40));
 

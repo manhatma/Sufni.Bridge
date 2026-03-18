@@ -77,9 +77,9 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
     {
         base.LoadTelemetryData(telemetryData);
 
-        Plot.Axes.Title.Label.Text = type == SuspensionType.Front
+        SetTitle(type == SuspensionType.Front
             ? "Front velocity"
-            : "Rear velocity";
+            : "Rear velocity");
 
         // Left=70 (Y-axis label), Right=20, Bottom=50, Top=100 (stats zone below title)
         Plot.Layout.Fixed(new PixelPadding(70, 20, 50, 100));

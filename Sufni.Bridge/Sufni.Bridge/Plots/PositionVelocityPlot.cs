@@ -11,9 +11,9 @@ public class PositionVelocityPlot(Plot plot, SuspensionType type) : TelemetryPlo
     {
         base.LoadTelemetryData(telemetryData);
 
-        Plot.Axes.Title.Label.Text = type == SuspensionType.Front
+        SetTitle(type == SuspensionType.Front
             ? "Front position vs velocity"
-            : "Rear position vs velocity";
+            : "Rear position vs velocity");
         Plot.Layout.Fixed(new PixelPadding(70, 10, 50, 40));
 
         Plot.Axes.Bottom.Label.Text = "Travel (mm)";

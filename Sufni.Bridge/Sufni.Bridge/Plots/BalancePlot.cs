@@ -24,7 +24,7 @@ public class BalancePlot(Plot plot, BalanceType type) : TelemetryPlot(plot)
     {
         base.LoadTelemetryData(telemetryData);
 
-        Plot.Axes.Title.Label.Text = type == BalanceType.Compression ? "Compression balance" : "Rebound balance";
+        SetTitle(type == BalanceType.Compression ? "Compression balance" : "Rebound balance");
         Plot.Axes.Bottom.Label.Text = "Suspension travel (%)";
         Plot.Axes.Bottom.Label.ForeColor = Color.FromHex("#D0D0D0");
         Plot.Axes.Left.Label.Text = type == BalanceType.Compression ? "Compression velocity (mm/s)" : "Rebound velocity (mm/s)";

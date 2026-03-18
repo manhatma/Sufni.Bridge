@@ -27,9 +27,9 @@ public class VelocityDistributionPlot(Plot plot, SuspensionType type) : Telemetr
     {
         base.LoadTelemetryData(telemetryData);
 
-        Plot.Axes.Title.Label.Text = type == SuspensionType.Front
+        SetTitle(type == SuspensionType.Front
             ? "Front velocity distribution"
-            : "Rear velocity distribution";
+            : "Rear velocity distribution");
         Plot.Layout.Fixed(new PixelPadding(70, 10, 50, 40));
 
         Plot.Axes.Bottom.Label.Text = "Velocity (mm/s)";

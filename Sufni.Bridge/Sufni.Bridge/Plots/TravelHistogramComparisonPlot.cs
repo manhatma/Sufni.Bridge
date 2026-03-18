@@ -32,7 +32,7 @@ public class TravelHistogramComparisonPlot(Plot plot) : TelemetryPlot(plot)
         // Front labels: left of line (UpperRight alignment = text ends at the x position)
         // Rear labels:  right of line (UpperLeft alignment = text starts at the x position), lower y
         bool isFront = type == SuspensionType.Front;
-        var labelY = isFront ? yRangeTop * 0.92 : yRangeTop * 0.72;
+        var labelY = isFront ? yRangeTop * 0.92 : yRangeTop * 0.82;
         var labelAlignment = isFront ? Alignment.UpperRight : Alignment.UpperLeft;
         var xOffset = isFront ? -4 : 4;
 
@@ -59,7 +59,7 @@ public class TravelHistogramComparisonPlot(Plot plot) : TelemetryPlot(plot)
             return;
         }
 
-        Plot.Axes.Title.Label.Text = "Travel histogram comparison";
+        SetTitle("Travel histogram comparison");
         Plot.Layout.Fixed(new PixelPadding(70, 20, 50, 40));
 
         Plot.Axes.Bottom.Label.Text = "Travel (%)";
@@ -123,16 +123,16 @@ public class TravelHistogramComparisonPlot(Plot plot) : TelemetryPlot(plot)
             [0.0, 10.0, 20.0, 30.0, 40.0, 50.0, 60.0, 70.0, 80.0, 90.0, 100.0],
             ["0", "10", "20", "30", "40", "50", "60", "70", "80", "90", "100"]);
 
-        // Legend — top-right
-        var frontLegend = Plot.Add.Text("Front", 98, yRangeTop * 0.97);
+        // Legend — top-left
+        var frontLegend = Plot.Add.Text("Front", 2, yRangeTop * 0.97);
         frontLegend.LabelFontColor = FrontColor;
         frontLegend.LabelFontSize = 12;
-        frontLegend.LabelAlignment = Alignment.UpperRight;
+        frontLegend.LabelAlignment = Alignment.UpperLeft;
 
-        var rearLegend = Plot.Add.Text("Rear", 98, yRangeTop * 0.87);
+        var rearLegend = Plot.Add.Text("Rear", 2, yRangeTop * 0.87);
         rearLegend.LabelFontColor = RearColor;
         rearLegend.LabelFontSize = 12;
-        rearLegend.LabelAlignment = Alignment.UpperRight;
+        rearLegend.LabelAlignment = Alignment.UpperLeft;
 
         // Stat lines (front above, rear below so labels don't overlap)
         AddStatLines(telemetryData, SuspensionType.Front, yRangeTop);

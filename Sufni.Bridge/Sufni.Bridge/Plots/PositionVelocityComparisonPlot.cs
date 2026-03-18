@@ -16,7 +16,7 @@ public class PositionVelocityComparisonPlot(Plot plot) : TelemetryPlot(plot)
             return;
         }
 
-        Plot.Axes.Title.Label.Text = "Position vs velocity comparison";
+        SetTitle("Position vs velocity comparison");
         Plot.Layout.Fixed(new PixelPadding(70, 10, 50, 40));
 
         Plot.Axes.Bottom.Label.Text = "Travel (mm)";

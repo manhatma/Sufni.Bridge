@@ -73,9 +73,9 @@ public class TravelHistogramPlot(Plot plot, SuspensionType type) : TelemetryPlot
     {
         base.LoadTelemetryData(telemetryData);
 
-        Plot.Axes.Title.Label.Text = type == SuspensionType.Front
+        SetTitle(type == SuspensionType.Front
             ? "Front travel histogram"
-            : "Rear travel histogram";
+            : "Rear travel histogram");
         Plot.Layout.Fixed(new PixelPadding(70, 20, 50, 40));
 
         Plot.Axes.Bottom.Label.Text = "Travel (%)";

@@ -51,6 +51,9 @@ public class SufniPlot
         Plot.Axes.Bottom.MinorTickStyle.Width = 0;
     }
 
+    protected void SetTitle(string text) =>
+        Plot.Axes.Title.Label.Text = text.ToUpperInvariant();
+
     protected void AddLabel(string content, double x, double y, int xoffset, int yoffset, Alignment alignment = Alignment.LowerLeft, string? colorHex = null)
     {
         var text = Plot.Add.Text(content, x, y);
