@@ -11,7 +11,7 @@
     mc:Ignorable="d">
     <Grid
         Margin="0,15,0,5"
-        ColumnDefinitions="auto * auto auto"
+        ColumnDefinitions="auto * auto auto auto"
         RowDefinitions="39">
         <Button
             Grid.Row="0"
@@ -45,6 +45,22 @@
             Margin="0,0,5,0"
             HorizontalContentAlignment="Center"
             VerticalContentAlignment="Center"
+            Command="{Binding ExportPdfCommand}"
+            IsVisible="{Binding ShowPdfExportButton}"
+            Svg.Css=".default { fill: #a0a0a0; }">
+            <Image
+                Width="16"
+                Height="16"
+                Source="{SvgImage /Assets/fa-file-pdf.svg}" />
+        </Button>
+        <Button
+            Grid.Row="0"
+            Grid.Column="3"
+            Width="39"
+            Height="39"
+            Margin="0,0,5,0"
+            HorizontalContentAlignment="Center"
+            VerticalContentAlignment="Center"
             Command="{Binding ResetCommand}">
             <Image
                 Width="16"
@@ -54,7 +70,7 @@
         <Button
             Name="DeleteButton"
             Grid.Row="0"
-            Grid.Column="3"
+            Grid.Column="4"
             Width="39"
             Height="39"
             Margin="0,0,2,0"

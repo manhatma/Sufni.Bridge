@@ -16,6 +16,7 @@ using ScottPlot;
 using Sufni.Bridge.Models;
 using Sufni.Bridge.Models.Telemetry;
 using Sufni.Bridge.Plots;
+using HapticFeedback;
 using Sufni.Bridge.Services;
 using Sufni.Bridge.ViewModels.SessionPages;
 
@@ -24,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 21;
+    private const int CurrentPlotVersion = 22;
 
     // Shared across all instances — updated whenever any session loads with real bounds.
     // Default matches iPhone 15 Pro logical width; height/2 is used for plots.
@@ -41,6 +42,8 @@ public partial class SessionViewModel : ItemViewModelBase
     public ObservableCollection<PageViewModelBase> Pages { get; }
     public string Description => NotesPage.Description ?? "";
     public override bool IsComplete => session.HasProcessedData;
+    public override bool ShowPdfExportButton => true;
+    [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private bool isGeneratingPdf;
 
     #region Private methods
 
@@ -898,6 +901,8 @@ public partial class SessionViewModel : ItemViewModelBase
 
     protected override async Task ExportPdf()
     {
+        App.Current?.Services?.GetService<IHapticFeedback>()?.Click();
+        IsGeneratingPdf = true;
         try
         {
             var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
@@ -945,12 +950,14 @@ public partial class SessionViewModel : ItemViewModelBase
 
             var pdfPath = await Task.Run(() => RenderSvgsToPdf(validSvgs));
 
+            IsGeneratingPdf = false;
             var shareService = App.Current?.Services?.GetService<IShareService>();
             if (shareService is not null)
                 await shareService.ShareFileAsync(pdfPath);
         }
         catch (Exception e)
         {
+            IsGeneratingPdf = false;
             ErrorMessages.Add($"PDF export failed: {e.Message}");
         }
     }
@@ -962,23 +969,43 @@ public partial class SessionViewModel : ItemViewModelBase
         var sanitizedName = System.Text.RegularExpressions.Regex.Replace(Name ?? "session", @"[^\w\-.]", "_");
         var pdfPath = System.IO.Path.Combine(tempDir, $"{sanitizedName}.pdf");
 
-        using var stream = new System.IO.FileStream(pdfPath, System.IO.FileMode.Create);
-        using var document = SkiaSharp.SKDocument.CreatePdf(stream);
+        // Parse all SVGs in parallel (expensive XML + Skia picture recording),
+        // then write PDF pages sequentially (SKDocument is not thread-safe).
+        var svgObjects = svgXmlList
+            .AsParallel()
+            .AsOrdered()
+            .Select(xml =>
+            {
+                var svg = new Svg.Skia.SKSvg();
+                svg.FromSvg(xml);
+                return svg;
+            })
+            .ToList();
 
-        foreach (var svgXml in svgXmlList)
+        try
         {
-            using var svg = new Svg.Skia.SKSvg();
-            svg.FromSvg(svgXml);
-            var picture = svg.Picture;
-            if (picture is null) continue;
+            using var stream = new System.IO.FileStream(pdfPath, System.IO.FileMode.Create);
+            using var document = SkiaSharp.SKDocument.CreatePdf(stream);
 
-            var bounds = picture.CullRect;
-            using var canvas = document.BeginPage(bounds.Width, bounds.Height);
-            canvas.DrawPicture(picture);
-            document.EndPage();
+            foreach (var svg in svgObjects)
+            {
+                var picture = svg.Picture;
+                if (picture is null) continue;
+
+                var bounds = picture.CullRect;
+                using var canvas = document.BeginPage(bounds.Width, bounds.Height);
+                canvas.DrawPicture(picture);
+                document.EndPage();
+            }
+
+            document.Close();
+        }
+        finally
+        {
+            foreach (var svg in svgObjects)
+                svg.Dispose();
         }
 
-        document.Close();
         return pdfPath;
     }
 

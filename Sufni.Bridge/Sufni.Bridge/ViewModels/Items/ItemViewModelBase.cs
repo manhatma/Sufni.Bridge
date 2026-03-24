@@ -83,14 +83,10 @@ public partial class ItemViewModelBase : ViewModelBase
         // state of the Delete button on the CommonButtonLine.
     }
 
+    public virtual bool ShowPdfExportButton => false;
+
     protected virtual bool CanExportPdf() { return false; }
 
     [RelayCommand(CanExecute = nameof(CanExportPdf))]
     protected virtual Task ExportPdf() { return Task.CompletedTask; }
-
-    [RelayCommand(CanExecute = nameof(CanExportPdf))]
-    private void FakeExportPdf()
-    {
-        // Controls enabled/disabled state of the PDF export button in the swipe menu.
-    }
 }

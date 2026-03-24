@@ -101,25 +101,6 @@
                     </Button>
                 </DataTemplate>
             </labs:Swipe.Left>
-            <labs:Swipe.Right>
-                <DataTemplate>
-                    <Button
-                        Width="64"
-                        Height="48"
-                        Padding="0"
-                        HorizontalContentAlignment="Right"
-                        VerticalContentAlignment="Center"
-                        Classes="swipedelete"
-                        Command="{Binding $parent[labs:Swipe].((vm:ItemViewModelBase)DataContext).FakeExportPdfCommand}"
-                        Svg.Css=".default { fill: #f0f0f0; }">
-                        <Image
-                            Name="PdfIcon"
-                            Width="16"
-                            Height="16"
-                            Source="{SvgImage /Assets/fa-file-pdf.svg}" />
-                    </Button>
-                </DataTemplate>
-            </labs:Swipe.Right>
         </labs:Swipe>
     </Panel>
 </UserControl>

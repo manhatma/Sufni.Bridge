@@ -72,15 +72,5 @@ public partial class SwipeToDeleteButton : UserControl
 
             swipe.SwipeState = SwipeState.Hidden;
         }
-        else if (e.NewValue is SwipeState.RightVisible)
-        {
-            var vm = swipe.DataContext as ItemViewModelBase;
-            if (vm is not null && vm.ExportPdfCommand.CanExecute(null))
-            {
-                vm.ExportPdfCommand.Execute(null);
-            }
-
-            swipe.SwipeState = SwipeState.Hidden;
-        }
     }
 }

@@ -1,4 +1,6 @@
+using System;
 using System.Threading.Tasks;
+using CoreFoundation;
 using Foundation;
 using Sufni.Bridge.Services;
 using UIKit;
@@ -9,44 +11,64 @@ public class ShareService : IShareService
 {
     public Task ShareFileAsync(string filePath)
     {
-        var url = NSUrl.FromFilename(filePath);
-        var activityController = new UIActivityViewController(
-            new NSObject[] { url }, null);
+        var tcs = new TaskCompletionSource<bool>();
 
-        var presenter = GetTopmostViewController();
-        if (presenter == null) return Task.CompletedTask;
-
-        // On iPad, UIActivityViewController needs a source rect
-        if (activityController.PopoverPresentationController != null)
+        DispatchQueue.MainQueue.DispatchAsync(() =>
         {
-            activityController.PopoverPresentationController.SourceView = presenter.View;
-            var b = presenter.View.Bounds;
-            activityController.PopoverPresentationController.SourceRect =
-                new CoreGraphics.CGRect(b.X + b.Width / 2, b.Y + b.Height / 2, 0, 0);
-        }
+            try
+            {
+                var url = NSUrl.FromFilename(filePath);
+                var activityController = new UIActivityViewController(
+                    new NSObject[] { url }, null);
 
-        return presenter.PresentViewControllerAsync(activityController, true);
+                var presenter = GetTopmostViewController();
+                if (presenter == null)
+                {
+                    tcs.SetResult(false);
+                    return;
+                }
+
+                // iPad: UIActivityViewController needs a source rect
+                if (activityController.PopoverPresentationController != null)
+                {
+                    activityController.PopoverPresentationController.SourceView = presenter.View;
+                    var b = presenter.View!.Bounds;
+                    activityController.PopoverPresentationController.SourceRect =
+                        new CoreGraphics.CGRect(b.X + b.Width / 2, b.Y + b.Height / 2, 0, 0);
+                }
+
+                activityController.CompletionWithItemsHandler =
+                    (activityType, completed, returnedItems, error) => tcs.SetResult(completed);
+
+                presenter.PresentViewController(activityController, true, null);
+            }
+            catch (Exception ex)
+            {
+                tcs.SetException(ex);
+            }
+        });
+
+        return tcs.Task;
     }
 
     private static UIViewController? GetTopmostViewController()
     {
         UIViewController? root = null;
 
-        // iOS 15+: use window scenes
         foreach (var scene in UIApplication.SharedApplication.ConnectedScenes)
         {
-            if (scene is UIWindowScene windowScene)
+            if (scene is not UIWindowScene windowScene) continue;
+
+            // prefer key window, fall back to first window
+            var windows = windowScene.Windows;
+            UIWindow? window = null;
+            foreach (var w in windows) { if (w.IsKeyWindow) { window = w; break; } }
+            window ??= windows.Length > 0 ? windows[0] : null;
+            if (window?.RootViewController != null)
             {
-                foreach (var window in windowScene.Windows)
-                {
-                    if (window.IsKeyWindow)
-                    {
-                        root = window.RootViewController;
-                        break;
-                    }
-                }
+                root = window.RootViewController;
+                break;
             }
-            if (root != null) break;
         }
 
         // Traverse to the topmost presented view controller
