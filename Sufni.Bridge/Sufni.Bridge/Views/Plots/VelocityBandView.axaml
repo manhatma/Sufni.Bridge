@@ -16,10 +16,10 @@
                     <TextBlock
                         Margin="0,0,0,2"
                         HorizontalAlignment="Left"
-                        FontSize="10"
+                        FontSize="12"
                         FontWeight="Bold"
                         Foreground="#d0d0d0"
-                        Text="Zone %" />
+                        Text="{Binding Path=Title, RelativeSource={RelativeSource TemplatedParent}}" />
 
                     <!--  Horizontal bands  -->
                     <Grid Height="44">

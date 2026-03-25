@@ -71,12 +71,6 @@ public class CombinedBalancePlot(Plot plot) : TelemetryPlot(plot)
         rearRebTrend.LineStyle.Color = RearColor;
         rearRebTrend.LineStyle.Width = 2;
 
-        // MSD statistics — positioned in their respective quadrants
-        var compMsd = compBalance.MeanSignedDeviation / maxCompVelocity * 100.0;
-        var rebMsd = rebBalance.MeanSignedDeviation / maxRebVelocity * 100.0;
-        AddLabel($"MSD Comp: {compMsd:0.00} %", 100, roundedMaxComp * 0.15, -10, 0, Alignment.LowerRight);
-        AddLabel($"MSD Reb: {rebMsd:0.00} %", 100, -roundedMaxReb * 0.15, -10, 0, Alignment.UpperRight);
-
         // Legend
         var frontLegend = Plot.Add.Text("Front", 100, roundedMaxComp * 0.95);
         frontLegend.LabelFontColor = FrontColor;

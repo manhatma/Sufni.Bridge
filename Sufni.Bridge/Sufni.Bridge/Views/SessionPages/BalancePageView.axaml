@@ -17,8 +17,8 @@
     <ScrollViewer Width="{Binding $parent[ScrollViewer].Bounds.Width}" Height="{Binding $parent[ScrollViewer].Bounds.Height}" IsScrollChainingEnabled="False">
         <Grid RowDefinitions="* * *">
             <Image Grid.Row="0" Source="{Binding CombinedBalance}" />
-            <Image Grid.Row="1" Source="{Binding CompressionBalance}" />
-            <Image Grid.Row="2" Source="{Binding ReboundBalance}" />
+            <Image Grid.Row="1" Source="{Binding ReboundBalance}" />
+            <Image Grid.Row="2" Source="{Binding CompressionBalance}" />
         </Grid>
     </ScrollViewer>
 </UserControl>

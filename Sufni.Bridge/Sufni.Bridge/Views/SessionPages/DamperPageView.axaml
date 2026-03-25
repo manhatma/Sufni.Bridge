@@ -26,6 +26,7 @@
                 <Image IsVisible="{Binding FrontLowSpeedVelocityHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontLowSpeedVelocityHistogram}" />
                 <plots:VelocityBandView
                     Margin="50,0,20,0"
+                    Title="Front Zone %"
                     HscPercentage="{Binding FrontHscPercentage}"
                     HsrPercentage="{Binding FrontHsrPercentage}"
                     LscPercentage="{Binding FrontLscPercentage}"
@@ -38,6 +39,7 @@
                 <Image IsVisible="{Binding RearLowSpeedVelocityHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearLowSpeedVelocityHistogram}" />
                 <plots:VelocityBandView
                     Margin="50,0,20,0"
+                    Title="Rear Zone %"
                     HscPercentage="{Binding RearHscPercentage}"
                     HsrPercentage="{Binding RearHsrPercentage}"
                     LscPercentage="{Binding RearLscPercentage}"

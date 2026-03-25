@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 23;
+    private const int CurrentPlotVersion = 28;
 
     // Shared across all instances — updated whenever any session loads with real bounds.
     // Default matches iPhone 15 Pro logical width; height/2 is used for plots.
@@ -399,6 +399,11 @@ public partial class SessionViewModel : ItemViewModelBase
         return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{value:0.0} mm/s");
     }
 
+    private static string FormatPercent(double value)
+    {
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{value:0.0}");
+    }
+
     private static string FormatBottomouts(int value) => $"{value} times";
 
     private static double EvaluatePolynomial(IReadOnlyList<double> coefficients, double x)
@@ -621,16 +626,20 @@ public partial class SessionViewModel : ItemViewModelBase
             new SummaryValueRow("Run duration", $"{runDuration} s")
         ];
 
-        // Run the three independent (read-only) computations in parallel
+        // Run the independent (read-only) computations in parallel
         var forkStatsTask = Task.Run(() => BuildWheelStats(telemetryData, SuspensionType.Front));
         var shockStatsTask = Task.Run(() => BuildShockStats(telemetryData));
         var rearWheelStatsTask = Task.Run(() => BuildWheelStats(telemetryData, SuspensionType.Rear));
-        await Task.WhenAll(forkStatsTask, shockStatsTask, rearWheelStatsTask);
+        var frontBandsTask = Task.Run(() => telemetryData.Front.Present ? telemetryData.CalculateVelocityBands(SuspensionType.Front, 200) : (VelocityBands?)null);
+        var rearBandsTask = Task.Run(() => telemetryData.Rear.Present ? telemetryData.CalculateVelocityBands(SuspensionType.Rear, 200) : (VelocityBands?)null);
+        await Task.WhenAll(forkStatsTask, shockStatsTask, rearWheelStatsTask, frontBandsTask, rearBandsTask);
 
         var forkStats = forkStatsTask.Result;
         var shockStats = shockStatsTask.Result;
         var frontWheelStats = forkStats;  // Front wheel stats == fork stats — same data
         var rearWheelStats = rearWheelStatsTask.Result;
+        var frontBands = frontBandsTask.Result;
+        var rearBands = rearBandsTask.Result;
 
         SummaryPage.ForkShockRows =
         [
@@ -697,7 +706,19 @@ public partial class SessionViewModel : ItemViewModelBase
                 rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.MaxCompression)),
             new SummaryComparisonRow("Reb [MAX]",
                 frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.MaxRebound),
-                rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.MaxRebound))
+                rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.MaxRebound)),
+            new SummaryComparisonRow("HSR [%]",
+                frontBands is null ? "-" : FormatPercent(frontBands.HighSpeedRebound),
+                rearBands is null ? "-" : FormatPercent(rearBands.HighSpeedRebound)),
+            new SummaryComparisonRow("LSR [%]",
+                frontBands is null ? "-" : FormatPercent(frontBands.LowSpeedRebound),
+                rearBands is null ? "-" : FormatPercent(rearBands.LowSpeedRebound)),
+            new SummaryComparisonRow("LSC [%]",
+                frontBands is null ? "-" : FormatPercent(frontBands.LowSpeedCompression),
+                rearBands is null ? "-" : FormatPercent(rearBands.LowSpeedCompression)),
+            new SummaryComparisonRow("HSC [%]",
+                frontBands is null ? "-" : FormatPercent(frontBands.HighSpeedCompression),
+                rearBands is null ? "-" : FormatPercent(rearBands.HighSpeedCompression))
         ];
 
         return new CachedSummaryData(
@@ -951,7 +972,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 return;
             }
 
-            var pdfPath = await Task.Run(() => RenderSvgsToPdf(validSvgs, SummaryPage));
+            var pdfPath = await Task.Run(() => RenderSvgsToPdf(validSvgs, SummaryPage, NotesPage));
 
             IsGeneratingPdf = false;
             var shareService = App.Current?.Services?.GetService<IShareService>();
@@ -975,7 +996,7 @@ public partial class SessionViewModel : ItemViewModelBase
         const float titleFontSize = 10f;
 
         float contentWidth = pageWidth - margin * 2f;
-        float col0 = 160f;
+        float col0 = 95f;
         float col12 = (contentWidth - col0) / 2f;
 
         var bgColor       = SkiaSharp.SKColor.Parse("#15191c");
@@ -1062,7 +1083,144 @@ public partial class SessionViewModel : ItemViewModelBase
         document.EndPage();
     }
 
-    private string RenderSvgsToPdf(List<string> svgXmlList, SummaryPageViewModel summary)
+    private static void DrawNotesPage(SkiaSharp.SKDocument document, NotesPageViewModel notes, float pageWidth)
+    {
+        const float margin = 30f;
+        const float rowH = 26f;
+        const float titleH = 28f;
+        const float sectionGap = 18f;
+        const float fontSize = 11f;
+        const float titleFontSize = 10f;
+        const float noteFontSize = 11f;
+
+        float contentWidth = pageWidth - margin * 2f;
+        float col0 = 95f;
+        float col12 = (contentWidth - col0) / 2f;
+
+        var bgColor     = SkiaSharp.SKColor.Parse("#15191c");
+        var cellBg      = SkiaSharp.SKColor.Parse("#20262b");
+        var headerBg    = SkiaSharp.SKColor.Parse("#66c2a5");
+        var headerFg    = SkiaSharp.SKColor.Parse("#15191c");
+        var cellFg      = SkiaSharp.SKColor.Parse("#a0a0a0");
+        var borderColor = SkiaSharp.SKColor.Parse("#505050");
+
+        var settingRows = new[]
+        {
+            ("Spring",  notes.ForkSettings.SpringRate,              notes.ShockSettings.SpringRate),
+            ("VolSpc",  notes.ForkSettings.VolSpc?.ToString("F2"),  notes.ShockSettings.VolSpc?.ToString("F2")),
+            ("HSC",     notes.ForkSettings.HighSpeedCompression?.ToString(), notes.ShockSettings.HighSpeedCompression?.ToString()),
+            ("LSC",     notes.ForkSettings.LowSpeedCompression?.ToString(),  notes.ShockSettings.LowSpeedCompression?.ToString()),
+            ("LSR",     notes.ForkSettings.LowSpeedRebound?.ToString(),      notes.ShockSettings.LowSpeedRebound?.ToString()),
+            ("HSR",     notes.ForkSettings.HighSpeedRebound?.ToString(),     notes.ShockSettings.HighSpeedRebound?.ToString()),
+        };
+
+        bool hasDescription = !string.IsNullOrWhiteSpace(notes.Description);
+        float noteHeight = 0f;
+        string[] noteLines = [];
+        using var notePaint = new SkiaSharp.SKPaint { IsAntialias = true, TextSize = noteFontSize };
+
+        if (hasDescription)
+        {
+            // Word-wrap the description to fit contentWidth with 8px padding on each side
+            float wrapWidth = contentWidth - 16f;
+            var words = notes.Description!.Replace("\r\n", "\n").Replace("\r", "\n").Split(' ');
+            var lines = new System.Collections.Generic.List<string>();
+            var currentLine = "";
+            foreach (var word in words)
+            {
+                foreach (var segment in word.Split('\n'))
+                {
+                    var test = currentLine.Length == 0 ? segment : currentLine + " " + segment;
+                    if (notePaint.MeasureText(test) > wrapWidth && currentLine.Length > 0)
+                    {
+                        lines.Add(currentLine);
+                        currentLine = segment;
+                    }
+                    else
+                    {
+                        currentLine = test;
+                    }
+                    if (word.Contains('\n') && segment != words[^1].Split('\n')[^1])
+                    {
+                        lines.Add(currentLine);
+                        currentLine = "";
+                    }
+                }
+            }
+            if (currentLine.Length > 0) lines.Add(currentLine);
+            noteLines = lines.ToArray();
+            noteHeight = titleH + noteLines.Length * (noteFontSize + 4f) + 16f;
+        }
+
+        float pageHeight = margin * 2f
+            + titleH + settingRows.Length * rowH
+            + (hasDescription ? sectionGap + noteHeight : 0f);
+
+        using var canvas = document.BeginPage(pageWidth, pageHeight);
+        canvas.Clear(bgColor);
+
+        using var fillPaint   = new SkiaSharp.SKPaint { IsStroke = false };
+        using var strokePaint = new SkiaSharp.SKPaint { IsStroke = true, StrokeWidth = 0.75f, Color = borderColor };
+        using var textPaint   = new SkiaSharp.SKPaint { IsAntialias = true, TextSize = fontSize };
+        using var boldPaint   = new SkiaSharp.SKPaint { IsAntialias = true, TextSize = titleFontSize,
+            Typeface = SkiaSharp.SKTypeface.FromFamilyName(null, SkiaSharp.SKFontStyle.Bold) };
+
+        void DrawCell(float x, float y, float w, float h, SkiaSharp.SKColor bg, SkiaSharp.SKColor fg,
+                      string text, bool rightAlign, bool bold)
+        {
+            var rect = new SkiaSharp.SKRect(x, y, x + w, y + h);
+            fillPaint.Color = bg;
+            canvas.DrawRect(rect, fillPaint);
+            canvas.DrawRect(rect, strokePaint);
+            var p = bold ? boldPaint : textPaint;
+            p.Color = fg;
+            float tw = p.MeasureText(text);
+            float tx = rightAlign ? x + w - 6f - tw : x + 6f;
+            float ty = y + h / 2f + p.TextSize * 0.35f;
+            canvas.DrawText(text, tx, ty, p);
+        }
+
+        float curY = margin;
+
+        // SETUP header
+        DrawCell(margin,              curY, col0,  titleH, headerBg, headerFg, "",       false, true);
+        DrawCell(margin + col0,       curY, col12, titleH, headerBg, headerFg, "FRONT",  true,  true);
+        DrawCell(margin + col0 + col12, curY, col12, titleH, headerBg, headerFg, "REAR", true,  true);
+        curY += titleH;
+
+        foreach (var (label, frontVal, rearVal) in settingRows)
+        {
+            DrawCell(margin,                curY, col0,  rowH, cellBg, cellFg, label,          false, false);
+            DrawCell(margin + col0,         curY, col12, rowH, cellBg, cellFg, frontVal ?? "-", true,  false);
+            DrawCell(margin + col0 + col12, curY, col12, rowH, cellBg, cellFg, rearVal  ?? "-", true,  false);
+            curY += rowH;
+        }
+
+        // Notes description
+        if (hasDescription)
+        {
+            curY += sectionGap;
+            DrawCell(margin, curY, contentWidth, titleH, headerBg, headerFg, "NOTES", false, true);
+            curY += titleH;
+
+            var noteRect = new SkiaSharp.SKRect(margin, curY, margin + contentWidth, curY + noteLines.Length * (noteFontSize + 4f) + 16f);
+            fillPaint.Color = cellBg;
+            canvas.DrawRect(noteRect, fillPaint);
+            canvas.DrawRect(noteRect, strokePaint);
+
+            notePaint.Color = cellFg;
+            float lineY = curY + 8f + noteFontSize;
+            foreach (var line in noteLines)
+            {
+                canvas.DrawText(line, margin + 8f, lineY, notePaint);
+                lineY += noteFontSize + 4f;
+            }
+        }
+
+        document.EndPage();
+    }
+
+    private string RenderSvgsToPdf(List<string> svgXmlList, SummaryPageViewModel summary, NotesPageViewModel notes)
     {
         var tempDir = System.IO.Path.GetTempPath();
         // Strip characters that are invalid in filenames or URLs (space, #, %, &, etc.)
@@ -1099,6 +1257,8 @@ public partial class SessionViewModel : ItemViewModelBase
                 canvas.DrawPicture(picture);
                 document.EndPage();
             }
+
+            DrawNotesPage(document, notes, (float)LastKnownBounds.Width);
 
             document.Close();
         }
