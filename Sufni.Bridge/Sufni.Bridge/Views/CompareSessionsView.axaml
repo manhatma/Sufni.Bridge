@@ -1,0 +1,124 @@
+<UserControl
+    x:Class="Sufni.Bridge.Views.CompareSessionsView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="clr-namespace:Sufni.Bridge.ViewModels"
+    d:DesignHeight="800"
+    d:DesignWidth="400"
+    x:DataType="vm:CompareSessionsViewModel"
+    mc:Ignorable="d"
+    Loaded="OnLoaded">
+
+    <UserControl.Styles>
+        <Style Selector="Border.compare-cell">
+            <Setter Property="BorderBrush" Value="{StaticResource SufniBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="Background" Value="{StaticResource SufniBackground}" />
+        </Style>
+        <Style Selector="Border.compare-header-cell">
+            <Setter Property="Background" Value="#66c2a5" />
+            <Setter Property="BorderBrush" Value="{StaticResource SufniBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="8,6" />
+        </Style>
+        <Style Selector="Border.compare-header-cell TextBlock">
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="#15191c" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+        <Style Selector="TextBlock">
+            <Setter Property="FontSize" Value="12" />
+        </Style>
+        <Style Selector="TextBlock.section-title">
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="Background" Value="#66c2a5" />
+            <Setter Property="Foreground" Value="#15191c" />
+            <Setter Property="Padding" Value="8,4" />
+        </Style>
+    </UserControl.Styles>
+
+    <Grid Margin="10,0,10,10" RowDefinitions="auto auto * auto">
+        <!-- Title + Back button + PDF button -->
+        <Grid Grid.Row="0" ColumnDefinitions="40 * 40" Margin="0,0,0,10">
+            <Button Grid.Column="0" Command="{Binding OpenPreviousPageCommand}"
+                    Background="Transparent" Foreground="#D0D0D0" FontSize="18"
+                    HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                    Padding="0" Width="40" Height="40">
+                ‹
+            </Button>
+            <TextBlock Grid.Column="1" Text="Compare Sessions"
+                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="#D0D0D0" FontSize="16" FontWeight="Bold" />
+            <Panel Grid.Column="2">
+                <Button Command="{Binding ExportPdfCommand}"
+                        IsVisible="{Binding !IsGeneratingPdf}"
+                        Width="39" Height="39"
+                        HorizontalContentAlignment="Center" VerticalContentAlignment="Center"
+                        Svg.Css=".default { fill: #a0a0a0; }">
+                    <Image Width="16" Height="16" Source="{SvgImage /Assets/fa-file-pdf.svg}" />
+                </Button>
+                <TextBlock IsVisible="{Binding IsGeneratingPdf}"
+                           Text="…" Foreground="#D0D0D0" FontSize="18"
+                           HorizontalAlignment="Center" VerticalAlignment="Center" />
+            </Panel>
+        </Grid>
+
+        <!-- Loading overlay -->
+        <Panel Grid.Row="0" Grid.RowSpan="4" IsVisible="{Binding IsLoading}" ZIndex="100"
+               Background="#AA15191C">
+            <TextBlock Text="Loading..." HorizontalAlignment="Center" VerticalAlignment="Center"
+                       Foreground="#D0D0D0" FontSize="16" />
+        </Panel>
+
+        <!-- Main content -->
+        <ScrollViewer Grid.Row="2" IsScrollChainingEnabled="False">
+            <StackPanel Orientation="Vertical" Spacing="12" Margin="0,0,0,10">
+
+                <!-- Front Travel Histogram -->
+                <Image IsVisible="{Binding FrontTravelHistogramSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Source="{Binding FrontTravelHistogramSvg}" />
+
+                <!-- Rear Travel Histogram -->
+                <Image IsVisible="{Binding RearTravelHistogramSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Source="{Binding RearTravelHistogramSvg}" />
+
+                <!-- Front vs Rear Travel -->
+                <Image IsVisible="{Binding FrontRearTravelSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Source="{Binding FrontRearTravelSvg}" />
+
+                <!-- Balance -->
+                <Image IsVisible="{Binding BalanceSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Source="{Binding BalanceSvg}" />
+
+                <!-- Front Wheel Table -->
+                <Grid RowDefinitions="auto auto" ColumnDefinitions="*"
+                      IsVisible="{Binding FrontWheelRows.Count}">
+                    <Grid Grid.Row="0" Name="FrontWheelHeader" />
+                    <ItemsControl Grid.Row="1" ItemsSource="{Binding FrontWheelRows}" Name="FrontWheelTable" />
+                </Grid>
+
+                <!-- Rear Wheel Table -->
+                <Grid RowDefinitions="auto auto" ColumnDefinitions="*"
+                      IsVisible="{Binding RearWheelRows.Count}">
+                    <Grid Grid.Row="0" Name="RearWheelHeader" />
+                    <ItemsControl Grid.Row="1" ItemsSource="{Binding RearWheelRows}" Name="RearWheelTable" />
+                </Grid>
+
+            </StackPanel>
+        </ScrollViewer>
+
+        <!-- Error bar -->
+        <ItemsControl Grid.Row="3" ItemsSource="{Binding ErrorMessages}">
+            <ItemsControl.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock Text="{Binding}" Foreground="#d53e4f" FontSize="12" Margin="0,4" />
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </Grid>
+</UserControl>

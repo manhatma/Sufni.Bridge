@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 31;
+    private const int CurrentPlotVersion = 34;
 
     // Shared across all instances — updated whenever any session loads with real bounds.
     // Default matches iPhone 15 Pro logical width; height/2 is used for plots.
