@@ -8,7 +8,7 @@ public class LeverageRatioPlot(Plot plot) : SufniPlot(plot)
 {
     public void LoadLeverageRatioData(LeverageRatioData data)
     {
-        Plot.Layout.Fixed(new PixelPadding(60, 3, 40, 10));
+        Plot.Layout.Fixed(new PixelPadding(60, 7, 40, 10));
         Plot.Axes.Bottom.Label.Text = "Rear Wheel Travel (mm)";
         Plot.Axes.Left.Label.Text = "Leverage Ratio";
         Plot.Axes.Left.Label.OffsetX = -10;

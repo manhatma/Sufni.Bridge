@@ -8,6 +8,7 @@ public interface ITelemetryFile
 {
     public string Name { get; set; }
     public string FileName { get; }
+    public string SourceIdentifier { get; }
     public bool? ShouldBeImported { get; set; }
     public bool Imported { get; set; }
     public string Description { get; set; }

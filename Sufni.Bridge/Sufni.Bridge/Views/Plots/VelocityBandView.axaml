@@ -1,4 +1,4 @@
-﻿<Styles
+<Styles
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:Sufni.Bridge.Views.Plots">
@@ -10,80 +10,79 @@
         <!--  Set Defaults  -->
         <Setter Property="Template">
             <ControlTemplate>
-                <Grid ColumnDefinitions="64" RowDefinitions="39 400 39">
+                <StackPanel Orientation="Vertical" Margin="0,4,0,0">
 
                     <!--  Title  -->
                     <TextBlock
-                        Grid.Row="0"
-                        Margin="0,3,10,5"
-                        HorizontalAlignment="Center"
-                        VerticalAlignment="Bottom"
+                        Margin="0,0,0,2"
+                        HorizontalAlignment="Left"
+                        FontSize="12"
                         FontWeight="Bold"
                         Foreground="#d0d0d0"
-                        Text="Zone %" />
+                        Text="{Binding Path=Title, RelativeSource={RelativeSource TemplatedParent}}" />
 
-                    <!--  Bands  -->
-                    <Grid Grid.Row="1" Margin="0,0,12,0">
+                    <!--  Horizontal bands  -->
+                    <Grid Height="44">
                         <Grid.Resources>
                             <controls:GridLengthConverter x:Key="GridLengthConverter" />
                         </Grid.Resources>
 
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="{Binding Path=HsrPercentage, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource GridLengthConverter}}" />
-                            <RowDefinition Height="{Binding Path=LsrPercentage, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource GridLengthConverter}}" />
-                            <RowDefinition Height="{Binding Path=LscPercentage, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource GridLengthConverter}}" />
-                            <RowDefinition Height="{Binding Path=HscPercentage, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource GridLengthConverter}}" />
-                        </Grid.RowDefinitions>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="{Binding Path=HsrPercentage, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource GridLengthConverter}}" />
+                            <ColumnDefinition Width="{Binding Path=LsrPercentage, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource GridLengthConverter}}" />
+                            <ColumnDefinition Width="{Binding Path=LscPercentage, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource GridLengthConverter}}" />
+                            <ColumnDefinition Width="{Binding Path=HscPercentage, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource GridLengthConverter}}" />
+                        </Grid.ColumnDefinitions>
 
                         <Grid.Styles>
                             <Styles>
                                 <Style Selector="Border">
-                                    <Setter Property="BorderThickness" Value="1,0,1,1" />
                                     <Setter Property="BorderBrush" Value="#505558" />
-                                    <Setter Property="Padding" Value="5" />
+                                    <Setter Property="BorderThickness" Value="1,1,0,1" />
+                                    <Setter Property="Padding" Value="2" />
                                 </Style>
                                 <Style Selector="TextBlock">
                                     <Setter Property="HorizontalAlignment" Value="Center" />
                                     <Setter Property="VerticalAlignment" Value="Center" />
-                                    <Setter Property="FontSize" Value="12" />
+                                    <Setter Property="FontSize" Value="11" />
                                     <Setter Property="FontWeight" Value="Black" />
+                                    <Setter Property="Foreground" Value="#d0d0d0" />
+                                    <Setter Property="TextAlignment" Value="Center" />
                                 </Style>
                             </Styles>
                         </Grid.Styles>
 
-                        <Border
-                            Grid.Row="0"
-                            Background="#303030"
-                            BorderThickness="1,1,1,1">
-                            <TextBlock TextAlignment="Center">
-                                <Run Text="HSR:" />
+                        <Border Grid.Column="0" Background="#303030" BorderThickness="1,1,0,1">
+                            <TextBlock>
+                                <Run Text="HSR" />
                                 <LineBreak />
-                                <Run Text="{Binding Path=HsrPercentage, RelativeSource={RelativeSource TemplatedParent}, StringFormat='0.00'}" />
+                                <Run Text="{Binding Path=HsrPercentage, RelativeSource={RelativeSource TemplatedParent}, StringFormat={}{0:0.0}}" />
                             </TextBlock>
                         </Border>
-                        <Border Grid.Row="1" Background="#282828">
-                            <TextBlock TextAlignment="Center">
-                                <Run Text="LSR:" />
+                        <Border Grid.Column="1" Background="#282828">
+                            <TextBlock>
+                                <Run Text="LSR" />
                                 <LineBreak />
-                                <Run Text="{Binding Path=LsrPercentage, RelativeSource={RelativeSource TemplatedParent}, StringFormat='0.00'}" />
+                                <Run Text="{Binding Path=LsrPercentage, RelativeSource={RelativeSource TemplatedParent}, StringFormat={}{0:0.0}}" />
                             </TextBlock>
                         </Border>
-                        <Border Grid.Row="2" Background="#282828">
-                            <TextBlock TextAlignment="Center">
-                                <Run Text="LSC:" />
+                        <Border Grid.Column="2" Background="#282828">
+                            <TextBlock>
+                                <Run Text="LSC" />
                                 <LineBreak />
-                                <Run Text="{Binding Path=LscPercentage, RelativeSource={RelativeSource TemplatedParent}, StringFormat='0.00'}" />
+                                <Run Text="{Binding Path=LscPercentage, RelativeSource={RelativeSource TemplatedParent}, StringFormat={}{0:0.0}}" />
                             </TextBlock>
                         </Border>
-                        <Border Grid.Row="3" Background="#303030">
-                            <TextBlock TextAlignment="Center">
-                                <Run Text="HSC:" />
+                        <Border Grid.Column="3" Background="#303030" BorderThickness="1,1,1,1">
+                            <TextBlock>
+                                <Run Text="HSC" />
                                 <LineBreak />
-                                <Run Text="{Binding Path=HscPercentage, RelativeSource={RelativeSource TemplatedParent}, StringFormat='0.00'}" />
+                                <Run Text="{Binding Path=HscPercentage, RelativeSource={RelativeSource TemplatedParent}, StringFormat={}{0:0.0}}" />
                             </TextBlock>
                         </Border>
                     </Grid>
-                </Grid>
+
+                </StackPanel>
             </ControlTemplate>
         </Setter>
     </Style>

@@ -175,11 +175,12 @@ public partial class MainPagesViewModel : ViewModelBase
     }
 
     [RelayCommand]
-    private void ShowImportPage()
+    private async Task ShowImportPage()
     {
         var mainViewModel = App.Current?.Services?.GetService<MainViewModel>();
         Debug.Assert(mainViewModel != null, nameof(mainViewModel) + " != null");
         mainViewModel.OpenView(ImportSessionsPage);
+        await ImportSessionsPage.Refresh();
     }
 
     [RelayCommand]

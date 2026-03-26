@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using Sufni.Bridge.Models;
 using Sufni.Bridge.Services;
 using System.Collections.ObjectModel;
+using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Threading.Tasks;
 using System.Linq;
@@ -37,12 +38,28 @@ public partial class ImportSessionsViewModel : ViewModelBase
 
     #region Property change handlers
 
-    private async void GetDataStoreFiles(object? dataStore)
+    private async Task ApplyImportDefaults(List<ITelemetryFile> files)
+    {
+        Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
+
+        var importedIds = await databaseService.GetImportedSourceIdentifiersAsync();
+
+        foreach (var file in files.Where(f => f.ShouldBeImported.HasValue && f.ShouldBeImported.Value))
+        {
+            if (importedIds.Contains(file.SourceIdentifier))
+            {
+                file.ShouldBeImported = false;
+            }
+        }
+    }
+
+    private async Task GetDataStoreFiles(ITelemetryDataStore dataStore)
     {
         ImportInProgress = true;
 
         TelemetryFiles.Clear();
-        var files = await (dataStore as ITelemetryDataStore)!.GetFiles();
+        var files = await dataStore.GetFiles();
+        await ApplyImportDefaults(files);
         Dispatcher.UIThread.Post(() =>
         {
             foreach (var file in files)
@@ -72,7 +89,7 @@ public partial class ImportSessionsViewModel : ViewModelBase
         try
         {
             var boards = await databaseService.GetBoardsAsync();
-            var selectedBoard = boards.FirstOrDefault(b => b?.Id.ToLower() == value.BoardId, null);
+            var selectedBoard = boards.FirstOrDefault(b => b?.Id.ToLower().Trim() == value.BoardId?.Trim(), null);
             SelectedSetup = selectedBoard?.SetupId;
         }
         catch (Exception e)
@@ -80,7 +97,7 @@ public partial class ImportSessionsViewModel : ViewModelBase
             ErrorMessages.Add($"Error while changing data store: {e.Message}");
         }
 
-        new Thread(GetDataStoreFiles).Start(value);
+        await GetDataStoreFiles(value);
     }
 
     #endregion Property change handlers
@@ -151,8 +168,16 @@ public partial class ImportSessionsViewModel : ViewModelBase
         Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
 
         var boards = await databaseService.GetBoardsAsync();
-        var selectedBoard = boards.FirstOrDefault(b => b?.Id.ToLower() == SelectedDataStore?.BoardId, null);
+        var selectedBoard = boards.FirstOrDefault(b => b?.Id.ToLower().Trim() == SelectedDataStore?.BoardId?.Trim(), null);
         SelectedSetup = selectedBoard?.SetupId;
+    }
+
+    public async Task Refresh()
+    {
+        if (SelectedDataStore != null)
+        {
+            await GetDataStoreFiles(SelectedDataStore);
+        }
     }
 
     #endregion
@@ -193,6 +218,8 @@ public partial class ImportSessionsViewModel : ViewModelBase
 
         ImportInProgress = true;
 
+        var lastSession = await databaseService.GetMostRecentSessionAsync();
+
         foreach (var telemetryFile in TelemetryFiles.Where(f => f.ShouldBeImported.HasValue && f.ShouldBeImported.Value))
         {
             try
@@ -232,10 +259,24 @@ public partial class ImportSessionsViewModel : ViewModelBase
                     setup: SelectedSetup!.Value,
                     timestamp: (int)((DateTimeOffset)telemetryFile.StartTime).ToUnixTimeSeconds())
                 {
-                    ProcessedData = psst
+                    ProcessedData = psst,
+                    SourceIdentifier = telemetryFile.SourceIdentifier,
+                    FrontSpringRate = lastSession?.FrontSpringRate,
+                    FrontVolSpc = lastSession?.FrontVolSpc,
+                    FrontHighSpeedCompression = lastSession?.FrontHighSpeedCompression,
+                    FrontLowSpeedCompression = lastSession?.FrontLowSpeedCompression,
+                    FrontLowSpeedRebound = lastSession?.FrontLowSpeedRebound,
+                    FrontHighSpeedRebound = lastSession?.FrontHighSpeedRebound,
+                    RearSpringRate = lastSession?.RearSpringRate,
+                    RearVolSpc = lastSession?.RearVolSpc,
+                    RearHighSpeedCompression = lastSession?.RearHighSpeedCompression,
+                    RearLowSpeedCompression = lastSession?.RearLowSpeedCompression,
+                    RearLowSpeedRebound = lastSession?.RearLowSpeedRebound,
+                    RearHighSpeedRebound = lastSession?.RearHighSpeedRebound,
                 };
 
                 await databaseService.PutSessionAsync(session);
+                lastSession = session;
                 await telemetryFile.OnImported();
 
                 await Dispatcher.UIThread.InvokeAsync(() =>
@@ -243,6 +284,7 @@ public partial class ImportSessionsViewModel : ViewModelBase
                     var svm = new SessionViewModel(session, true);
                     sessions.AddOrUpdate(svm);
                     Notifications.Insert(0, $"{svm.Name} was successfully imported.");
+                    _ = Task.Run(svm.PrecomputeCache);
                 });
             }
             catch (Exception e)
@@ -260,6 +302,7 @@ public partial class ImportSessionsViewModel : ViewModelBase
         }
 
         var files = await SelectedDataStore.GetFiles();
+        await ApplyImportDefaults(files);
         TelemetryFiles.Clear();
         foreach (var file in files)
         {

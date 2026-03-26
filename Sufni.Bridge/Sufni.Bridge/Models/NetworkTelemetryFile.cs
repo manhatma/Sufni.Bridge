@@ -9,6 +9,7 @@ public class NetworkTelemetryFile : ITelemetryFile
 {
     public string Name { get; set; }
     public string FileName { get; }
+    public string SourceIdentifier { get; }
     public bool? ShouldBeImported { get; set; }
     public bool Imported { get; set; }
     public string Description { get; set; }
@@ -42,7 +43,7 @@ public class NetworkTelemetryFile : ITelemetryFile
         await SstTcpClient.TrashFile(ipEndPoint, idInt);
     }
 
-    public NetworkTelemetryFile(IPEndPoint source, ushort sampleRate, string name, ulong size, ulong timestamp)
+    public NetworkTelemetryFile(IPEndPoint source, string? boardId, ushort sampleRate, string name, ulong size, ulong timestamp)
     {
         var count = (size - 16 /* sizeof(header) */) / 4 /* sizeof(record) */;
         var duration = TimeSpan.FromSeconds((double)count / sampleRate);
@@ -52,6 +53,7 @@ public class NetworkTelemetryFile : ITelemetryFile
         Name = name;
         FileName = name;
         Description = $"Imported from {name}";
+        SourceIdentifier = $"{boardId ?? ""}:{timestamp}";
         ipEndPoint = source;
     }
 }

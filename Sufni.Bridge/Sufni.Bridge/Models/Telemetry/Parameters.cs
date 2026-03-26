@@ -15,19 +15,25 @@ public static class Parameters
     public const double AirtimeOverlapThreshold = 0.5;
 
     // stroke f&r mean travel must be below max*this to be an airtime
-    public const double AirtimeTravelMeanThresholdRatio = 0.04;
+    public const double AirtimeTravelMeanThresholdRatio = 0.08;
+
+    // (mm) maximum travel to consider stroke an airtime
+    public const double AirtimeTravelThreshold = 3;
 
     // (mm) minimum length to consider stroke a compression/rebound
-    public const double StrokeLengthThreshold = 5;
+    public const double StrokeLengthThreshold = 0.5;
+
+    // factor for top-out concatenation with respect to StrokeLengthThreshold
+    public const double StrokeLengthThresholdFac = 30;
 
     // (mm/s) step between velocity histogram bins
     public const double VelocityHistStep = 100.0;
 
     // (mm/s) step between fine-grained velocity histogram bins
-    public const double VelocityHistStepFine = 15.0;
+    public const double VelocityHistStepFine = 10.0;
 
     // (mm) bottom-outs are regions where travel > max_travel - this value
-    public const double BottomoutThreshold = 3;
+    public const double BottomoutThreshold = 2.5;
 
     // number of travel histogram bins
     public const int TravelHistBins = 20;

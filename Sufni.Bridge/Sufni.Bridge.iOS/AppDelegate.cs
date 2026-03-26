@@ -20,6 +20,7 @@ namespace Sufni.Bridge.iOS
             RegisteredServices.Collection.AddSingleton<ISecureStorage, SecureStorage.SecureStorage>();
             RegisteredServices.Collection.AddSingleton<IServiceDiscovery, ServiceDiscovery.ServiceDiscovery>();
             RegisteredServices.Collection.AddSingleton<IHapticFeedback, HapticFeedback.HapticFeedback>();
+            RegisteredServices.Collection.AddSingleton<IShareService, ShareService>();
             return base.CustomizeAppBuilder(builder)
                 .WithInterFont()
                 .With(new SkiaOptions { UseOpacitySaveLayer = true });

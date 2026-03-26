@@ -11,7 +11,7 @@
         <TargetFrameworks>net9.0-windows;net9.0-android;net9.0-ios;net9.0-macos;net9.0</TargetFrameworks>
     </PropertyGroup>
     <PropertyGroup Condition="'$([System.Runtime.InteropServices.RuntimeInformation]::IsOSPlatform($([System.Runtime.InteropServices.OSPlatform]::Linux)))'">
-        <TargetFrameworks>net9.0-windows;net9.0-android;net9.0</TargetFrameworks>
+        <TargetFrameworks>net9.0</TargetFrameworks>
     </PropertyGroup>
 
     <ItemGroup>

@@ -12,13 +12,14 @@ public class MassStorageTelemetryFile : ITelemetryFile
 
     public string Name { get; set; }
     public string FileName => fileInfo.Name;
+    public string SourceIdentifier { get; }
     public bool? ShouldBeImported { get; set; }
     public bool Imported { get; set; }
     public string Description { get; set; }
     public DateTime StartTime { get; init; }
     public string Duration { get; init; }
 
-    public MassStorageTelemetryFile(FileInfo fileInfo)
+    public MassStorageTelemetryFile(FileInfo fileInfo, string? boardId)
     {
         this.fileInfo = fileInfo;
 
@@ -43,6 +44,7 @@ public class MassStorageTelemetryFile : ITelemetryFile
         Duration = duration.ToString(@"hh\:mm\:ss");
         Name = fileInfo.Name;
         Description = $"Imported from {fileInfo.Name}";
+        SourceIdentifier = $"{boardId ?? ""}:{timestamp}";
     }
 
     public async Task<byte[]> GeneratePsstAsync(Linkage linkage, Calibration? frontCal, Calibration? rearCal)
@@ -58,8 +60,6 @@ public class MassStorageTelemetryFile : ITelemetryFile
     public Task OnImported()
     {
         Imported = true;
-        File.Move(fileInfo.FullName,
-            $"{Path.GetDirectoryName(fileInfo.FullName)}/uploaded/{fileInfo.Name}");
         return Task.CompletedTask;
     }
 

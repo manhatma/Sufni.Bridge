@@ -30,6 +30,15 @@ public class GridLengthConverter : IValueConverter
 
 public class VelocityBandView : TemplatedControl
 {
+    public static readonly StyledProperty<string> TitleProperty = AvaloniaProperty.Register<VelocityBandView, string>(
+        "Title", defaultValue: "Zone %");
+
+    public string Title
+    {
+        get => GetValue(TitleProperty);
+        set => SetValue(TitleProperty, value);
+    }
+
     public static readonly StyledProperty<double> HsrPercentageProperty = AvaloniaProperty.Register<VelocityBandView, double>(
         "HsrPercentage");
 

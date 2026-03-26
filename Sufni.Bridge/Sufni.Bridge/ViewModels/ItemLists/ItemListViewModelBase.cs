@@ -84,10 +84,27 @@ public partial class ItemListViewModelBase : ViewModelBase
         await DeleteImplementation(vm);
     }
 
-    public void UndoableDelete(ItemViewModelBase vm)
+    public async void UndoableDelete(ItemViewModelBase vm)
     {
         LastDeleted = vm;
         Source.Remove(vm);
+
+        Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
+        switch (vm)
+        {
+            case CalibrationViewModel:
+                await databaseService.DeleteCalibrationAsync(vm.Id);
+                break;
+            case LinkageViewModel:
+                await databaseService.DeleteLinkageAsync(vm.Id);
+                break;
+            case SetupViewModel:
+                await databaseService.DeleteSetupAsync(vm.Id);
+                break;
+            case SessionViewModel:
+                await databaseService.DeleteSessionAsync(vm.Id);
+                break;
+        }
     }
 
     [RelayCommand]
@@ -104,33 +121,27 @@ public partial class ItemListViewModelBase : ViewModelBase
     }
 
     [RelayCommand]
-    public async Task FinalizeDelete()
+    public Task FinalizeDelete()
+    {
+        LastDeleted = null;
+        return Task.CompletedTask;
+    }
+
+    [RelayCommand]
+    public async Task UndoDelete()
     {
         Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
         Debug.Assert(LastDeleted != null, nameof(LastDeleted) + " != null");
 
-        switch (LastDeleted)
+        var table = LastDeleted switch
         {
-            case CalibrationViewModel:
-                await databaseService.DeleteCalibrationAsync(LastDeleted.Id);
-                break;
-            case LinkageViewModel:
-                await databaseService.DeleteLinkageAsync(LastDeleted.Id);
-                break;
-            case SetupViewModel:
-                await databaseService.DeleteSetupAsync(LastDeleted.Id);
-                break;
-            case SessionViewModel:
-                await databaseService.DeleteSessionAsync(LastDeleted.Id);
-                break;
-        }
-        LastDeleted = null;
-    }
-
-    [RelayCommand]
-    public void UndoDelete()
-    {
-        Debug.Assert(LastDeleted != null, nameof(LastDeleted) + " != null");
+            CalibrationViewModel => "calibration",
+            LinkageViewModel => "linkage",
+            SetupViewModel => "setup",
+            SessionViewModel => "session",
+            _ => throw new InvalidOperationException("Unknown item type")
+        };
+        await databaseService.UndeleteAsync(LastDeleted.Id, table);
 
         Source.AddOrUpdate(LastDeleted);
         LastDeleted = null;

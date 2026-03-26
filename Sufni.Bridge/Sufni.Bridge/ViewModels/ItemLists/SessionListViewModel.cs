@@ -25,6 +25,12 @@ public partial class SessionListViewModel : ItemListViewModelBase
             .Subscribe();
     }
 
+    protected override async Task DeleteImplementation(ItemViewModelBase vm)
+    {
+        Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
+        await databaseService.DeleteSessionAsync(vm.Id);
+    }
+
     private async Task LoadSessionsAsync()
     {
         Debug.Assert(databaseService != null, nameof(databaseService) + " != null");

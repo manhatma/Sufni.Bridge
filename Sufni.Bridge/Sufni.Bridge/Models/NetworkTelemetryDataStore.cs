@@ -34,7 +34,7 @@ public class NetworkTelemetryDataStore : ITelemetryDataStore
 
             try
             {
-                var f = new NetworkTelemetryFile(ipEndPoint, sampleRate, name, size, timestamp);
+                var f = new NetworkTelemetryFile(ipEndPoint, BoardId, sampleRate, name, size, timestamp);
                 files.Add(f);
             }
             catch (Exception)

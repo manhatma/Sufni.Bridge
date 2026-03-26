@@ -136,6 +136,68 @@ public class SqLiteDatabaseService : IDatabaseService
         {
             await connection.QueryAsync<Synchronization>("INSERT INTO sync VALUES (0)");
         }
+
+        await EnsureSessionColumns();
+        await EnsureSessionCacheColumns();
+        await EnsureDefaultCalibrationMethods();
+    }
+
+    private async Task EnsureDefaultCalibrationMethods()
+    {
+        var existing = await connection.Table<CalibrationMethod>().ToListAsync();
+        var existingIds = existing.Select(m => m.Id).ToHashSet();
+        var timestamp = (int)DateTimeOffset.Now.ToUnixTimeSeconds();
+        foreach (var method in DefaultCalibrationMethods)
+        {
+            if (!existingIds.Contains(method.Id))
+            {
+                method.Updated = timestamp;
+                await connection.InsertAsync(method);
+            }
+        }
+    }
+
+    private async Task EnsureSessionColumns()
+    {
+        var tableInfo = await connection.QueryAsync<TableInfoRecord>("PRAGMA table_info(session)");
+        var columnNames = tableInfo.Select(column => column.Name).ToHashSet();
+        async Task AddColumnIfMissing(string name, string type = "INTEGER")
+        {
+            if (!columnNames.Contains(name))
+                await connection.ExecuteAsync($"ALTER TABLE session ADD COLUMN {name} {type} DEFAULT 0");
+        }
+        await AddColumnIfMissing("front_volspc");
+        await AddColumnIfMissing("rear_volspc");
+        await AddColumnIfMissing("source_id", "TEXT");
+    }
+
+    private async Task EnsureSessionCacheColumns()
+    {
+        var tableInfo = await connection.QueryAsync<TableInfoRecord>("PRAGMA table_info(session_cache)");
+        var columnNames = tableInfo.Select(column => column.Name).ToHashSet();
+        async Task AddColumnIfMissing(string name, string type = "TEXT")
+        {
+            if (!columnNames.Contains(name))
+                await connection.ExecuteAsync($"ALTER TABLE session_cache ADD COLUMN {name} {type} DEFAULT 0");
+        }
+        await AddColumnIfMissing("travel_comparison_histogram");
+        await AddColumnIfMissing("front_rear_travel_scatter");
+        await AddColumnIfMissing("front_position_distribution");
+        await AddColumnIfMissing("rear_position_distribution");
+        await AddColumnIfMissing("front_velocity_distribution");
+        await AddColumnIfMissing("rear_velocity_distribution");
+        await AddColumnIfMissing("front_position_velocity");
+        await AddColumnIfMissing("rear_position_velocity");
+        await AddColumnIfMissing("velocity_distribution_comparison");
+        await AddColumnIfMissing("position_velocity_comparison");
+        await AddColumnIfMissing("summary_json");
+        await AddColumnIfMissing("plot_version", "INTEGER");
+        await AddColumnIfMissing("combined_balance");
+    }
+
+    private class TableInfoRecord
+    {
+        public string Name { get; set; } = string.Empty;
     }
 
     public async Task<List<Board>> GetBoardsAsync()
@@ -426,8 +488,8 @@ public class SqLiteDatabaseService : IDatabaseService
                                  description,
                                  timestamp,
                                  track_id,
-                                 front_springrate, front_hsc, front_lsc, front_lsr, front_hsr,
-                                 rear_springrate, rear_hsc, rear_lsc, rear_lsr, rear_hsr,
+                                 front_springrate, front_volspc, front_hsc, front_lsc, front_lsr, front_hsr,
+                                 rear_springrate, rear_volspc, rear_hsc, rear_lsc, rear_lsr, rear_hsr,
                                  CASE
                                     WHEN data IS NOT NULL THEN 1
                                     ELSE 0
@@ -490,8 +552,8 @@ public class SqLiteDatabaseService : IDatabaseService
                                  SET
                                      name=?,
                                      description=?,
-                                     front_springrate=?, front_hsc=?, front_lsc=?, front_lsr=?, front_hsr=?,
-                                     rear_springrate=?, rear_hsc=?, rear_lsc=?, rear_lsr=?, rear_hsr=?
+                                     front_springrate=?, front_volspc=?, front_hsc=?, front_lsc=?, front_lsr=?, front_hsr=?,
+                                     rear_springrate=?, rear_volspc=?, rear_hsc=?, rear_lsc=?, rear_lsr=?, rear_hsr=?
                                  WHERE
                                      id=?
                                  """;
@@ -500,11 +562,13 @@ public class SqLiteDatabaseService : IDatabaseService
                     session.Name,
                     session.Description,
                     session.FrontSpringRate,
+                    session.FrontVolSpc,
                     session.FrontHighSpeedCompression,
                     session.FrontLowSpeedCompression,
                     session.FrontLowSpeedRebound,
                     session.FrontHighSpeedRebound,
                     session.RearSpringRate,
+                    session.RearVolSpc,
                     session.RearHighSpeedCompression,
                     session.RearLowSpeedCompression,
                     session.RearLowSpeedRebound,
@@ -547,6 +611,49 @@ public class SqLiteDatabaseService : IDatabaseService
         }
     }
 
+    public async Task UndeleteAsync(Guid id, string table)
+    {
+        await Initialization;
+        await connection.ExecuteAsync(
+            $"UPDATE [{table}] SET deleted = NULL WHERE id = ?", id);
+    }
+
+    public async Task<bool> SessionExistsForTimestampAsync(int timestamp)
+    {
+        await Initialization;
+        return await connection.Table<Session>()
+            .Where(s => s.Deleted == null && s.Timestamp == timestamp)
+            .FirstOrDefaultAsync() is not null;
+    }
+
+    public async Task<Session?> GetMostRecentSessionAsync()
+    {
+        await Initialization;
+        const string query = """
+                             SELECT
+                                 description,
+                                 front_springrate, front_volspc, front_hsc, front_lsc, front_lsr, front_hsr,
+                                 rear_springrate, rear_volspc, rear_hsc, rear_lsc, rear_lsr, rear_hsr
+                             FROM session
+                             WHERE deleted IS NULL
+                             ORDER BY timestamp DESC
+                             LIMIT 1
+                             """;
+        var results = await connection.QueryAsync<Session>(query);
+        return results.Count == 1 ? results[0] : null;
+    }
+
+    public async Task<HashSet<string>> GetImportedSourceIdentifiersAsync()
+    {
+        await Initialization;
+        var sessions = await connection.QueryAsync<Session>(
+            "SELECT source_id FROM session WHERE source_id IS NOT NULL");
+        return sessions
+            .Where(s => s.SourceIdentifier != null)
+            .Select(s => s.SourceIdentifier!)
+            .ToHashSet();
+    }
+
     public async Task<SessionCache?> GetSessionCacheAsync(Guid sessionId)
     {
         await Initialization;
@@ -558,19 +665,7 @@ public class SqLiteDatabaseService : IDatabaseService
     public async Task<Guid> PutSessionCacheAsync(SessionCache sessionCache)
     {
         await Initialization;
-
-        var existing = await connection.Table<SessionCache>()
-            .Where(s => s.SessionId == sessionCache.SessionId)
-            .FirstOrDefaultAsync() is not null;
-        if (existing)
-        {
-            await connection.UpdateAsync(sessionCache);
-        }
-        else
-        {
-            await connection.InsertAsync(sessionCache);
-        }
-
+        await connection.InsertOrReplaceAsync(sessionCache);
         return sessionCache.SessionId;
     }
 

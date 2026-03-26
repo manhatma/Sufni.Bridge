@@ -121,5 +121,67 @@
         <!--  Back, Save, Reset and Delete buttons  -->
         <v:CommonButtonLine Grid.Row="4" Margin="10,0,10,0" />
 
+        <!--  Session Loading Overlay  -->
+        <Panel
+            Grid.Row="0"
+            Grid.RowSpan="5"
+            IsVisible="{Binding IsAnalyzingData}"
+            ZIndex="100"
+            Background="#CC15191C">
+            <Border
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Background="#20262b"
+                BorderBrush="#505050"
+                BorderThickness="1"
+                CornerRadius="12"
+                Padding="32,24">
+                <StackPanel MinWidth="200" Spacing="14">
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        FontSize="13"
+                        Foreground="#a0a0a0"
+                        Text="Analyzing time history data …" />
+                    <ProgressBar
+                        Height="3"
+                        CornerRadius="2"
+                        Background="#30ffffff"
+                        Foreground="#0078d7"
+                        IsIndeterminate="True" />
+                </StackPanel>
+            </Border>
+        </Panel>
+
+        <!--  PDF Export Loading Overlay  -->
+        <Panel
+            Grid.Row="0"
+            Grid.RowSpan="5"
+            IsVisible="{Binding IsGeneratingPdf}"
+            ZIndex="100"
+            Background="#CC15191C">
+            <Border
+                HorizontalAlignment="Center"
+                VerticalAlignment="Center"
+                Background="#20262b"
+                BorderBrush="#505050"
+                BorderThickness="1"
+                CornerRadius="12"
+                Padding="32,24">
+                <StackPanel MinWidth="200" Spacing="14">
+                    <TextBlock
+                        HorizontalAlignment="Center"
+                        FontSize="13"
+                        Foreground="#a0a0a0"
+                        Text="Generating PDF …" />
+                    <ProgressBar
+                        Height="3"
+                        CornerRadius="2"
+                        Background="#30ffffff"
+                        Foreground="#0078d7"
+                        IsIndeterminate="True" />
+                </StackPanel>
+            </Border>
+        </Panel>
+
     </Grid>
 </UserControl>

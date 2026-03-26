@@ -42,20 +42,26 @@ public class SufniPlot
         Plot.Axes.Bottom.Label.Bold = false;
         Plot.Axes.Bottom.Label.FontSize = 14;
 
+        Plot.Axes.Bottom.Label.OffsetY = 16;
+
         Plot.Axes.Bottom.TickLabelStyle.ForeColor = Color.FromHex("#D0D0D0");
         Plot.Axes.Bottom.TickLabelStyle.Bold = false;
         Plot.Axes.Bottom.TickLabelStyle.FontSize = 12;
+        Plot.Axes.Bottom.TickLabelStyle.OffsetY = 5;
         Plot.Axes.Bottom.MajorTickStyle.Length = 0;
         Plot.Axes.Bottom.MinorTickStyle.Length = 0;
         Plot.Axes.Bottom.MajorTickStyle.Width = 0;
         Plot.Axes.Bottom.MinorTickStyle.Width = 0;
     }
 
-    protected void AddLabel(string content, double x, double y, int xoffset, int yoffset, Alignment alignment = Alignment.LowerLeft)
+    protected void SetTitle(string text) =>
+        Plot.Axes.Title.Label.Text = text;
+
+    protected void AddLabel(string content, double x, double y, int xoffset, int yoffset, Alignment alignment = Alignment.LowerLeft, string? colorHex = null)
     {
         var text = Plot.Add.Text(content, x, y);
-        text.LabelFontColor = Color.FromHex("#fefefe");
-        text.LabelFontSize = 13;
+        text.LabelFontColor = Color.FromHex(colorHex ?? "#fefefe");
+        text.LabelFontSize = 12;
         text.LabelAlignment = alignment;
         text.LabelOffsetX = xoffset;
         text.LabelOffsetY = yoffset;
@@ -72,7 +78,7 @@ public class SufniPlot
 
         var text = Plot.Add.Text(content, Plot.Axes.GetLimits().Right, position);
         text.LabelFontColor = Color.FromHex("#fefefe");
-        text.LabelFontSize = 13;
+        text.LabelFontSize = 12;
         text.LabelAlignment = linePosition == LabelLinePosition.Above ? Alignment.UpperRight : Alignment.LowerRight;
         text.LabelOffsetX = -10;
         text.LabelOffsetY = yoffset;

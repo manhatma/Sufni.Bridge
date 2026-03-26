@@ -1,3 +1,4 @@
+using System;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Interactivity;
@@ -11,11 +12,21 @@ public partial class SessionView : UserControl
     public SessionView()
     {
         InitializeComponent();
-        TabHeaders.Items.CollectionChanged += (_, _) => 
+        TabHeaders.Items.CollectionChanged += (_, _) =>
         {
-            if (TabHeaders.ItemCount > 0) 
+            // Only set a default if no tab is currently selected
+            // (avoids double-selection when background tasks remove pages like BalancePage)
+            foreach (var item in TabHeaders.Items)
             {
-                (TabHeaders.Items[0] as PageViewModelBase)!.Selected = true;
+                if ((item as PageViewModelBase)?.Selected == true) return;
+            }
+            // Existing sessions start on Summary (index 0); new/unsaved sessions on Spring (index 1)
+            var vm = DataContext as Sufni.Bridge.ViewModels.Items.SessionViewModel;
+            var defaultIndex = (vm?.IsInDatabase == true) ? 0 : 1;
+            var targetIndex = Math.Min(defaultIndex, TabHeaders.ItemCount - 1);
+            if (targetIndex >= 0)
+            {
+                (TabHeaders.Items[targetIndex] as PageViewModelBase)!.Selected = true;
             }
         };
     }

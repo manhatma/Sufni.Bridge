@@ -35,6 +35,14 @@ public record HistogramData(List<double> Bins, List<double> Values);
 public record StackedHistogramData(List<double> Bins, List<double[]> Values);
 
 public record TravelStatistics(double Max, double Average, int Bottomouts);
+public record DetailedTravelStatistics(double Max, double Average, double P95, int Bottomouts);
+public record DetailedTravelHistogramData(
+    List<double> TravelMidsMm,
+    List<double> TravelMidsPercentage,
+    List<double> TimePercentage,
+    List<double> BarWidthsMm,
+    List<double> BarWidthsPercentage,
+    double MaxTravelMm);
 
 public record VelocityStatistics(
     double AverageRebound,
@@ -63,6 +71,8 @@ public enum BalanceType
     Compression,
     Rebound
 }
+
+public record PositionVelocityData(double[] Travel, double[] Velocity);
 
 public record BalanceData(
     List<double> FrontTravel,
@@ -240,6 +250,21 @@ public class TelemetryData
         Airtimes = [.. airtimes];
     }
 
+    private static double[] ComputeVelocity(double[] travel, int sampleRate)
+    {
+        var n = travel.Length;
+        var v = new double[n];
+
+        v[0] = (travel[1] - travel[0]) * sampleRate;
+        for (var i = 1; i < n - 1; i++)
+        {
+            v[i] = (travel[i + 1] - travel[i - 1]) * sampleRate / 2.0;
+        }
+        v[n - 1] = (travel[n - 1] - travel[n - 2]) * sampleRate;
+
+        return v;
+    }
+
     private static (double[], int[]) DigitizeVelocity(double[] v, double step)
     {
         // Subtracting half bin ensures that 0 will be at the middle of one bin
@@ -271,16 +296,8 @@ public class TelemetryData
             throw new Exception("Front and rear record counts are not equal!");
         }
 
-        // Create time array
-        var recordCount = Math.Max(fc, rc);
-        var time = new double[recordCount];
-        for (var i = 0; i < time.Length; i++)
-        {
-            time[i] = 1.0 / SampleRate * i;
-        }
-
-        // Create Savitzky-Golay filter to get smoothed velocity data
-        var filter = new SavitzkyGolay(51, 1, 3);
+        // Create Whittaker-Henderson smoother for velocity smoothing
+        var smoother = new WhittakerHendersonSmoother(2, 260);
 
         if (Front.Present)
         {
@@ -305,7 +322,7 @@ public class TelemetryData
             var dt = Digitize(Front.Travel, tbins);
             Front.TravelBins = tbins;
 
-            var v = filter.Process(Front.Travel, time);
+            var v = smoother.Smooth(ComputeVelocity(Front.Travel, SampleRate));
             Front.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             Front.VelocityBins = vbins;
@@ -345,7 +362,7 @@ public class TelemetryData
             var dt = Digitize(Rear.Travel, tbins);
             Rear.TravelBins = tbins;
 
-            var v = filter.Process(Rear.Travel, time);
+            var v = smoother.Smooth(ComputeVelocity(Rear.Travel, SampleRate));
             Rear.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             Rear.VelocityBins = vbins;
@@ -395,6 +412,72 @@ public class TelemetryData
             suspension.TravelBins.ToList().GetRange(0, suspension.TravelBins.Length), [.. hist]);
     }
 
+    public DetailedTravelHistogramData CalculateDetailedTravelHistogram(SuspensionType type)
+    {
+        var suspension = type == SuspensionType.Front ? Front : Rear;
+        var maxTravel = type == SuspensionType.Front ? Linkage.MaxFrontTravel : Linkage.MaxRearTravel;
+        var histLen = Math.Max(0, suspension.TravelBins.Length - 1);
+
+        var hist = new double[histLen];
+        var totalCount = 0.0;
+
+        foreach (var stroke in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
+        {
+            totalCount += stroke.Stat.Count;
+            foreach (var digitizedTravel in stroke.DigitizedTravel)
+            {
+                if (digitizedTravel >= 0 && digitizedTravel < histLen)
+                {
+                    hist[digitizedTravel] += 1;
+                }
+            }
+        }
+
+        if (totalCount > 0)
+        {
+            for (var i = 0; i < hist.Length; i++)
+            {
+                hist[i] = hist[i] / totalCount * 100.0;
+            }
+        }
+
+        var midsMm = new List<double>(histLen);
+        var midsPercentage = new List<double>(histLen);
+        var widthsMm = new List<double>(histLen);
+        var widthsPercentage = new List<double>(histLen);
+
+        if (histLen > 0 && maxTravel > 0)
+        {
+            const double percentageGap = 0.75;
+            var mmGap = percentageGap * maxTravel / 100.0;
+
+            for (var i = 0; i < histLen; i++)
+            {
+                var left = suspension.TravelBins[i];
+                var right = suspension.TravelBins[i + 1];
+                var widthMm = right - left;
+                var midMm = (left + right) / 2.0;
+
+                var widthPercentage = widthMm / maxTravel * 100.0;
+                var adjustedWidthPercentage = Math.Max(widthPercentage - percentageGap, widthPercentage * 0.1);
+                var adjustedWidthMm = Math.Max(widthMm - mmGap, widthMm * 0.1);
+
+                midsMm.Add(midMm);
+                midsPercentage.Add(midMm / maxTravel * 100.0);
+                widthsMm.Add(adjustedWidthMm);
+                widthsPercentage.Add(adjustedWidthPercentage);
+            }
+        }
+
+        return new DetailedTravelHistogramData(
+            midsMm,
+            midsPercentage,
+            [.. hist],
+            widthsMm,
+            widthsPercentage,
+            maxTravel);
+    }
+
     public StackedHistogramData CalculateVelocityHistogram(SuspensionType type)
     {
         var suspension = type == SuspensionType.Front ? Front : Rear;
@@ -435,6 +518,50 @@ public class TelemetryData
             suspension.VelocityBins.ToList().GetRange(0, suspension.VelocityBins.Length), [.. hist]);
     }
 
+    public StackedHistogramData CalculateLowSpeedVelocityHistogram(SuspensionType type, double highSpeedThreshold)
+    {
+        var suspension = type == SuspensionType.Front ? Front : Rear;
+
+        var divider = (suspension.TravelBins.Length - 1) / TravelBinsForVelocityHistogram;
+        var stepFine = suspension.FineVelocityBins[1] - suspension.FineVelocityBins[0];
+        var hist = new double[suspension.FineVelocityBins.Length - 1][];
+        for (var i = 0; i < hist.Length; i++)
+        {
+            hist[i] = Generate.Zeros(TravelBinsForVelocityHistogram);
+        }
+
+        var totalCount = 0;
+        foreach (var s in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
+        {
+            totalCount += s.Stat.Count;
+            for (int i = 0; i < s.Stat.Count; ++i)
+            {
+                var vbinFine = s.FineDigitizedVelocity[i];
+                var midpoint = suspension.FineVelocityBins[vbinFine] + stepFine / 2.0;
+                if (midpoint <= -(highSpeedThreshold + stepFine / 2.0) ||
+                    midpoint >= (highSpeedThreshold + stepFine / 2.0))
+                    continue;
+
+                var tbin = s.DigitizedTravel[i] / divider;
+                hist[vbinFine][tbin] += 1;
+            }
+        }
+
+        if (totalCount > 0)
+        {
+            foreach (var travelHist in hist)
+            {
+                for (var j = 0; j < TravelBinsForVelocityHistogram; j++)
+                {
+                    travelHist[j] = travelHist[j] / totalCount * 100.0;
+                }
+            }
+        }
+
+        return new StackedHistogramData(
+            suspension.FineVelocityBins.ToList().GetRange(0, suspension.FineVelocityBins.Length), [.. hist]);
+    }
+
     public NormalDistributionData CalculateNormalDistribution(SuspensionType type)
     {
         var suspension = type == SuspensionType.Front ? Front : Rear;
@@ -472,6 +599,47 @@ public class TelemetryData
         return new NormalDistributionData([.. ny], pdf);
     }
 
+    /// <summary>
+    /// Normal distribution for the low-speed velocity histogram.
+    /// Uses fine velocity bin step and population std (matching Python norm.fit / MLE).
+    /// Y values are in mm/s (not converted to m/s).
+    /// </summary>
+    public NormalDistributionData CalculateLowSpeedNormalDistribution(SuspensionType type, double highSpeedThreshold)
+    {
+        var suspension = type == SuspensionType.Front ? Front : Rear;
+        var fineStep = suspension.FineVelocityBins[1] - suspension.FineVelocityBins[0];
+        var velocity = suspension.Velocity.ToList();
+
+        var strokeVelocity = new List<double>();
+        foreach (var s in suspension.Strokes.Compressions)
+        {
+            strokeVelocity.AddRange(velocity.GetRange(s.Start, s.End - s.Start + 1));
+        }
+        foreach (var s in suspension.Strokes.Rebounds)
+        {
+            strokeVelocity.AddRange(velocity.GetRange(s.Start, s.End - s.Start + 1));
+        }
+
+        var mu = strokeVelocity.Mean();
+        var std = strokeVelocity.PopulationStandardDeviation();
+
+        var limit = highSpeedThreshold + 50; // match the plot display range (velocityLimit)
+        const int numPoints = 100;
+        var ny = new double[numPoints];
+        for (int i = 0; i < numPoints; i++)
+        {
+            ny[i] = -limit + i * (2.0 * limit) / (numPoints - 1);
+        }
+
+        var pdf = new List<double>(numPoints);
+        for (int i = 0; i < numPoints; i++)
+        {
+            pdf.Add(Normal.PDF(mu, std, ny[i]) * fineStep * 100);
+        }
+
+        return new NormalDistributionData([.. ny], pdf);
+    }
+
     public TravelStatistics CalculateTravelStatistics(SuspensionType type)
     {
         var suspension = type == SuspensionType.Front ? Front : Rear;
@@ -493,6 +661,39 @@ public class TelemetryData
         }
 
         return new TravelStatistics(mx, sum / count, bo);
+    }
+
+    public DetailedTravelStatistics CalculateDetailedTravelStatistics(SuspensionType type)
+    {
+        var suspension = type == SuspensionType.Front ? Front : Rear;
+        var travelValues = new List<double>();
+
+        var bottomouts = 0;
+        foreach (var stroke in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
+        {
+            bottomouts += stroke.Stat.Bottomouts;
+
+            if (stroke.End < stroke.Start || stroke.Start < 0 || stroke.End >= suspension.Travel.Length)
+            {
+                continue;
+            }
+
+            for (var i = stroke.Start; i <= stroke.End; i++)
+            {
+                travelValues.Add(suspension.Travel[i]);
+            }
+        }
+
+        if (travelValues.Count == 0)
+        {
+            return new DetailedTravelStatistics(0.0, 0.0, 0.0, 0);
+        }
+
+        var average = travelValues.Average();
+        var max = travelValues.Max();
+        var p95 = travelValues.Percentile(95);
+
+        return new DetailedTravelStatistics(max, average, p95, bottomouts);
     }
 
     public VelocityStatistics CalculateVelocityStatistics(SuspensionType type)
@@ -585,6 +786,41 @@ public class TelemetryData
             hsr * totalPercentage);
     }
 
+    public PositionVelocityData CalculatePositionVelocityData(SuspensionType type)
+    {
+        var suspension = type == SuspensionType.Front ? Front : Rear;
+        var travel = new List<double>();
+        var velocity = new List<double>();
+
+        foreach (var s in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
+        {
+            for (var i = s.Start; i <= s.End && i < suspension.Travel.Length; i++)
+            {
+                travel.Add(suspension.Travel[i]);
+                velocity.Add(suspension.Velocity[i]);
+            }
+        }
+
+        return new PositionVelocityData(travel.ToArray(), velocity.ToArray());
+    }
+
+    public PositionVelocityData CalculateDamperPositionVelocityData()
+    {
+        var travel = new List<double>();
+        var velocity = new List<double>();
+
+        foreach (var s in Rear.Strokes.Compressions.Concat(Rear.Strokes.Rebounds))
+        {
+            for (var i = s.Start; i <= s.End && i < Rear.Travel.Length; i++)
+            {
+                travel.Add(Linkage.WheelToDamperTravel(Rear.Travel[i]));
+                velocity.Add(Rear.Velocity[i]);
+            }
+        }
+
+        return new PositionVelocityData(travel.ToArray(), velocity.ToArray());
+    }
+
     private static Func<double, double> FitPolynomial(double[] x, double[] y)
     {
         var coefficients = Fit.Polynomial(x, y, 1);
@@ -606,8 +842,8 @@ public class TelemetryData
         {
             t.Add(s.Stat.MaxTravel / travelMax * 100);
 
-            // Use positive values for rebound too, because ScottPlot can't invert axis easily. 
-            v.Add(balanceType == BalanceType.Rebound ? -s.Stat.MaxVelocity : s.Stat.MaxVelocity);
+            // Rebound velocities are negative, compression velocities are positive.
+            v.Add(s.Stat.MaxVelocity);
         }
 
         var tArray = t.ToArray();

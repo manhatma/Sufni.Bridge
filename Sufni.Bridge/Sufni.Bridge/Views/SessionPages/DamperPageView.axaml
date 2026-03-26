@@ -15,29 +15,36 @@
         <vm:DamperPageViewModel />
     </Design.DataContext>
 
-    <ScrollViewer Width="{Binding $parent[ScrollViewer].Bounds.Width}" IsScrollChainingEnabled="False">
+    <ScrollViewer Width="{Binding $parent[ScrollViewer].Bounds.Width}" Height="{Binding $parent[ScrollViewer].Bounds.Height}" IsScrollChainingEnabled="False">
         <StackPanel Orientation="Vertical">
+            <!--  Velocity distribution comparison  -->
+            <Image IsVisible="{Binding VelocityDistributionComparison, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding VelocityDistributionComparison}" />
+
             <!--  Front velocity histogram  -->
-            <Grid ColumnDefinitions="* auto" IsVisible="{Binding FrontVelocityHistogram, Converter={x:Static ObjectConverters.IsNotNull}}">
-                <Svg Grid.Column="0" Source="{Binding FrontVelocityHistogram}" />
+            <StackPanel IsVisible="{Binding FrontVelocityHistogram, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <Image Source="{Binding FrontVelocityHistogram}" />
+                <Image IsVisible="{Binding FrontLowSpeedVelocityHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontLowSpeedVelocityHistogram}" />
                 <plots:VelocityBandView
-                    Grid.Column="1"
+                    Margin="50,0,20,0"
+                    Title="Front Zone %"
                     HscPercentage="{Binding FrontHscPercentage}"
                     HsrPercentage="{Binding FrontHsrPercentage}"
                     LscPercentage="{Binding FrontLscPercentage}"
                     LsrPercentage="{Binding FrontLsrPercentage}" />
-            </Grid>
+            </StackPanel>
 
             <!--  Rear velocity histogram  -->
-            <Grid ColumnDefinitions="* auto" IsVisible="{Binding RearVelocityHistogram, Converter={x:Static ObjectConverters.IsNotNull}}">
-                <Svg Grid.Column="0" Source="{Binding RearVelocityHistogram}" />
+            <StackPanel IsVisible="{Binding RearVelocityHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Margin="0,24,0,0">
+                <Image Source="{Binding RearVelocityHistogram}" />
+                <Image IsVisible="{Binding RearLowSpeedVelocityHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearLowSpeedVelocityHistogram}" />
                 <plots:VelocityBandView
-                    Grid.Column="1"
+                    Margin="50,0,20,0"
+                    Title="Rear Zone %"
                     HscPercentage="{Binding RearHscPercentage}"
                     HsrPercentage="{Binding RearHsrPercentage}"
                     LscPercentage="{Binding RearLscPercentage}"
                     LsrPercentage="{Binding RearLsrPercentage}" />
-            </Grid>
+            </StackPanel>
 
         </StackPanel>
     </ScrollViewer>

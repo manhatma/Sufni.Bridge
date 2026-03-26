@@ -94,7 +94,7 @@ public class Strokes
                 // further heuristics based on both front and rear
                 // candidates.
                 if (i > 0 && i < strokes.Length - 1 &&
-                    stroke.Stat.MaxTravel <= Parameters.StrokeLengthThreshold &&
+                    stroke.Stat.MaxTravel <= Parameters.AirtimeTravelThreshold &&
                     stroke.Duration >= Parameters.AirtimeDurationThreshold &&
                     strokes[i + 1].Stat.MaxVelocity >= Parameters.AirtimeVelocityThreshold)
                 {
@@ -166,9 +166,9 @@ public class Strokes
             // strokes. We fix this by concatenating consecutive strokes if their
             // mean position is close to zero.
             double duration = (i - startIndex + 1) / (double)sampleRate;
-            if (maxPosition < Parameters.StrokeLengthThreshold &&
+            if (maxPosition < Parameters.StrokeLengthThreshold * Parameters.StrokeLengthThresholdFac &&
                 strokes.Count > 0 &&
-                strokes[^1].Stat.MaxTravel < Parameters.StrokeLengthThreshold)
+                strokes[^1].Stat.MaxTravel < Parameters.StrokeLengthThreshold * Parameters.StrokeLengthThresholdFac)
             {
                 strokes[^1].End = i;
                 strokes[^1].Duration += duration;

@@ -16,7 +16,7 @@ public class MassStorageTelemetryDataStore : ITelemetryDataStore
     public Task<List<ITelemetryFile>> GetFiles()
     {
         var files = DriveInfo.RootDirectory.GetFiles("*.SST")
-            .TrySelect<FileInfo, ITelemetryFile, FormatException>(f => new MassStorageTelemetryFile(f), null)
+            .TrySelect<FileInfo, ITelemetryFile, FormatException>(f => new MassStorageTelemetryFile(f, BoardId), null)
             .OrderByDescending(f => f.StartTime)
             .ToList();
         return Task.FromResult(files);
@@ -26,9 +26,6 @@ public class MassStorageTelemetryDataStore : ITelemetryDataStore
     {
         DriveInfo = driveInfo;
         Name = $"{driveInfo.VolumeLabel} ({DriveInfo.RootDirectory.Name})";
-        BoardId = File.ReadAllText($"{DriveInfo.RootDirectory.FullName}/BOARDID").ToLower();
-
-        if (!Directory.Exists($"{DriveInfo.RootDirectory.FullName}/uploaded"))
-            Directory.CreateDirectory($"{DriveInfo.RootDirectory.FullName}/uploaded");
+        BoardId = File.ReadAllText($"{DriveInfo.RootDirectory.FullName}/BOARDID").ToLower().Trim();
     }
 }

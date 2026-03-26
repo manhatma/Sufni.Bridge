@@ -2,163 +2,162 @@ using System;
 
 namespace Sufni.Bridge.Models.Telemetry;
 
-public class SavitzkyGolay
+public class WhittakerHendersonSmoother
 {
-    private readonly int windowSize;
-    private readonly int derivative;
-    private readonly int polynomial;
-    private readonly double[][] weights;
+    private static readonly double[][] DiffCoeffs =
+    [
+        [-1, 1],
+        [1, -2, 1],
+        [-1, 3, -3, 1],
+        [1, -4, 6, -4, 1],
+        [-1, 5, -10, 10, -5, 1],
+    ];
 
-    public SavitzkyGolay(int windowSize, int derivative, int polynomial)
+    private readonly int order;
+    private readonly double lambda;
+    private double[][]? matrix;
+    private int matrixLength;
+
+    public WhittakerHendersonSmoother(int order, double lambda)
     {
-        this.windowSize = windowSize;
-        this.derivative = derivative;
-        this.polynomial = polynomial;
-        this.weights = ComputeWeights();
+        if (order < 1 || order > DiffCoeffs.Length)
+            throw new ArgumentException($"Order must be between 1 and {DiffCoeffs.Length}");
+
+        this.order = order;
+        this.lambda = lambda;
     }
 
-    public static SavitzkyGolay Create(int windowSize, int derivative, int polynomial)
+    public double[] Smooth(double[] data)
     {
-        if (windowSize % 2 == 0 || windowSize < 5)
+        if (matrix == null || matrixLength != data.Length)
         {
-            throw new ArgumentException($"Window size [{windowSize}] must be odd and equal to or greater than 5");
+            matrix = BuildCholeskyMatrix(data.Length);
+            matrixLength = data.Length;
         }
 
-        if (derivative < 0)
-        {
-            throw new ArgumentException($"Derivative [{derivative}] must be equal or greater than 0");
-        }
-
-        if (polynomial < 0)
-        {
-            throw new ArgumentException($"Polynomial [{polynomial}] must be equal or greater than 0");
-        }
-
-        return new SavitzkyGolay(windowSize, derivative, polynomial);
+        return Solve(matrix, data);
     }
 
-    public double[] Process(double[] data, double[] h)
+    private double[][] BuildCholeskyMatrix(int size)
     {
-        if (windowSize > data.Length)
+        var b = MakeDPrimeD(size);
+        TimesLambdaPlusIdent(b);
+        Cholesky(b);
+        return b;
+    }
+
+    private double[][] MakeDPrimeD(int size)
+    {
+        var coeffs = DiffCoeffs[order - 1];
+        var b = new double[order + 1][];
+        for (var d = 0; d <= order; d++)
         {
-            throw new ArgumentException($"Data length [{data.Length}] must be larger than window size [{windowSize}]");
+            b[d] = new double[size - d];
         }
 
-        var halfWindow = (int)Math.Floor(windowSize / 2.0);
-        var numPoints = data.Length;
-        var results = new double[numPoints];
-        double hs;
-
-        // For the borders
-        for (var i = 0; i < halfWindow; i++)
+        for (var d = 0; d <= order; d++)
         {
-            var wg1 = weights[halfWindow - i - 1];
-            var wg2 = weights[halfWindow + i + 1];
-            var d1 = 0.0;
-            var d2 = 0.0;
+            var band = b[d];
+            var bandLen = band.Length;
 
-            for (var l = 0; l < windowSize; l++)
+            for (var i = 0; i < (bandLen + 1) / 2; i++)
             {
-                d1 += wg1[l] * data[l];
-                d2 += wg2[l] * data[numPoints - windowSize + l];
+                var jLower = Math.Max(0, i - bandLen + coeffs.Length - d);
+                var jUpper = Math.Min(i + 1, coeffs.Length - d);
+                var sum = 0.0;
+
+                for (var j = jLower; j < jUpper; j++)
+                {
+                    sum += coeffs[j] * coeffs[j + d];
+                }
+
+                band[i] = sum;
+                if (i != bandLen - 1 - i)
+                {
+                    band[bandLen - 1 - i] = sum;
+                }
             }
-
-            hs = GetHs(h, halfWindow - i - 1, halfWindow);
-            results[halfWindow - i - 1] = d1 / hs;
-
-            hs = GetHs(h, numPoints - halfWindow + i, halfWindow);
-            results[numPoints - halfWindow + i] = d2 / hs;
         }
 
-        // For the internal points
-        var wg = weights[halfWindow];
-        for (var i = windowSize; i <= numPoints; i++)
+        return b;
+    }
+
+    private void TimesLambdaPlusIdent(double[][] b)
+    {
+        for (var i = 0; i < b[0].Length; i++)
         {
-            var d = 0.0;
-            for (var l = 0; l < windowSize; l++)
+            b[0][i] = 1.0 + b[0][i] * lambda;
+        }
+
+        for (var d = 1; d < b.Length; d++)
+        {
+            for (var i = 0; i < b[d].Length; i++)
             {
-                d += wg[l] * data[l + i - windowSize];
+                b[d][i] *= lambda;
             }
-
-            hs = GetHs(h, i - halfWindow - 1, halfWindow);
-            results[i - halfWindow - 1] = d / hs;
         }
-
-        return results;
     }
 
-    private double GetHs(double[] h, int center, int half)
+    private static void Cholesky(double[][] b)
     {
-        var hs = 0.0;
-        var count = 0;
+        var n = b[0].Length;
+        var dmax = b.Length - 1;
 
-        for (var i = center - half; i < center + half; i++)
+        for (var i = 0; i < n; i++)
         {
-            if (i < 0 || i >= h.Length - 1) continue;
-            hs += h[i + 1] - h[i];
-            count++;
-        }
+            var jStart = Math.Max(0, i - dmax);
+            for (var j = jStart; j <= i; j++)
+            {
+                var kLower = Math.Max(Math.Max(0, i - dmax), j - dmax);
+                var sum = 0.0;
 
-        return Math.Pow(hs / count, derivative);
+                for (var k = kLower; k < j; k++)
+                {
+                    sum += b[i - k][k] * b[j - k][k];
+                }
+
+                if (i == j)
+                {
+                    b[0][i] = Math.Sqrt(b[0][i] - sum);
+                }
+                else
+                {
+                    b[i - j][j] = (b[i - j][j] - sum) / b[0][j];
+                }
+            }
+        }
     }
 
-    private static double GramPolynomial(int i, int m, int k, int s)
+    private static double[] Solve(double[][] b, double[] vec)
     {
-        var result = k switch
+        var n = vec.Length;
+        var dmax = b.Length - 1;
+        var result = new double[n];
+
+        // Forward substitution: L * y = vec
+        for (var i = 0; i < n; i++)
         {
-            > 0 => ((4 * k - 2) / (k * (2 * m - k + 1.0))) *
-                   (i * GramPolynomial(i, m, k - 1, s) + s * GramPolynomial(i, m, k - 1, s - 1)) -
-                   (((k - 1) * (2 * m + k)) / (k * (2 * m - k + 1.0))) * GramPolynomial(i, m, k - 2, s),
-            0 when s == 0 => 1.0,
-            _ => 0.0
-        };
+            var sum = 0.0;
+            var jLower = Math.Max(0, i - dmax);
+            for (var j = jLower; j < i; j++)
+            {
+                sum += b[i - j][j] * result[j];
+            }
+            result[i] = (vec[i] - sum) / b[0][i];
+        }
+
+        // Backward substitution: L' * x = y
+        for (var i = n - 1; i >= 0; i--)
+        {
+            var sum = 0.0;
+            var jUpper = Math.Min(n, i + dmax + 1);
+            for (var j = i + 1; j < jUpper; j++)
+            {
+                sum += b[j - i][i] * result[j];
+            }
+            result[i] = (result[i] - sum) / b[0][i];
+        }
 
         return result;
-    }
-
-    private static double ProductOfRange(int a, int b)
-    {
-        var gf = 1;
-
-        if (a < b) return gf;
-        for (var j = a - b + 1; j <= a; j++)
-        {
-            gf *= j;
-        }
-
-        return gf;
-    }
-
-    private static double PolyWeight(int i, int t, int windowMiddle, int polynomial, int derivative)
-    {
-        var sum = 0.0;
-
-        for (var k = 0; k <= polynomial; k++)
-        {
-            sum +=
-                (2 * k + 1) *
-                (ProductOfRange(2 * windowMiddle, k) / ProductOfRange(2 * windowMiddle + k + 1, k + 1)) *
-                GramPolynomial(i, windowMiddle, k, 0) * GramPolynomial(t, windowMiddle, k, derivative);
-        }
-
-        return sum;
-    }
-
-    private double[][] ComputeWeights()
-    {
-        var windowMiddle = (int)Math.Floor(windowSize / 2.0);
-        var w = new double[windowSize][];
-
-        for (var row = -windowMiddle; row <= windowMiddle; row++)
-        {
-            w[row + windowMiddle] = new double[windowSize];
-
-            for (var col = -windowMiddle; col <= windowMiddle; col++)
-            {
-                w[row + windowMiddle][col + windowMiddle] = PolyWeight(col, row, windowMiddle, polynomial, derivative);
-            }
-        }
-
-        return w;
     }
 }

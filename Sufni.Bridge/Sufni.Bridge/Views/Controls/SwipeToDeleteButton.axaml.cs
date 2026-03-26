@@ -59,7 +59,10 @@ public partial class SwipeToDeleteButton : UserControl
 
     public void SwipePropertyChanged(object? sender, AvaloniaPropertyChangedEventArgs e)
     {
-        if (e.Property.Name == "SwipeState" && sender is Swipe swipe && e.NewValue is SwipeState.LeftVisible)
+        if (e.Property.Name != "SwipeState" || sender is not Swipe swipe)
+            return;
+
+        if (e.NewValue is SwipeState.LeftVisible)
         {
             var vm = swipe.DataContext as ItemViewModelBase;
             if (vm is not null && vm.UndoableDeleteCommand.CanExecute(false))

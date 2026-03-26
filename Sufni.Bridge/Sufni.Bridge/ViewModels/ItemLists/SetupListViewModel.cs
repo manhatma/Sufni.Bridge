@@ -78,7 +78,7 @@ public class SetupListViewModel : ItemListViewModelBase
             string? newSetupsBoardId = null;
             var datastoreBoardId = importSessionsPage.SelectedDataStore?.BoardId;
             var datastoreBoard = Boards.FirstOrDefault(b =>
-                b?.Id.ToLower() == datastoreBoardId && b?.SetupId is not null, null);
+                b?.Id.ToLower().Trim() == datastoreBoardId?.Trim() && b?.SetupId is not null, null);
             if (datastoreBoard is null || datastoreBoard.SetupId is null)
             {
                 newSetupsBoardId = datastoreBoardId;

@@ -82,4 +82,11 @@ public partial class ItemViewModelBase : ViewModelBase
         // This exists just so we can easily control the enabled/disabled
         // state of the Delete button on the CommonButtonLine.
     }
+
+    public virtual bool ShowPdfExportButton => false;
+
+    protected virtual bool CanExportPdf() { return false; }
+
+    [RelayCommand(CanExecute = nameof(CanExportPdf))]
+    protected virtual Task ExportPdf() { return Task.CompletedTask; }
 }

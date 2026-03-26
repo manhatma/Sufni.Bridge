@@ -4,11 +4,16 @@
     <TargetFramework>net9.0-ios</TargetFramework>
     <SupportedOSPlatformVersion>13.0</SupportedOSPlatformVersion>
     <Nullable>enable</Nullable>
-    <CodesignKey>Apple Development: sghctoma@gmail.com (ZQF5R92YHE)</CodesignKey>
+    <!-- CodesignKey is imported from Secrets.props and not stored in source control -->
+    <ApplicationId>de.nielsbarth.sufnibridge-dev</ApplicationId>
+    <DevelopmentTeam>832925XDRU</DevelopmentTeam>
+    <AutomaticProvisioning>true</AutomaticProvisioning>
     <!--RuntimeIdentifier>iossimulator-x64</RuntimeIdentifier-->
     <!--RuntimeIdentifier>ios-arm64</RuntimeIdentifier-->
     <UseInterpreter>true</UseInterpreter>
   </PropertyGroup>
+
+  <Import Project="Secrets.props" Condition="Exists('Secrets.props')" />
   
   <ItemGroup>
     <PackageReference Include="Avalonia.iOS" Version="11.2.5" />

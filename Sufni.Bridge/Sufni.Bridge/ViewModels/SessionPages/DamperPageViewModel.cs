@@ -1,11 +1,15 @@
-﻿using CommunityToolkit.Mvvm.ComponentModel;
+using Avalonia.Svg.Skia;
+using CommunityToolkit.Mvvm.ComponentModel;
 
 namespace Sufni.Bridge.ViewModels.SessionPages;
 
 public partial class DamperPageViewModel() : PageViewModelBase("Damper")
 {
-    [ObservableProperty] private string? frontVelocityHistogram;
-    [ObservableProperty] private string? rearVelocityHistogram;
+    [ObservableProperty] private SvgImage? velocityDistributionComparison;
+    [ObservableProperty] private SvgImage? frontVelocityHistogram;
+    [ObservableProperty] private SvgImage? frontLowSpeedVelocityHistogram;
+    [ObservableProperty] private SvgImage? rearVelocityHistogram;
+    [ObservableProperty] private SvgImage? rearLowSpeedVelocityHistogram;
     [ObservableProperty] private double? frontHscPercentage;
     [ObservableProperty] private double? rearHscPercentage;
     [ObservableProperty] private double? frontLscPercentage;

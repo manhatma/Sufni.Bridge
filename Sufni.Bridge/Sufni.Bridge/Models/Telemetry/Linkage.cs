@@ -107,6 +107,29 @@ public class Linkage : Synchronizable
 
     [Ignore][JsonIgnore][IgnoreMember] public Polynomial Polynomial => new(ShockWheelCoeffs);
 
+    /// <summary>
+    /// Converts wheel travel (mm) to damper/shock travel (mm) by numerically inverting
+    /// the shock→wheel polynomial via binary search.
+    /// </summary>
+    public double WheelToDamperTravel(double wheelTravel)
+    {
+        var maxShock = MaxRearStroke ?? 0;
+        if (maxShock <= 0) return 0;
+
+        var lo = 0.0;
+        var hi = maxShock;
+        for (var i = 0; i < 50; i++)
+        {
+            var mid = (lo + hi) / 2.0;
+            if (Polynomial.Evaluate(mid) < wheelTravel)
+                lo = mid;
+            else
+                hi = mid;
+        }
+
+        return Math.Clamp((lo + hi) / 2.0, 0, maxShock);
+    }
+
     [Ignore]
     [JsonIgnore]
     public double[][]? LeverageRatio

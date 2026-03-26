@@ -7,10 +7,15 @@ namespace Sufni.Bridge.Models;
 public class SessionCache
 {
     [Column("session_id"), PrimaryKey] public Guid SessionId { get; set; }
+    [Column("travel_comparison_histogram")] public string? TravelComparisonHistogram { get; set; }
+    [Column("front_rear_travel_scatter")] public string? FrontRearTravelScatter { get; set; }
     [Column("front_travel_histogram")] public string? FrontTravelHistogram { get; set; }
     [Column("rear_travel_histogram")] public string? RearTravelHistogram { get; set; }
     [Column("front_velocity_histogram")] public string? FrontVelocityHistogram { get; set; }
+    [Column("front_low_speed_velocity_histogram")] public string? FrontLowSpeedVelocityHistogram { get; set; }
     [Column("rear_velocity_histogram")] public string? RearVelocityHistogram { get; set; }
+    [Column("rear_low_speed_velocity_histogram")] public string? RearLowSpeedVelocityHistogram { get; set; }
+    [Column("combined_balance")] public string? CombinedBalance { get; set; }
     [Column("compression_balance")] public string? CompressionBalance { get; set; }
     [Column("rebound_balance")] public string? ReboundBalance { get; set; }
     [Column("front_hsc_percentage")] public double? FrontHscPercentage { get; set; }
@@ -21,4 +26,10 @@ public class SessionCache
     [Column("rear_lsr_percentage")] public double? RearLsrPercentage { get; set; }
     [Column("front_hsr_percentage")] public double? FrontHsrPercentage { get; set; }
     [Column("rear_hsr_percentage")] public double? RearHsrPercentage { get; set; }
+    [Column("velocity_distribution_comparison")] public string? VelocityDistributionComparison { get; set; }
+    [Column("position_velocity_comparison")] public string? PositionVelocityComparison { get; set; }
+    [Column("front_position_velocity")] public string? FrontPositionVelocity { get; set; }
+    [Column("rear_position_velocity")] public string? RearPositionVelocity { get; set; }
+    [Column("summary_json")] public string? SummaryJson { get; set; }
+    [Column("plot_version")] public int PlotVersion { get; set; }
 }

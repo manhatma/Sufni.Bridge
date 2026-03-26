@@ -10,10 +10,12 @@ namespace Sufni.Bridge.Models;
 public class StorageProviderTelemetryFile : ITelemetryFile
 {
     private readonly IStorageFile storageFile;
+    private readonly string? boardId;
     private Task Initialization { get; }
 
     public string Name { get; set; }
     public string FileName => storageFile.Name;
+    public string SourceIdentifier { get; private set; }
     public bool? ShouldBeImported { get; set; }
     public bool Imported { get; set; }
     public string Description { get; set; }
@@ -43,13 +45,16 @@ public class StorageProviderTelemetryFile : ITelemetryFile
         Duration = duration.ToString(@"hh\:mm\:ss");
         Name = storageFile.Name;
         Description = $"Imported from {storageFile.Name}";
+        SourceIdentifier = $"{boardId ?? ""}:{timestamp}";
     }
 
 #pragma warning disable CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
     // Init() takes care of this.
-    public StorageProviderTelemetryFile(IStorageFile storageFile)
+    public StorageProviderTelemetryFile(IStorageFile storageFile, string? boardId)
     {
         this.storageFile = storageFile;
+        this.boardId = boardId;
+        SourceIdentifier = string.Empty;
         Initialization = Init();
     }
 #pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
@@ -69,24 +74,7 @@ public class StorageProviderTelemetryFile : ITelemetryFile
     public async Task OnImported()
     {
         await Initialization;
-
         Imported = true;
-        var parent = await storageFile.GetParentAsync();
-        var parentItems = parent!.GetItemsAsync();
-        IStorageFolder? uploaded = null;
-        await foreach (var item in parentItems)
-        {
-            if (!item.Name.Equals("uploaded")) continue;
-            uploaded = item as IStorageFolder;
-            break;
-        }
-
-        if (uploaded is null)
-        {
-            throw new Exception("The \"uploaded\" folder could not be accessed.");
-        }
-
-        await storageFile.MoveAsync(uploaded);
     }
 
     public async Task OnTrashed()

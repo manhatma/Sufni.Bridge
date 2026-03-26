@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using Sufni.Bridge.Models;
 using System.Collections.ObjectModel;
@@ -24,10 +25,10 @@ internal class DriveInfoComparer : IEqualityComparer<DriveInfo>
         if (!ds1.IsReady || !ds2.IsReady)
             return false;
 
-        return ds1.VolumeLabel == ds2.VolumeLabel;
+        return ds1.Name == ds2.Name;
     }
 
-    public int GetHashCode(DriveInfo ds) => ds.IsReady ? ds.VolumeLabel.GetHashCode() : 0;
+    public int GetHashCode(DriveInfo ds) => ds.IsReady ? ds.Name.GetHashCode() : 0;
 }
 
 internal class TelemetryDataStoreService : ITelemetryDataStoreService
@@ -36,14 +37,37 @@ internal class TelemetryDataStoreService : ITelemetryDataStoreService
     private static readonly object DataStoreLock = new();
     public ObservableCollection<ITelemetryDataStore> DataStores { get; } = new();
 
+    private static bool IsMassStorageCandidate(DriveInfo drive)
+    {
+        try
+        {
+            if (!drive.IsReady)
+            {
+                return false;
+            }
+
+            if (drive.DriveFormat != "FAT32" && drive.DriveFormat != "msdos")
+            {
+                return false;
+            }
+
+            return File.Exists($"{drive.RootDirectory}/BOARDID");
+        }
+        catch (UnauthorizedAccessException)
+        {
+            return false;
+        }
+        catch (IOException)
+        {
+            return false;
+        }
+    }
+
     private void GetMassStorageDatastores()
     {
-        var x = DriveInfo.GetDrives();
         var comparer = new DriveInfoComparer();
         var current = DriveInfo.GetDrives()
-            .Where(drive => drive.IsReady &&
-                (drive.DriveFormat == "FAT32" || drive.DriveFormat == "msdos") &&
-                File.Exists($"{drive.RootDirectory}/BOARDID"))
+            .Where(IsMassStorageCandidate)
             .ToArray();
         var known = DataStores
             .Where(ds => ds is MassStorageTelemetryDataStore)
