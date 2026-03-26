@@ -1,14 +1,22 @@
-﻿using System;
+using System;
+using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Linq;
 using System.Threading.Tasks;
+using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using DynamicData;
 using DynamicData.Binding;
+using Microsoft.Extensions.DependencyInjection;
 using Sufni.Bridge.ViewModels.Items;
 
 namespace Sufni.Bridge.ViewModels.ItemLists;
 
 public partial class SessionListViewModel : ItemListViewModelBase
 {
+    [ObservableProperty] private bool isCompareMode;
+    [ObservableProperty] private int compareSelectionCount;
+
     public override void ConnectSource()
     {
         Source.Connect()
@@ -53,5 +61,60 @@ public partial class SessionListViewModel : ItemListViewModelBase
     {
         Source.Clear();
         await LoadSessionsAsync();
+    }
+
+    [RelayCommand]
+    private void ToggleCompareMode()
+    {
+        IsCompareMode = !IsCompareMode;
+        if (!IsCompareMode)
+        {
+            // Clear all selections when exiting compare mode
+            foreach (var item in Items)
+            {
+                item.IsSelectedForCompare = false;
+            }
+            CompareSelectionCount = 0;
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleCompareSelection(ItemViewModelBase item)
+    {
+        if (item.IsSelectedForCompare)
+        {
+            item.IsSelectedForCompare = false;
+            CompareSelectionCount--;
+        }
+        else if (CompareSelectionCount < 3)
+        {
+            item.IsSelectedForCompare = true;
+            CompareSelectionCount++;
+        }
+    }
+
+    [RelayCommand]
+    private void OpenComparison()
+    {
+        var selected = Items
+            .Where(i => i.IsSelectedForCompare)
+            .OfType<SessionViewModel>()
+            .ToList();
+
+        if (selected.Count < 2) return;
+
+        var mainViewModel = App.Current?.Services?.GetService<MainViewModel>();
+        Debug.Assert(mainViewModel != null, nameof(mainViewModel) + " != null");
+
+        var compareVm = new CompareSessionsViewModel(selected);
+        mainViewModel.OpenView(compareVm);
+
+        // Reset compare mode
+        IsCompareMode = false;
+        foreach (var item in Items)
+        {
+            item.IsSelectedForCompare = false;
+        }
+        CompareSelectionCount = 0;
     }
 }

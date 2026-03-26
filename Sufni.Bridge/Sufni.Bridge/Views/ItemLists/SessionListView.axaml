@@ -1,4 +1,4 @@
-﻿<UserControl
+<UserControl
     x:Class="Sufni.Bridge.Views.ItemLists.SessionListView"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
@@ -7,6 +7,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:v="clr-namespace:Sufni.Bridge.Views"
     xmlns:vm="clr-namespace:Sufni.Bridge.ViewModels"
+    xmlns:vmi="clr-namespace:Sufni.Bridge.ViewModels.Items"
     xmlns:vml="clr-namespace:Sufni.Bridge.ViewModels.ItemLists"
     d:DesignHeight="600"
     d:DesignWidth="500"
@@ -18,30 +19,123 @@
         <vml:SessionListViewModel />
     </Design.DataContext>
 
-    <Grid ColumnDefinitions="*" RowDefinitions="auto * auto auto">
+    <UserControl.Styles>
+        <Style Selector="Button.compare-toggle">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#D0D0D0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="#505558" />
+        </Style>
+        <Style Selector="Button.compare-toggle-active">
+            <Setter Property="Background" Value="#66c2a5" />
+            <Setter Property="Foreground" Value="#15191c" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="Button.compare-item">
+            <Setter Property="Background" Value="{StaticResource SufniRegion}" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="Padding" Value="10,0" />
+        </Style>
+        <Style Selector="Button.compare-item:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="#1f2327" />
+        </Style>
+        <Style Selector="Button.compare-open">
+            <Setter Property="Background" Value="#66c2a5" />
+            <Setter Property="Foreground" Value="#15191c" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="Padding" Value="0,12" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Margin" Value="10,5" />
+        </Style>
+    </UserControl.Styles>
 
-        <!--  List of Sessions  -->
+    <Grid ColumnDefinitions="*" RowDefinitions="auto auto * auto auto auto">
+
+        <!-- Compare mode toggle button -->
+        <Grid Grid.Row="0" Margin="10,8,10,0" ColumnDefinitions="* auto">
+            <Button Grid.Column="1"
+                    Classes.compare-toggle="{Binding !IsCompareMode}"
+                    Classes.compare-toggle-active="{Binding IsCompareMode}"
+                    Command="{Binding ToggleCompareModeCommand}">
+                <Panel>
+                    <TextBlock Text="Compare" IsVisible="{Binding !IsCompareMode}" />
+                    <TextBlock Text="Cancel" IsVisible="{Binding IsCompareMode}" />
+                </Panel>
+            </Button>
+        </Grid>
+
+        <!--  Normal list of Sessions (hidden in compare mode) -->
         <controls:PullableMenuScrollViewer
-            Grid.Row="1"
+            Grid.Row="2"
             Grid.Column="0"
             Margin="0,15,0,5"
             Items="{Binding Items}"
-            MenuItems="{Binding MenuItems}">
+            MenuItems="{Binding MenuItems}"
+            IsVisible="{Binding !IsCompareMode}">
             <controls:PullableMenuScrollViewer.TopContent>
                 <controls:SearchBarWithDateFilter />
             </controls:PullableMenuScrollViewer.TopContent>
         </controls:PullableMenuScrollViewer>
 
+        <!-- Compare mode session list with checkboxes -->
+        <ScrollViewer Grid.Row="2" Margin="0,15,0,5" IsVisible="{Binding IsCompareMode}">
+            <ItemsRepeater ItemsSource="{Binding Items}">
+                <ItemsRepeater.ItemTemplate>
+                    <DataTemplate x:DataType="vmi:ItemViewModelBase">
+                        <StackPanel>
+                            <Button Height="48"
+                                    HorizontalAlignment="Stretch"
+                                    VerticalContentAlignment="Center"
+                                    Classes="compare-item"
+                                    Command="{Binding $parent[UserControl].((vml:SessionListViewModel)DataContext).ToggleCompareSelectionCommand}"
+                                    CommandParameter="{Binding}">
+                                <Grid ColumnDefinitions="30 auto * auto" HorizontalAlignment="Stretch">
+                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsSelectedForCompare}"
+                                              IsHitTestVisible="False" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="3" Text="{Binding Timestamp}"
+                                               VerticalAlignment="Center" Foreground="#808080" />
+                                </Grid>
+                            </Button>
+                            <Separator Height="1" Margin="0"
+                                       Background="{StaticResource SufniBackgroundDisabled}" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsRepeater.ItemTemplate>
+            </ItemsRepeater>
+        </ScrollViewer>
+
+        <!-- Compare button (visible when 2+ sessions selected) -->
+        <Button Grid.Row="3"
+                Classes="compare-open"
+                IsVisible="{Binding IsCompareMode}"
+                Command="{Binding OpenComparisonCommand}">
+            <TextBlock>
+                <Run Text="Compare" />
+                <Run Text="{Binding CompareSelectionCount, StringFormat=' ({0})'}" />
+            </TextBlock>
+        </Button>
+
         <!--  Notifications  -->
         <controls:NotificationsBar
-            Grid.Row="2"
+            Grid.Row="4"
             Grid.Column="0"
             Margin="5,0"
             ZIndex="10" />
 
         <!--  Error messages  -->
         <controls:ErrorMessagesBar
-            Grid.Row="3"
+            Grid.Row="5"
             Grid.Column="0"
             Margin="5,0"
             ZIndex="10" />
@@ -49,7 +143,7 @@
         <!--  Undo last deleted  -->
         <controls:UndoDeleteButton
             Grid.Row="0"
-            Grid.RowSpan="4"
+            Grid.RowSpan="6"
             Grid.Column="0" />
     </Grid>
 </UserControl>
