@@ -56,6 +56,8 @@ public partial class CompareSessionsViewModel : ViewModelBase
     [ObservableProperty] private SvgImage? rearTravelHistogramSvg;
     [ObservableProperty] private SvgImage? frontRearTravelSvg;
     [ObservableProperty] private SvgImage? balanceSvg;
+    [ObservableProperty] private SvgImage? reboundBalanceSvg;
+    [ObservableProperty] private SvgImage? compressionBalanceSvg;
     [ObservableProperty] private SvgImage? frontLowSpeedSvg;
     [ObservableProperty] private SvgImage? rearLowSpeedSvg;
 
@@ -72,6 +74,8 @@ public partial class CompareSessionsViewModel : ViewModelBase
     private string? _rearTravelHistogramXml;
     private string? _frontRearTravelXml;
     private string? _balanceXml;
+    private string? _reboundBalanceXml;
+    private string? _compressionBalanceXml;
     private string? _frontLowSpeedXml;
     private string? _rearLowSpeedXml;
 
@@ -135,10 +139,40 @@ public partial class CompareSessionsViewModel : ViewModelBase
             maxTravel, bands);
     }
 
-    private static List<CompareTableRow> BuildSummaryRows(List<SessionStats?> statsList)
+    private static List<CompareTableRow> BuildSummaryRows(List<SessionStats?> statsList, List<SessionViewModel> sessions, SuspensionType type)
     {
-        return
-        [
+        var rows = new List<CompareTableRow>
+        {
+            new("Spring", sessions.Select(s =>
+            {
+                var val = type == SuspensionType.Front ? s.SessionModel.FrontSpringRate : s.SessionModel.RearSpringRate;
+                return val ?? "-";
+            }).ToList()),
+            new("VolSpc", sessions.Select(s =>
+            {
+                var val = type == SuspensionType.Front ? s.SessionModel.FrontVolSpc : s.SessionModel.RearVolSpc;
+                return val.HasValue ? string.Create(CultureInfo.InvariantCulture, $"{val.Value:F2}") : "-";
+            }).ToList()),
+            new("HSC [clicks]", sessions.Select(s =>
+            {
+                var val = type == SuspensionType.Front ? s.SessionModel.FrontHighSpeedCompression : s.SessionModel.RearHighSpeedCompression;
+                return val.HasValue ? val.Value.ToString() : "-";
+            }).ToList()),
+            new("LSC [clicks]", sessions.Select(s =>
+            {
+                var val = type == SuspensionType.Front ? s.SessionModel.FrontLowSpeedCompression : s.SessionModel.RearLowSpeedCompression;
+                return val.HasValue ? val.Value.ToString() : "-";
+            }).ToList()),
+            new("LSR [clicks]", sessions.Select(s =>
+            {
+                var val = type == SuspensionType.Front ? s.SessionModel.FrontLowSpeedRebound : s.SessionModel.RearLowSpeedRebound;
+                return val.HasValue ? val.Value.ToString() : "-";
+            }).ToList()),
+            new("HSR [clicks]", sessions.Select(s =>
+            {
+                var val = type == SuspensionType.Front ? s.SessionModel.FrontHighSpeedRebound : s.SessionModel.RearHighSpeedRebound;
+                return val.HasValue ? val.Value.ToString() : "-";
+            }).ToList()),
             new("Pos [AVG, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.Average, s.MaxTravel)).ToList()),
             new("Pos [95th, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.P95, s.MaxTravel)).ToList()),
             new("Pos [MAX, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.Max, s.MaxTravel)).ToList()),
@@ -153,7 +187,8 @@ public partial class CompareSessionsViewModel : ViewModelBase
             new("LSR [%]", statsList.Select(s => s?.Bands is null ? "-" : FormatPercent(s.Bands.LowSpeedRebound)).ToList()),
             new("LSC [%]", statsList.Select(s => s?.Bands is null ? "-" : FormatPercent(s.Bands.LowSpeedCompression)).ToList()),
             new("HSC [%]", statsList.Select(s => s?.Bands is null ? "-" : FormatPercent(s.Bands.HighSpeedCompression)).ToList()),
-        ];
+        };
+        return rows;
     }
 
     public async Task GenerateComparePlots()
@@ -232,7 +267,29 @@ public partial class CompareSessionsViewModel : ViewModelBase
             Dispatcher.UIThread.Post(() => BalanceSvg = SourceToImage(src));
         }));
 
-        // 5. Front Low-Speed Velocity
+        // 5. Rebound Balance
+        tasks.Add(Task.Run(() =>
+        {
+            var p = new CompareBalanceTypePlot(new Plot(), BalanceType.Rebound);
+            p.LoadMultipleSessions(sessionData);
+            var svg = p.Plot.GetSvgXml(width, height);
+            _reboundBalanceXml = svg;
+            var src = SvgToSource(svg);
+            Dispatcher.UIThread.Post(() => ReboundBalanceSvg = SourceToImage(src));
+        }));
+
+        // 6. Compression Balance
+        tasks.Add(Task.Run(() =>
+        {
+            var p = new CompareBalanceTypePlot(new Plot(), BalanceType.Compression);
+            p.LoadMultipleSessions(sessionData);
+            var svg = p.Plot.GetSvgXml(width, height);
+            _compressionBalanceXml = svg;
+            var src = SvgToSource(svg);
+            Dispatcher.UIThread.Post(() => CompressionBalanceSvg = SourceToImage(src));
+        }));
+
+        // 7. Front Low-Speed Velocity
         tasks.Add(Task.Run(() =>
         {
             var p = new CompareLowSpeedVelocityPlot(new Plot(), SuspensionType.Front);
@@ -260,8 +317,8 @@ public partial class CompareSessionsViewModel : ViewModelBase
             var frontStatsList = sessionData.Select(s => BuildSessionStats(s.data, SuspensionType.Front)).ToList();
             var rearStatsList = sessionData.Select(s => BuildSessionStats(s.data, SuspensionType.Rear)).ToList();
 
-            var frontRows = BuildSummaryRows(frontStatsList);
-            var rearRows = BuildSummaryRows(rearStatsList);
+            var frontRows = BuildSummaryRows(frontStatsList, Sessions, SuspensionType.Front);
+            var rearRows = BuildSummaryRows(rearStatsList, Sessions, SuspensionType.Rear);
 
             Dispatcher.UIThread.Post(() =>
             {
@@ -278,6 +335,7 @@ public partial class CompareSessionsViewModel : ViewModelBase
     private bool CanExportPdf() => !IsLoading && !IsGeneratingPdf &&
         (_frontTravelHistogramXml is not null || _rearTravelHistogramXml is not null ||
          _frontRearTravelXml is not null || _balanceXml is not null ||
+         _reboundBalanceXml is not null || _compressionBalanceXml is not null ||
          _frontLowSpeedXml is not null || _rearLowSpeedXml is not null);
 
     [RelayCommand(CanExecute = nameof(CanExportPdf))]
@@ -286,7 +344,7 @@ public partial class CompareSessionsViewModel : ViewModelBase
         IsGeneratingPdf = true;
         try
         {
-            var svgs = new List<string?> { _frontTravelHistogramXml, _rearTravelHistogramXml, _frontRearTravelXml, _balanceXml, _frontLowSpeedXml, _rearLowSpeedXml };
+            var svgs = new List<string?> { _frontTravelHistogramXml, _rearTravelHistogramXml, _frontRearTravelXml, _balanceXml, _reboundBalanceXml, _compressionBalanceXml, _frontLowSpeedXml, _rearLowSpeedXml };
             var validSvgs = svgs.Where(s => s is not null).Cast<string>().ToList();
             if (validSvgs.Count == 0)
             {
