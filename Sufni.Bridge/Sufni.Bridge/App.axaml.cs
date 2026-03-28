@@ -60,6 +60,10 @@ public partial class App : Application
                 {
                     var topLevel = TopLevel.GetTopLevel(singleViewPlatform.MainView);
                     mainViewModel!.SafeAreaPadding = topLevel!.InsetsManager!.SafeAreaPadding;
+                    topLevel.InsetsManager.SafeAreaChanged += (_, e) =>
+                    {
+                        mainViewModel.SafeAreaPadding = e.SafeAreaPadding;
+                    };
                     fileService.SetTarget(topLevel);
                 };
                 break;

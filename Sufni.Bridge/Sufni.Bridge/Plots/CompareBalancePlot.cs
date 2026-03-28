@@ -93,34 +93,27 @@ public class CompareBalancePlot(Plot plot) : SufniPlot(plot)
             rearRebTrend.LineStyle.Width = 2;
         }
 
-        // Legend centered vertically (middle-right)
+        // Legend centered vertically (middle-right), shifted up for distance from y=0
         var legendStep = Math.Max(roundedMaxComp, roundedMaxReb) * 0.08;
         var midY = (roundedMaxComp - roundedMaxReb) / 2.0;
-        var totalItems = sessions.Count + 2; // session names + 2 hints
-        var legendY = midY + (totalItems / 2.0) * legendStep;
+        var totalItems = sessions.Count + 1; // session names + 1 hint line
+        var legendY = midY + (totalItems / 2.0) * legendStep + legendStep;
+
+        // Combined front/rear hint line above session names
+        var hint = Plot.Add.Text("— Front   - - Rear", 100, legendY);
+        hint.LabelFontColor = Color.FromHex("#808080");
+        hint.LabelFontSize = 10;
+        hint.LabelAlignment = Alignment.UpperRight;
+        hint.LabelOffsetX = -6;
 
         for (var i = 0; i < sessions.Count; i++)
         {
             var (_, color, _, name) = sessions[i];
-            var label = Plot.Add.Text(name, 100, legendY - i * legendStep);
+            var label = Plot.Add.Text(name, 100, legendY - (i + 1) * legendStep);
             label.LabelFontColor = color;
             label.LabelFontSize = 12;
             label.LabelAlignment = Alignment.UpperRight;
             label.LabelOffsetX = -6;
         }
-
-        // Front/Rear line style hint
-        var hintY = legendY - sessions.Count * legendStep;
-        var frontHint = Plot.Add.Text("— Front", 100, hintY);
-        frontHint.LabelFontColor = Color.FromHex("#808080");
-        frontHint.LabelFontSize = 10;
-        frontHint.LabelAlignment = Alignment.UpperRight;
-        frontHint.LabelOffsetX = -6;
-
-        var rearHint = Plot.Add.Text("- - Rear", 100, hintY - legendStep * 0.8);
-        rearHint.LabelFontColor = Color.FromHex("#808080");
-        rearHint.LabelFontSize = 10;
-        rearHint.LabelAlignment = Alignment.UpperRight;
-        rearHint.LabelOffsetX = -6;
     }
 }

@@ -25,13 +25,14 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 41;
+    private const int CurrentPlotVersion = 44;
 
     // Shared across all instances — updated whenever any session loads with real bounds.
     // Default matches iPhone 15 Pro logical width; height/2 is used for plots.
     internal static Rect LastKnownBounds = new Rect(0, 0, 393, 700);
 
     private Session session;
+    internal Session SessionModel => session;
     public bool IsInDatabase;
     private SpringPageViewModel SpringPage { get; } = new();
     private DamperPageViewModel DamperPage { get; } = new();

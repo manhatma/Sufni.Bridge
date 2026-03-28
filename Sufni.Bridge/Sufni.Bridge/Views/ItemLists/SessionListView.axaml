@@ -56,13 +56,42 @@
             <Setter Property="CornerRadius" Value="6" />
             <Setter Property="Margin" Value="10,5" />
         </Style>
+        <Style Selector="Button.filter-toggle">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#D0D0D0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="#505558" />
+        </Style>
+        <Style Selector="Button.filter-toggle.filter-indicator">
+            <Setter Property="Background" Value="#2a5a7a" />
+            <Setter Property="BorderBrush" Value="#3288bd" />
+            <Setter Property="Foreground" Value="#ffffff" />
+        </Style>
+        <Style Selector="Button.filter-toggle-active">
+            <Setter Property="Background" Value="#3288bd" />
+            <Setter Property="Foreground" Value="#ffffff" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
     </UserControl.Styles>
 
     <Grid ColumnDefinitions="*" RowDefinitions="auto auto * auto auto auto">
 
-        <!-- Compare mode toggle button -->
-        <Grid Grid.Row="0" Margin="10,8,10,0" ColumnDefinitions="* auto">
-            <Button Grid.Column="1"
+        <!-- Filter + Compare mode toggle buttons -->
+        <Grid Grid.Row="0" Margin="10,8,10,0" ColumnDefinitions="auto * auto">
+            <Button Grid.Column="0"
+                    Classes.filter-toggle="{Binding !IsFilterMenuOpen}"
+                    Classes.filter-toggle-active="{Binding IsFilterMenuOpen}"
+                    Classes.filter-indicator="{Binding IsFilterActive}"
+                    Command="{Binding ToggleFilterMenuCommand}">
+                <TextBlock Text="Filter" />
+            </Button>
+            <Button Grid.Column="2"
                     Classes.compare-toggle="{Binding !IsCompareMode}"
                     Classes.compare-toggle-active="{Binding IsCompareMode}"
                     Command="{Binding ToggleCompareModeCommand}">
@@ -72,6 +101,32 @@
                 </Panel>
             </Button>
         </Grid>
+
+        <!-- Setup filter menu -->
+        <Border Grid.Row="1" Margin="10,6,10,0" Padding="8"
+                Background="#1f2327" CornerRadius="6" BorderBrush="#505558" BorderThickness="1"
+                IsVisible="{Binding IsFilterMenuOpen}">
+            <ItemsRepeater ItemsSource="{Binding SetupFilters}">
+                <ItemsRepeater.Layout>
+                    <StackLayout Orientation="Vertical" Spacing="2" />
+                </ItemsRepeater.Layout>
+                <ItemsRepeater.ItemTemplate>
+                    <DataTemplate x:DataType="vml:SetupFilterItem">
+                        <Button Background="Transparent" Padding="4,6" CornerRadius="4"
+                                HorizontalAlignment="Stretch"
+                                Command="{Binding $parent[UserControl].((vml:SessionListViewModel)DataContext).ToggleSetupFilterCommand}"
+                                CommandParameter="{Binding}">
+                            <Grid ColumnDefinitions="24 *">
+                                <CheckBox Grid.Column="0" IsChecked="{Binding IsChecked}"
+                                          IsHitTestVisible="False" VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                           VerticalAlignment="Center" FontSize="13" Foreground="#D0D0D0" />
+                            </Grid>
+                        </Button>
+                    </DataTemplate>
+                </ItemsRepeater.ItemTemplate>
+            </ItemsRepeater>
+        </Border>
 
         <!--  Normal list of Sessions (hidden in compare mode) -->
         <controls:PullableMenuScrollViewer
