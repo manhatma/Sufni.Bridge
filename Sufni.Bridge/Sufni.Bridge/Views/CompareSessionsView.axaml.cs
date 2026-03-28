@@ -30,7 +30,7 @@ public partial class CompareSessionsView : UserControl
         var colCount = vm.SessionCount;
 
         // Build column definitions: Label + N session columns
-        var colDefs = "80";
+        var colDefs = "130";
         for (var i = 0; i < colCount; i++)
             colDefs += ",*";
 

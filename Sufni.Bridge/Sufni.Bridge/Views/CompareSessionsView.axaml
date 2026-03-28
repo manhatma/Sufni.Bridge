@@ -95,6 +95,14 @@
                 <Image IsVisible="{Binding BalanceSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
                        Source="{Binding BalanceSvg}" />
 
+                <!-- Front Low-Speed Velocity -->
+                <Image IsVisible="{Binding FrontLowSpeedSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Source="{Binding FrontLowSpeedSvg}" />
+
+                <!-- Rear Low-Speed Velocity -->
+                <Image IsVisible="{Binding RearLowSpeedSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Source="{Binding RearLowSpeedSvg}" />
+
                 <!-- Front Wheel Table -->
                 <Grid RowDefinitions="auto auto" ColumnDefinitions="*"
                       IsVisible="{Binding FrontWheelRows.Count}">

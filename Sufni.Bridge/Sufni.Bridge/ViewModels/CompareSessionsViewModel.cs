@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using Avalonia;
@@ -9,6 +10,7 @@ using Avalonia.Svg.Skia;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using MathNet.Numerics.Statistics;
 using Microsoft.Extensions.DependencyInjection;
 using ScottPlot;
 using Sufni.Bridge.Models.Telemetry;
@@ -54,6 +56,8 @@ public partial class CompareSessionsViewModel : ViewModelBase
     [ObservableProperty] private SvgImage? rearTravelHistogramSvg;
     [ObservableProperty] private SvgImage? frontRearTravelSvg;
     [ObservableProperty] private SvgImage? balanceSvg;
+    [ObservableProperty] private SvgImage? frontLowSpeedSvg;
+    [ObservableProperty] private SvgImage? rearLowSpeedSvg;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ExportPdfCommand))]
@@ -68,14 +72,16 @@ public partial class CompareSessionsViewModel : ViewModelBase
     private string? _rearTravelHistogramXml;
     private string? _frontRearTravelXml;
     private string? _balanceXml;
+    private string? _frontLowSpeedXml;
+    private string? _rearLowSpeedXml;
 
     public ObservableCollection<CompareTableRow> FrontWheelRows { get; } = [];
     public ObservableCollection<CompareTableRow> RearWheelRows { get; } = [];
 
     public CompareSessionsViewModel(List<SessionViewModel> sessions)
     {
-        Sessions = sessions;
-        SessionNames = sessions.Select(s => s.Name ?? "Unknown").ToList();
+        Sessions = sessions.OrderBy(s => s.Timestamp ?? DateTime.MinValue).ToList();
+        SessionNames = Sessions.Select(s => s.Name ?? "Unknown").ToList();
     }
 
     private static SvgSource? SvgToSource(string? svgXml) =>
@@ -85,6 +91,69 @@ public partial class CompareSessionsViewModel : ViewModelBase
         source is null ? null : new SvgImage { Source = source };
 
     private static string FormatPercent(double value) => $"{value:F1}";
+
+    private static string FormatTravel(double value, double maxTravel) =>
+        maxTravel <= 0
+            ? "-"
+            : string.Create(CultureInfo.InvariantCulture, $"{value / maxTravel * 100.0:0.0}");
+
+    private static string FormatVelocity(double value) =>
+        string.Create(CultureInfo.InvariantCulture, $"{value:0.0}");
+
+    private static string FormatBottomouts(int value) => $"{value}";
+
+    private sealed record SessionStats(
+        DetailedTravelStatistics Travel,
+        VelocityStatistics Velocity,
+        double Comp95th,
+        double Reb95th,
+        double MaxTravel,
+        VelocityBands? Bands);
+
+    private static SessionStats? BuildSessionStats(TelemetryData data, SuspensionType type)
+    {
+        var suspension = type == SuspensionType.Front ? data.Front : data.Rear;
+        if (!suspension.Present) return null;
+
+        var maxTravel = type == SuspensionType.Front ? data.Linkage.MaxFrontTravel : data.Linkage.MaxRearTravel;
+        var travel = data.CalculateDetailedTravelStatistics(type);
+        var velocity = data.CalculateVelocityStatistics(type);
+        var bands = data.CalculateVelocityBands(type, 200);
+
+        var compVels = suspension.Strokes.Compressions
+            .SelectMany(s => suspension.Velocity[s.Start..(s.End + 1)])
+            .ToList();
+        var rebVels = suspension.Strokes.Rebounds
+            .SelectMany(s => suspension.Velocity[s.Start..(s.End + 1)].Select(Math.Abs))
+            .ToList();
+
+        return new SessionStats(
+            travel, velocity,
+            compVels.Count > 0 ? compVels.Percentile(95) : 0.0,
+            rebVels.Count > 0 ? -rebVels.Percentile(95) : 0.0,
+            maxTravel, bands);
+    }
+
+    private static List<CompareTableRow> BuildSummaryRows(List<SessionStats?> statsList)
+    {
+        return
+        [
+            new("Pos [AVG, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.Average, s.MaxTravel)).ToList()),
+            new("Pos [95th, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.P95, s.MaxTravel)).ToList()),
+            new("Pos [MAX, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.Max, s.MaxTravel)).ToList()),
+            new("Bottom out [times]", statsList.Select(s => s is null ? "-" : FormatBottomouts(s.Travel.Bottomouts)).ToList()),
+            new("Comp [AVG, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Velocity.AverageCompression)).ToList()),
+            new("Reb [AVG, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Velocity.AverageRebound)).ToList()),
+            new("Comp [95th, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Comp95th)).ToList()),
+            new("Reb [95th, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Reb95th)).ToList()),
+            new("Comp [MAX, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Velocity.MaxCompression)).ToList()),
+            new("Reb [MAX, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Velocity.MaxRebound)).ToList()),
+            new("HSR [%]", statsList.Select(s => s?.Bands is null ? "-" : FormatPercent(s.Bands.HighSpeedRebound)).ToList()),
+            new("LSR [%]", statsList.Select(s => s?.Bands is null ? "-" : FormatPercent(s.Bands.LowSpeedRebound)).ToList()),
+            new("LSC [%]", statsList.Select(s => s?.Bands is null ? "-" : FormatPercent(s.Bands.LowSpeedCompression)).ToList()),
+            new("HSC [%]", statsList.Select(s => s?.Bands is null ? "-" : FormatPercent(s.Bands.HighSpeedCompression)).ToList()),
+        ];
+    }
 
     public async Task GenerateComparePlots()
     {
@@ -162,44 +231,36 @@ public partial class CompareSessionsViewModel : ViewModelBase
             Dispatcher.UIThread.Post(() => BalanceSvg = SourceToImage(src));
         }));
 
-        // 5. Velocity Bands Table
+        // 5. Front Low-Speed Velocity
         tasks.Add(Task.Run(() =>
         {
-            var frontRows = new List<CompareTableRow>();
-            var rearRows = new List<CompareTableRow>();
+            var p = new CompareLowSpeedVelocityPlot(new Plot(), SuspensionType.Front);
+            p.LoadMultipleSessions(sessionData);
+            var svg = p.Plot.GetSvgXml(width, height);
+            _frontLowSpeedXml = svg;
+            var src = SvgToSource(svg);
+            Dispatcher.UIThread.Post(() => FrontLowSpeedSvg = SourceToImage(src));
+        }));
 
-            var labels = new[] { "HSR [%]", "LSR [%]", "LSC [%]", "HSC [%]" };
+        // 6. Rear Low-Speed Velocity
+        tasks.Add(Task.Run(() =>
+        {
+            var p = new CompareLowSpeedVelocityPlot(new Plot(), SuspensionType.Rear);
+            p.LoadMultipleSessions(sessionData);
+            var svg = p.Plot.GetSvgXml(width, height);
+            _rearLowSpeedXml = svg;
+            var src = SvgToSource(svg);
+            Dispatcher.UIThread.Post(() => RearLowSpeedSvg = SourceToImage(src));
+        }));
 
-            var frontBandsList = new List<VelocityBands?>();
-            var rearBandsList = new List<VelocityBands?>();
+        // 7. Summary Table
+        tasks.Add(Task.Run(() =>
+        {
+            var frontStatsList = sessionData.Select(s => BuildSessionStats(s.data, SuspensionType.Front)).ToList();
+            var rearStatsList = sessionData.Select(s => BuildSessionStats(s.data, SuspensionType.Rear)).ToList();
 
-            foreach (var (data, _, _, _) in sessionData)
-            {
-                frontBandsList.Add(data.Front.Present
-                    ? data.CalculateVelocityBands(SuspensionType.Front, 200)
-                    : null);
-                rearBandsList.Add(data.Rear.Present
-                    ? data.CalculateVelocityBands(SuspensionType.Rear, 200)
-                    : null);
-            }
-
-            frontRows.Add(new CompareTableRow(labels[0],
-                frontBandsList.Select(b => b is null ? "-" : FormatPercent(b.HighSpeedRebound)).ToList()));
-            frontRows.Add(new CompareTableRow(labels[1],
-                frontBandsList.Select(b => b is null ? "-" : FormatPercent(b.LowSpeedRebound)).ToList()));
-            frontRows.Add(new CompareTableRow(labels[2],
-                frontBandsList.Select(b => b is null ? "-" : FormatPercent(b.LowSpeedCompression)).ToList()));
-            frontRows.Add(new CompareTableRow(labels[3],
-                frontBandsList.Select(b => b is null ? "-" : FormatPercent(b.HighSpeedCompression)).ToList()));
-
-            rearRows.Add(new CompareTableRow(labels[0],
-                rearBandsList.Select(b => b is null ? "-" : FormatPercent(b.HighSpeedRebound)).ToList()));
-            rearRows.Add(new CompareTableRow(labels[1],
-                rearBandsList.Select(b => b is null ? "-" : FormatPercent(b.LowSpeedRebound)).ToList()));
-            rearRows.Add(new CompareTableRow(labels[2],
-                rearBandsList.Select(b => b is null ? "-" : FormatPercent(b.LowSpeedCompression)).ToList()));
-            rearRows.Add(new CompareTableRow(labels[3],
-                rearBandsList.Select(b => b is null ? "-" : FormatPercent(b.HighSpeedCompression)).ToList()));
+            var frontRows = BuildSummaryRows(frontStatsList);
+            var rearRows = BuildSummaryRows(rearStatsList);
 
             Dispatcher.UIThread.Post(() =>
             {
@@ -215,7 +276,8 @@ public partial class CompareSessionsViewModel : ViewModelBase
 
     private bool CanExportPdf() => !IsLoading && !IsGeneratingPdf &&
         (_frontTravelHistogramXml is not null || _rearTravelHistogramXml is not null ||
-         _frontRearTravelXml is not null || _balanceXml is not null);
+         _frontRearTravelXml is not null || _balanceXml is not null ||
+         _frontLowSpeedXml is not null || _rearLowSpeedXml is not null);
 
     [RelayCommand(CanExecute = nameof(CanExportPdf))]
     private async Task ExportPdf()
@@ -223,7 +285,7 @@ public partial class CompareSessionsViewModel : ViewModelBase
         IsGeneratingPdf = true;
         try
         {
-            var svgs = new List<string?> { _frontTravelHistogramXml, _rearTravelHistogramXml, _frontRearTravelXml, _balanceXml };
+            var svgs = new List<string?> { _frontTravelHistogramXml, _rearTravelHistogramXml, _frontRearTravelXml, _balanceXml, _frontLowSpeedXml, _rearLowSpeedXml };
             var validSvgs = svgs.Where(s => s is not null).Cast<string>().ToList();
             if (validSvgs.Count == 0)
             {
