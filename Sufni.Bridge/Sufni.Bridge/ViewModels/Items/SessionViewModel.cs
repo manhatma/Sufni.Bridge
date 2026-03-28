@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 44;
+    private const int CurrentPlotVersion = 45;
 
     // Shared across all instances — updated whenever any session loads with real bounds.
     // Default matches iPhone 15 Pro logical width; height/2 is used for plots.
@@ -494,6 +494,106 @@ public partial class SessionViewModel : ItemViewModelBase
             reboundVels.Count > 0 ? -reboundVels.Percentile(95) : 0.0);
     }
 
+    private static SuspensionSummaryStats? BuildForkStats(TelemetryData telemetryData)
+    {
+        if (!telemetryData.Front.Present || !telemetryData.Linkage.MaxFrontStroke.HasValue || telemetryData.Linkage.MaxFrontStroke <= 0)
+        {
+            return null;
+        }
+
+        var maxForkStroke = telemetryData.Linkage.MaxFrontStroke.Value;
+        var frontCoeff = Math.Sin(telemetryData.Linkage.HeadAngle * Math.PI / 180.0);
+        if (frontCoeff < 1e-6) return null;
+        var invCoeff = 1.0 / frontCoeff;
+
+        var wheelTravel = telemetryData.Front.Travel;
+        var wheelVelocity = telemetryData.Front.Velocity;
+        var forkTravel = new double[wheelTravel.Length];
+        var forkVelocity = new double[wheelVelocity.Length];
+
+        for (var i = 0; i < wheelTravel.Length; i++)
+        {
+            forkTravel[i] = Math.Min(wheelTravel[i] * invCoeff, maxForkStroke);
+        }
+
+        for (var i = 0; i < wheelVelocity.Length; i++)
+        {
+            forkVelocity[i] = wheelVelocity[i] * invCoeff;
+        }
+
+        double travelSum = 0.0;
+        var travelCount = 0;
+        double travelMax = 0.0;
+        var travelValues = new List<double>();
+        double compressionSum = 0.0;
+        var compressionCount = 0;
+        double compressionMax = 0.0;
+        var compressionVels = new List<double>();
+        double reboundSum = 0.0;
+        var reboundCount = 0;
+        double reboundMax = 0.0;
+        var reboundVels = new List<double>();
+
+        foreach (var stroke in telemetryData.Front.Strokes.Compressions.Concat(telemetryData.Front.Strokes.Rebounds))
+        {
+            for (var i = stroke.Start; i <= stroke.End && i < forkTravel.Length; i++)
+            {
+                var t = forkTravel[i];
+                travelValues.Add(t);
+                travelSum += t;
+                travelCount++;
+                if (t > travelMax) travelMax = t;
+            }
+        }
+
+        foreach (var stroke in telemetryData.Front.Strokes.Compressions)
+        {
+            for (var i = stroke.Start; i <= stroke.End && i < forkVelocity.Length; i++)
+            {
+                var v = forkVelocity[i];
+                compressionSum += v;
+                compressionCount++;
+                compressionVels.Add(v);
+                if (v > compressionMax) compressionMax = v;
+            }
+        }
+
+        foreach (var stroke in telemetryData.Front.Strokes.Rebounds)
+        {
+            for (var i = stroke.Start; i <= stroke.End && i < forkVelocity.Length; i++)
+            {
+                var v = forkVelocity[i];
+                reboundSum += v;
+                reboundCount++;
+                reboundVels.Add(Math.Abs(v));
+                if (v < reboundMax) reboundMax = v;
+            }
+        }
+
+        var bottomouts = 0;
+        var threshold = maxForkStroke * 0.97;
+        for (var i = 0; i < forkTravel.Length; i++)
+        {
+            if (forkTravel[i] <= threshold) continue;
+            bottomouts++;
+            while (i < forkTravel.Length && forkTravel[i] > threshold) i++;
+        }
+
+        if (travelCount == 0) return null;
+
+        return new SuspensionSummaryStats(
+            travelMax,
+            travelSum / travelCount,
+            travelValues.Count > 0 ? travelValues.Percentile(95) : 0.0,
+            bottomouts,
+            compressionCount > 0 ? compressionSum / compressionCount : 0.0,
+            compressionMax,
+            compressionVels.Count > 0 ? compressionVels.Percentile(95) : 0.0,
+            reboundCount > 0 ? reboundSum / reboundCount : 0.0,
+            reboundMax,
+            reboundVels.Count > 0 ? -reboundVels.Percentile(95) : 0.0);
+    }
+
     private static SuspensionSummaryStats? BuildShockStats(TelemetryData telemetryData)
     {
         if (!telemetryData.Rear.Present || !telemetryData.Linkage.MaxRearStroke.HasValue || telemetryData.Linkage.MaxRearStroke <= 0)
@@ -628,16 +728,17 @@ public partial class SessionViewModel : ItemViewModelBase
         ];
 
         // Run the independent (read-only) computations in parallel
-        var forkStatsTask = Task.Run(() => BuildWheelStats(telemetryData, SuspensionType.Front));
+        var forkStatsTask = Task.Run(() => BuildForkStats(telemetryData));
+        var frontWheelStatsTask = Task.Run(() => BuildWheelStats(telemetryData, SuspensionType.Front));
         var shockStatsTask = Task.Run(() => BuildShockStats(telemetryData));
         var rearWheelStatsTask = Task.Run(() => BuildWheelStats(telemetryData, SuspensionType.Rear));
         var frontBandsTask = Task.Run(() => telemetryData.Front.Present ? telemetryData.CalculateVelocityBands(SuspensionType.Front, 200) : (VelocityBands?)null);
         var rearBandsTask = Task.Run(() => telemetryData.Rear.Present ? telemetryData.CalculateVelocityBands(SuspensionType.Rear, 200) : (VelocityBands?)null);
-        await Task.WhenAll(forkStatsTask, shockStatsTask, rearWheelStatsTask, frontBandsTask, rearBandsTask);
+        await Task.WhenAll(forkStatsTask, frontWheelStatsTask, shockStatsTask, rearWheelStatsTask, frontBandsTask, rearBandsTask);
 
         var forkStats = forkStatsTask.Result;
         var shockStats = shockStatsTask.Result;
-        var frontWheelStats = forkStats;  // Front wheel stats == fork stats — same data
+        var frontWheelStats = frontWheelStatsTask.Result;
         var rearWheelStats = rearWheelStatsTask.Result;
         var frontBands = frontBandsTask.Result;
         var rearBands = rearBandsTask.Result;
@@ -645,13 +746,13 @@ public partial class SessionViewModel : ItemViewModelBase
         SummaryPage.ForkShockRows =
         [
             new SummaryComparisonRow("Pos [AVG]",
-                forkStats is null ? "-" : FormatTravel(forkStats.AvgTravel, telemetryData.Linkage.MaxFrontTravel),
+                forkStats is null ? "-" : FormatTravel(forkStats.AvgTravel, telemetryData.Linkage.MaxFrontStroke ?? 0),
                 shockStats is null ? "-" : FormatTravel(shockStats.AvgTravel, telemetryData.Linkage.MaxRearStroke ?? 0)),
             new SummaryComparisonRow("Pos [95th]",
-                forkStats is null ? "-" : FormatTravel(forkStats.P95Travel, telemetryData.Linkage.MaxFrontTravel),
+                forkStats is null ? "-" : FormatTravel(forkStats.P95Travel, telemetryData.Linkage.MaxFrontStroke ?? 0),
                 shockStats is null ? "-" : FormatTravel(shockStats.P95Travel, telemetryData.Linkage.MaxRearStroke ?? 0)),
             new SummaryComparisonRow("Pos [MAX]",
-                forkStats is null ? "-" : FormatTravel(forkStats.MaxTravel, telemetryData.Linkage.MaxFrontTravel),
+                forkStats is null ? "-" : FormatTravel(forkStats.MaxTravel, telemetryData.Linkage.MaxFrontStroke ?? 0),
                 shockStats is null ? "-" : FormatTravel(shockStats.MaxTravel, telemetryData.Linkage.MaxRearStroke ?? 0)),
             new SummaryComparisonRow("Bottom out",
                 forkStats is null ? "-" : FormatBottomouts(forkStats.Bottomouts),
