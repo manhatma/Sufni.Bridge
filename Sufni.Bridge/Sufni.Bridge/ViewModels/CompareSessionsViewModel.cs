@@ -90,7 +90,8 @@ public partial class CompareSessionsViewModel : ViewModelBase
     private static SvgImage? SourceToImage(SvgSource? source) =>
         source is null ? null : new SvgImage { Source = source };
 
-    private static string FormatPercent(double value) => $"{value:F1}";
+    private static string FormatPercent(double value) =>
+        string.Create(CultureInfo.InvariantCulture, $"{value:F1}");
 
     private static string FormatTravel(double value, double maxTravel) =>
         maxTravel <= 0
