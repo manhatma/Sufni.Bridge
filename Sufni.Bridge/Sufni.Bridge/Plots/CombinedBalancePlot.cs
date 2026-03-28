@@ -24,11 +24,11 @@ public class CombinedBalancePlot(Plot plot) : TelemetryPlot(plot)
 
         // Determine axis limits from both compression and rebound
         var maxCompVelocity = Math.Max(
-            compBalance.FrontVelocity.Select(Math.Abs).DefaultIfEmpty(0).Max(),
-            compBalance.RearVelocity.Select(Math.Abs).DefaultIfEmpty(0).Max());
+            compBalance.FrontTrend.Select(Math.Abs).DefaultIfEmpty(0).Max(),
+            compBalance.RearTrend.Select(Math.Abs).DefaultIfEmpty(0).Max());
         var maxRebVelocity = Math.Max(
-            rebBalance.FrontVelocity.Select(Math.Abs).DefaultIfEmpty(0).Max(),
-            rebBalance.RearVelocity.Select(Math.Abs).DefaultIfEmpty(0).Max());
+            rebBalance.FrontTrend.Select(Math.Abs).DefaultIfEmpty(0).Max(),
+            rebBalance.RearTrend.Select(Math.Abs).DefaultIfEmpty(0).Max());
 
         var roundedMaxComp = (int)Math.Ceiling(maxCompVelocity / 100.0) * 100;
         var roundedMaxReb = (int)Math.Ceiling(maxRebVelocity / 100.0) * 100;

@@ -28,7 +28,7 @@ public class CompareTravelHistogramPlot(Plot plot, SuspensionType type) : SufniP
             var suspension = type == SuspensionType.Front ? data.Front : data.Rear;
             if (!suspension.Present) continue;
 
-            var histData = data.CalculateDetailedTravelHistogram(type);
+            var histData = data.CalculateDetailedTravelHistogram(type, 2.5);
             if (histData.TravelMidsMm.Count == 0) continue;
 
             var maxTime = histData.TimePercentage.Max();

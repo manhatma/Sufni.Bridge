@@ -412,23 +412,49 @@ public class TelemetryData
             suspension.TravelBins.ToList().GetRange(0, suspension.TravelBins.Length), [.. hist]);
     }
 
-    public DetailedTravelHistogramData CalculateDetailedTravelHistogram(SuspensionType type)
+    public DetailedTravelHistogramData CalculateDetailedTravelHistogram(SuspensionType type, double? binSizeMm = null)
     {
         var suspension = type == SuspensionType.Front ? Front : Rear;
         var maxTravel = type == SuspensionType.Front ? Linkage.MaxFrontTravel : Linkage.MaxRearTravel;
-        var histLen = Math.Max(0, suspension.TravelBins.Length - 1);
 
-        var hist = new double[histLen];
+        double[] travelBins;
+        int histLen;
+        double[] hist;
         var totalCount = 0.0;
 
-        foreach (var stroke in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
+        if (binSizeMm.HasValue && maxTravel > 0)
         {
-            totalCount += stroke.Stat.Count;
-            foreach (var digitizedTravel in stroke.DigitizedTravel)
+            histLen = (int)Math.Ceiling(maxTravel / binSizeMm.Value);
+            travelBins = new double[histLen + 1];
+            for (var i = 0; i <= histLen; i++)
+                travelBins[i] = i * binSizeMm.Value;
+
+            hist = new double[histLen];
+            foreach (var stroke in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
             {
-                if (digitizedTravel >= 0 && digitizedTravel < histLen)
+                for (var i = stroke.Start; i <= stroke.End; i++)
                 {
-                    hist[digitizedTravel] += 1;
+                    totalCount++;
+                    var idx = Math.Min((int)(suspension.Travel[i] / binSizeMm.Value), histLen - 1);
+                    if (idx >= 0) hist[idx] += 1;
+                }
+            }
+        }
+        else
+        {
+            histLen = Math.Max(0, suspension.TravelBins.Length - 1);
+            travelBins = suspension.TravelBins;
+            hist = new double[histLen];
+
+            foreach (var stroke in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
+            {
+                totalCount += stroke.Stat.Count;
+                foreach (var digitizedTravel in stroke.DigitizedTravel)
+                {
+                    if (digitizedTravel >= 0 && digitizedTravel < histLen)
+                    {
+                        hist[digitizedTravel] += 1;
+                    }
                 }
             }
         }
@@ -453,8 +479,8 @@ public class TelemetryData
 
             for (var i = 0; i < histLen; i++)
             {
-                var left = suspension.TravelBins[i];
-                var right = suspension.TravelBins[i + 1];
+                var left = travelBins[i];
+                var right = travelBins[i + 1];
                 var widthMm = right - left;
                 var midMm = (left + right) / 2.0;
 

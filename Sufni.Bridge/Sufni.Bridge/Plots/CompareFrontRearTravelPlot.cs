@@ -21,6 +21,7 @@ public class CompareFrontRearTravelPlot(Plot plot) : SufniPlot(plot)
         oneToOne.MarkerStyle.IsVisible = false;
         oneToOne.LineStyle.Color = Color.FromHex("#dddddd");
         oneToOne.LineStyle.Width = 1;
+        oneToOne.LineStyle.Pattern = LinePattern.Dashed;
 
         // First pass: compute slopes and draw trend lines
         var slopeData = new List<(Color color, string name, double slope)>();

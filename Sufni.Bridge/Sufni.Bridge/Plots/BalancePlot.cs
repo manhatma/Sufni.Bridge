@@ -35,8 +35,8 @@ public class BalancePlot(Plot plot, BalanceType type) : TelemetryPlot(plot)
         var balance = telemetryData.CalculateBalance(type);
 
         var maxVelocity = Math.Max(
-            balance.FrontTrend.Select(Math.Abs).DefaultIfEmpty(0).Max(),
-            balance.RearTrend.Select(Math.Abs).DefaultIfEmpty(0).Max());
+            balance.FrontVelocity.Select(Math.Abs).DefaultIfEmpty(0).Max(),
+            balance.RearVelocity.Select(Math.Abs).DefaultIfEmpty(0).Max());
         var roundedMaxVelocity = (int)Math.Ceiling(maxVelocity / 100.0) * 100;
 
         if (type == BalanceType.Rebound)

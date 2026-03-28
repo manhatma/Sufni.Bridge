@@ -47,6 +47,7 @@ public class FrontRearTravelScatterPlot(Plot plot) : TelemetryPlot(plot)
         oneToOne.MarkerStyle.IsVisible = false;
         oneToOne.LineStyle.Color = RearColor;
         oneToOne.LineStyle.Width = 2;
+        oneToOne.LineStyle.Pattern = LinePattern.Dashed;
 
         var denominator = rear.Select(v => v * v).Sum();
         if (denominator > 0)
