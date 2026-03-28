@@ -68,7 +68,7 @@
                     Command="{Binding ToggleCompareModeCommand}">
                 <Panel>
                     <TextBlock Text="Compare" IsVisible="{Binding !IsCompareMode}" />
-                    <TextBlock Text="Cancel" IsVisible="{Binding IsCompareMode}" />
+                    <TextBlock Text="Cancel" IsVisible="{Binding IsCompareMode}" Foreground="#15191c" />
                 </Panel>
             </Button>
         </Grid>
@@ -120,7 +120,7 @@
                 Classes="compare-open"
                 IsVisible="{Binding IsCompareMode}"
                 Command="{Binding OpenComparisonCommand}">
-            <TextBlock>
+            <TextBlock Foreground="#15191c">
                 <Run Text="Compare" />
                 <Run Text="{Binding CompareSelectionCount, StringFormat=' ({0})'}" />
             </TextBlock>
