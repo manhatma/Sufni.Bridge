@@ -46,6 +46,20 @@ public partial class SessionViewModel : ItemViewModelBase
     public override bool ShowPdfExportButton => true;
     [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private bool isGeneratingPdf;
     [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private bool isAnalyzingData;
+    [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private bool isCombinedSession;
+    [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private bool isExpanded;
+    public ObservableCollection<SessionViewModel> SubSessions { get; } = [];
+
+    public int NestingDepth => IsCombinedSession && SubSessions.Count > 0
+        ? SubSessions.Max(s => s.NestingDepth) + 1
+        : 1;
+
+    [RelayCommand]
+    private void ToggleExpand()
+    {
+        if (!IsCombinedSession) return;
+        IsExpanded = !IsExpanded;
+    }
 
     #region Private methods
 

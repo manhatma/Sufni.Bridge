@@ -78,12 +78,68 @@
             <Setter Property="CornerRadius" Value="4" />
             <Setter Property="BorderThickness" Value="0" />
         </Style>
+        <Style Selector="Button.combine-toggle">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#D0D0D0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="#505558" />
+        </Style>
+        <Style Selector="Button.combine-toggle-active">
+            <Setter Property="Background" Value="#fc8d62" />
+            <Setter Property="Foreground" Value="#15191c" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="Button.combine-open">
+            <Setter Property="Background" Value="#fc8d62" />
+            <Setter Property="Foreground" Value="#15191c" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="Padding" Value="0,12" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Margin" Value="10,5" />
+        </Style>
+        <Style Selector="Button.delete-toggle">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#D0D0D0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="#505558" />
+        </Style>
+        <Style Selector="Button.delete-toggle-active">
+            <Setter Property="Background" Value="#e34a33" />
+            <Setter Property="Foreground" Value="#ffffff" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="BorderThickness" Value="0" />
+        </Style>
+        <Style Selector="Button.delete-open">
+            <Setter Property="Background" Value="#e34a33" />
+            <Setter Property="Foreground" Value="#ffffff" />
+            <Setter Property="FontWeight" Value="Bold" />
+            <Setter Property="FontSize" Value="14" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="Padding" Value="0,12" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Margin" Value="10,5" />
+        </Style>
     </UserControl.Styles>
 
     <Grid ColumnDefinitions="*" RowDefinitions="auto auto * auto auto auto">
 
-        <!-- Filter + Compare mode toggle buttons -->
-        <Grid Grid.Row="0" Margin="10,8,10,0" ColumnDefinitions="auto * auto">
+        <!-- Filter + Delete + Combine + Compare mode toggle buttons -->
+        <Grid Grid.Row="0" Margin="10,8,10,0" ColumnDefinitions="auto * auto auto auto">
             <Button Grid.Column="0"
                     Classes.filter-toggle="{Binding !IsFilterMenuOpen}"
                     Classes.filter-toggle-active="{Binding IsFilterMenuOpen}"
@@ -91,7 +147,25 @@
                     Command="{Binding ToggleFilterMenuCommand}">
                 <TextBlock Text="Filter" />
             </Button>
-            <Button Grid.Column="2"
+            <Button Grid.Column="2" Margin="0,0,6,0"
+                    Classes.delete-toggle="{Binding !IsDeleteMode}"
+                    Classes.delete-toggle-active="{Binding IsDeleteMode}"
+                    Command="{Binding ToggleDeleteModeCommand}">
+                <Panel>
+                    <TextBlock Text="Delete" IsVisible="{Binding !IsDeleteMode}" />
+                    <TextBlock Text="Cancel" IsVisible="{Binding IsDeleteMode}" Foreground="#ffffff" />
+                </Panel>
+            </Button>
+            <Button Grid.Column="3" Margin="0,0,6,0"
+                    Classes.combine-toggle="{Binding !IsCombineMode}"
+                    Classes.combine-toggle-active="{Binding IsCombineMode}"
+                    Command="{Binding ToggleCombineModeCommand}">
+                <Panel>
+                    <TextBlock Text="Combine" IsVisible="{Binding !IsCombineMode}" />
+                    <TextBlock Text="Cancel" IsVisible="{Binding IsCombineMode}" Foreground="#15191c" />
+                </Panel>
+            </Button>
+            <Button Grid.Column="4"
                     Classes.compare-toggle="{Binding !IsCompareMode}"
                     Classes.compare-toggle-active="{Binding IsCompareMode}"
                     Command="{Binding ToggleCompareModeCommand}">
@@ -128,14 +202,20 @@
             </ItemsRepeater>
         </Border>
 
-        <!--  Normal list of Sessions (hidden in compare mode) -->
+        <!--  Normal list of Sessions (hidden in compare/combine mode) -->
         <controls:PullableMenuScrollViewer
             Grid.Row="2"
             Grid.Column="0"
             Margin="0,15,0,5"
             Items="{Binding Items}"
-            MenuItems="{Binding MenuItems}"
-            IsVisible="{Binding !IsCompareMode}">
+            MenuItems="{Binding MenuItems}">
+            <controls:PullableMenuScrollViewer.IsVisible>
+                <MultiBinding Converter="{x:Static BoolConverters.And}">
+                    <Binding Path="!IsCompareMode" />
+                    <Binding Path="!IsCombineMode" />
+                    <Binding Path="!IsDeleteMode" />
+                </MultiBinding>
+            </controls:PullableMenuScrollViewer.IsVisible>
             <controls:PullableMenuScrollViewer.TopContent>
                 <controls:SearchBarWithDateFilter />
             </controls:PullableMenuScrollViewer.TopContent>
@@ -178,6 +258,103 @@
             <TextBlock Foreground="#15191c">
                 <Run Text="Compare" />
                 <Run Text="{Binding CompareSelectionCount, StringFormat=' ({0})'}" />
+            </TextBlock>
+        </Button>
+
+        <!-- Combine mode session list with checkboxes -->
+        <ScrollViewer Grid.Row="2" Margin="0,15,0,5" IsVisible="{Binding IsCombineMode}">
+            <ItemsRepeater ItemsSource="{Binding Items}">
+                <ItemsRepeater.ItemTemplate>
+                    <DataTemplate x:DataType="vmi:ItemViewModelBase">
+                        <StackPanel>
+                            <Button Height="48"
+                                    HorizontalAlignment="Stretch"
+                                    VerticalContentAlignment="Center"
+                                    Classes="compare-item"
+                                    Command="{Binding $parent[UserControl].((vml:SessionListViewModel)DataContext).ToggleCombineSelectionCommand}"
+                                    CommandParameter="{Binding}">
+                                <Grid ColumnDefinitions="30 auto * auto" HorizontalAlignment="Stretch">
+                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsSelectedForCompare}"
+                                              IsHitTestVisible="False" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="3" Text="{Binding Timestamp}"
+                                               VerticalAlignment="Center" Foreground="#808080" />
+                                </Grid>
+                            </Button>
+                            <Separator Height="1" Margin="0"
+                                       Background="{StaticResource SufniBackgroundDisabled}" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsRepeater.ItemTemplate>
+            </ItemsRepeater>
+        </ScrollViewer>
+
+        <!-- Combine button + setup mismatch warning -->
+        <StackPanel Grid.Row="3" IsVisible="{Binding IsCombineMode}">
+            <TextBlock Text="Setup mismatch — selected sessions use different setups"
+                       Foreground="#e55039" FontSize="12" Margin="10,4"
+                       HorizontalAlignment="Center"
+                       IsVisible="{Binding CombineSetupMismatch}" />
+            <TextBlock Text="Maximum nesting depth (3) exceeded"
+                       Foreground="#e55039" FontSize="12" Margin="10,4"
+                       HorizontalAlignment="Center"
+                       IsVisible="{Binding CombineDepthExceeded}" />
+            <Button Classes="combine-open"
+                    Command="{Binding CombineSessionsCommand}">
+                <Button.IsEnabled>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="!CombineSetupMismatch" />
+                        <Binding Path="!CombineDepthExceeded" />
+                    </MultiBinding>
+                </Button.IsEnabled>
+                <Panel>
+                    <TextBlock Foreground="#15191c" IsVisible="{Binding !IsCombining}">
+                        <Run Text="Combine" />
+                        <Run Text="{Binding CombineSelectionCount, StringFormat=' ({0})'}" />
+                    </TextBlock>
+                    <TextBlock Text="Combining..." Foreground="#15191c" IsVisible="{Binding IsCombining}" />
+                </Panel>
+            </Button>
+        </StackPanel>
+
+        <!-- Delete mode session list with checkboxes -->
+        <ScrollViewer Grid.Row="2" Margin="0,15,0,5" IsVisible="{Binding IsDeleteMode}">
+            <ItemsRepeater ItemsSource="{Binding Items}">
+                <ItemsRepeater.ItemTemplate>
+                    <DataTemplate x:DataType="vmi:ItemViewModelBase">
+                        <StackPanel>
+                            <Button Height="48"
+                                    HorizontalAlignment="Stretch"
+                                    VerticalContentAlignment="Center"
+                                    Classes="compare-item"
+                                    Command="{Binding $parent[UserControl].((vml:SessionListViewModel)DataContext).ToggleDeleteSelectionCommand}"
+                                    CommandParameter="{Binding}">
+                                <Grid ColumnDefinitions="30 auto * auto" HorizontalAlignment="Stretch">
+                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsSelectedForCompare}"
+                                              IsHitTestVisible="False" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="3" Text="{Binding Timestamp}"
+                                               VerticalAlignment="Center" Foreground="#808080" />
+                                </Grid>
+                            </Button>
+                            <Separator Height="1" Margin="0"
+                                       Background="{StaticResource SufniBackgroundDisabled}" />
+                        </StackPanel>
+                    </DataTemplate>
+                </ItemsRepeater.ItemTemplate>
+            </ItemsRepeater>
+        </ScrollViewer>
+
+        <!-- Delete button -->
+        <Button Grid.Row="3"
+                Classes="delete-open"
+                IsVisible="{Binding IsDeleteMode}"
+                Command="{Binding DeleteSelectedSessionsCommand}">
+            <TextBlock Foreground="#ffffff">
+                <Run Text="Delete" />
+                <Run Text="{Binding DeleteSelectionCount, StringFormat=' ({0})'}" />
             </TextBlock>
         </Button>
 

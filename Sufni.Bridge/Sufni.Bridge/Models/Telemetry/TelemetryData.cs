@@ -453,6 +453,87 @@ public class TelemetryData
 
     #endregion
 
+    public static TelemetryData CombineSessions(List<TelemetryData> sessions, string name)
+    {
+        if (sessions.Count < 2)
+            throw new ArgumentException("At least 2 sessions required to combine.");
+
+        var first = sessions[0];
+        foreach (var s in sessions.Skip(1))
+        {
+            if (s.SampleRate != first.SampleRate)
+                throw new InvalidOperationException("All sessions must have the same sample rate.");
+            if (Math.Abs(s.Linkage.MaxFrontTravel - first.Linkage.MaxFrontTravel) > 0.01 ||
+                Math.Abs(s.Linkage.MaxRearTravel - first.Linkage.MaxRearTravel) > 0.01)
+                throw new InvalidOperationException("All sessions must have compatible linkage (same max travel).");
+        }
+
+        var hasFront = sessions.All(s => s.Front.Present);
+        var hasRear = sessions.All(s => s.Rear.Present);
+
+        var combined = new TelemetryData
+        {
+            Name = name,
+            Version = first.Version,
+            SampleRate = first.SampleRate,
+            Timestamp = sessions.Min(s => s.Timestamp),
+            Linkage = first.Linkage,
+            Front = new Suspension { Present = hasFront, Strokes = new Strokes() },
+            Rear = new Suspension { Present = hasRear, Strokes = new Strokes() }
+        };
+
+        if (hasFront)
+        {
+            combined.Front.Travel = sessions.SelectMany(s => s.Front.Travel).ToArray();
+            combined.Front.Velocity = sessions.SelectMany(s => s.Front.Velocity).ToArray();
+            combined.Front.Calibration = first.Front.Calibration;
+
+            var tbins = Linspace(0, first.Linkage.MaxFrontTravel, Parameters.TravelHistBins + 1);
+            var dt = Digitize(combined.Front.Travel, tbins);
+            combined.Front.TravelBins = tbins;
+
+            var (vbins, dv) = DigitizeVelocity(combined.Front.Velocity, Parameters.VelocityHistStep);
+            combined.Front.VelocityBins = vbins;
+            var (vbinsFine, dvFine) = DigitizeVelocity(combined.Front.Velocity, Parameters.VelocityHistStepFine);
+            combined.Front.FineVelocityBins = vbinsFine;
+
+            var strokes = Strokes.FilterStrokes(combined.Front.Velocity, combined.Front.Travel,
+                first.Linkage.MaxFrontTravel, first.SampleRate);
+            combined.Front.Strokes.Categorize(strokes);
+            if (combined.Front.Strokes.Compressions.Length == 0 && combined.Front.Strokes.Rebounds.Length == 0)
+                combined.Front.Present = false;
+            else
+                combined.Front.Strokes.Digitize(dt, dv, dvFine);
+        }
+
+        if (hasRear)
+        {
+            combined.Rear.Travel = sessions.SelectMany(s => s.Rear.Travel).ToArray();
+            combined.Rear.Velocity = sessions.SelectMany(s => s.Rear.Velocity).ToArray();
+            combined.Rear.Calibration = first.Rear.Calibration;
+
+            var tbins = Linspace(0, first.Linkage.MaxRearTravel, Parameters.TravelHistBins + 1);
+            var dt = Digitize(combined.Rear.Travel, tbins);
+            combined.Rear.TravelBins = tbins;
+
+            var (vbins, dv) = DigitizeVelocity(combined.Rear.Velocity, Parameters.VelocityHistStep);
+            combined.Rear.VelocityBins = vbins;
+            var (vbinsFine, dvFine) = DigitizeVelocity(combined.Rear.Velocity, Parameters.VelocityHistStepFine);
+            combined.Rear.FineVelocityBins = vbinsFine;
+
+            var strokes = Strokes.FilterStrokes(combined.Rear.Velocity, combined.Rear.Travel,
+                first.Linkage.MaxRearTravel, first.SampleRate);
+            combined.Rear.Strokes.Categorize(strokes);
+            if (combined.Rear.Strokes.Compressions.Length == 0 && combined.Rear.Strokes.Rebounds.Length == 0)
+                combined.Rear.Present = false;
+            else
+                combined.Rear.Strokes.Digitize(dt, dv, dvFine);
+        }
+
+        combined.CalculateAirTimes();
+        return combined;
+    }
+
     #region Data calculations
 
     public HistogramData CalculateTravelHistogram(SuspensionType type)

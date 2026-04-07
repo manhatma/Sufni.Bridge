@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Linq;
 using System.Threading.Tasks;
 using Microsoft.Extensions.DependencyInjection;
 using Sufni.Bridge.Models;
@@ -19,6 +20,11 @@ public class SynchronizationService : ISynchronizationService
         Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
         Debug.Assert(httpApiService != null, nameof(httpApiService) + " != null");
 
+        // Exclude combined sessions from sync — they are local-only constructs
+        var combinedIds = await databaseService.GetAllCombinedIdsAsync();
+        var changedSessions = await databaseService.GetChangedSessionsAsync(lastSyncTime);
+        var filteredSessions = changedSessions.Where(s => !combinedIds.Contains(s.Id)).ToList();
+
         var changes = new SynchronizationData
         {
             Boards = await databaseService.GetChangedBoardsAsync(lastSyncTime),
@@ -26,7 +32,7 @@ public class SynchronizationService : ISynchronizationService
             Calibrations = await databaseService.GetChangedCalibrationsAsync(lastSyncTime),
             Linkages = await databaseService.GetChangedLinkagesAsync(lastSyncTime),
             Setups = await databaseService.GetChangedSetupsAsync(lastSyncTime),
-            Sessions = await databaseService.GetChangedSessionsAsync(lastSyncTime)
+            Sessions = filteredSessions
         };
         await httpApiService.PushSyncAsync(changes);
     }

@@ -1,36 +1,14 @@
-﻿<UserControl
+<UserControl
     x:Class="Sufni.Bridge.Views.Controls.SwipeToDeleteButton"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-    xmlns:labs="clr-namespace:Avalonia.Labs.Controls;assembly=Avalonia.Labs.Controls"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-    xmlns:v="clr-namespace:Sufni.Bridge.Views.Controls"
     xmlns:vm="clr-namespace:Sufni.Bridge.ViewModels.Items"
     d:DesignHeight="600"
     d:DesignWidth="500"
     x:DataType="vm:ItemViewModelBase"
     mc:Ignorable="d">
-
-    <UserControl.Resources>
-        <Animation
-            x:Key="ImageSizeAnimation"
-            x:SetterTargetType="Image"
-            Duration="0:0:0.2">
-            <KeyFrame Cue="0%">
-                <Setter Property="Height" Value="16" />
-                <Setter Property="Width" Value="16" />
-            </KeyFrame>
-            <KeyFrame Cue="10%">
-                <Setter Property="Height" Value="12" />
-                <Setter Property="Width" Value="12" />
-            </KeyFrame>
-            <KeyFrame Cue="100%">
-                <Setter Property="Height" Value="16" />
-                <Setter Property="Width" Value="16" />
-            </KeyFrame>
-        </Animation>
-    </UserControl.Resources>
 
     <UserControl.Styles>
         <Style Selector="Button.item">
@@ -43,64 +21,81 @@
         <Style Selector="Button.item:pressed /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="#1f2327" />
         </Style>
-
-        <Style Selector="Button.swipedelete">
-            <Setter Property="Background" Value="#1a1e21" />
-            <Setter Property="CornerRadius" Value="0" />
-        </Style>
-        <Style Selector="Button.swipedelete:disabled /template/ ContentPresenter#PART_ContentPresenter">
-            <Setter Property="Background" Value="#1a1e21" />
-            <Setter Property="Svg.Css" Value=".default { fill: #f0f0f0; }" />
-        </Style>
     </UserControl.Styles>
 
-    <Panel Margin="0,0,0,0">
-        <Border
+    <StackPanel>
+        <Button
             Height="48"
-            Margin="10,0,10,0"
+            Padding="10,0,10,0"
             HorizontalAlignment="Stretch"
-            Background="#1a1e21" />
-        <labs:Swipe Name="SwipeButton" PropertyChanged="SwipePropertyChanged">
-            <labs:Swipe.Content>
-                <Button
-                    Height="48"
-                    Padding="30,0,10,0"
-                    HorizontalAlignment="Stretch"
-                    VerticalContentAlignment="Center"
-                    Classes="item"
-                    Command="{Binding OpenPageCommand}"
-                    CommandParameter="{Binding}"
-                    CornerRadius="0">
-                    <Grid HorizontalAlignment="Stretch" ColumnDefinitions="auto * auto 40">
-                        <TextBlock Grid.Column="0" Text="{Binding Name}" />
-                        <TextBlock Grid.Column="2" Text="{Binding Timestamp}" />
-                        <Image
-                            Grid.Column="3"
-                            Width="16"
-                            Height="16"
-                            IsVisible="{Binding !IsComplete}"
-                            Source="{SvgImage /Assets/fa-cloud-arrow-down.svg}" />
-                    </Grid>
+            VerticalContentAlignment="Center"
+            Classes="item"
+            Command="{Binding OpenPageCommand}"
+            CommandParameter="{Binding}"
+            CornerRadius="0">
+            <Grid HorizontalAlignment="Stretch" ColumnDefinitions="20 auto * auto 40">
+                <!-- Chevron for combined sessions -->
+                <Button Grid.Column="0" Background="Transparent" Padding="0"
+                        x:DataType="vm:SessionViewModel"
+                        VerticalAlignment="Center" HorizontalAlignment="Center"
+                        Width="20" Height="48"
+                        Command="{Binding ToggleExpandCommand}"
+                        IsVisible="{Binding IsCombinedSession, FallbackValue=False}">
+                    <Panel>
+                        <TextBlock Text="▶" FontSize="9" Foreground="#808080"
+                                   x:DataType="vm:SessionViewModel"
+                                   VerticalAlignment="Center" HorizontalAlignment="Center"
+                                   IsVisible="{Binding !IsExpanded, FallbackValue=True}" />
+                        <TextBlock Text="▼" FontSize="9" Foreground="#808080"
+                                   x:DataType="vm:SessionViewModel"
+                                   VerticalAlignment="Center" HorizontalAlignment="Center"
+                                   IsVisible="{Binding IsExpanded, FallbackValue=False}" />
+                    </Panel>
                 </Button>
-            </labs:Swipe.Content>
-            <labs:Swipe.Left>
-                <DataTemplate>
-                    <Button
-                        Width="64"
-                        Height="48"
-                        Padding="0"
-                        HorizontalContentAlignment="Left"
-                        VerticalContentAlignment="Center"
-                        Classes="swipedelete"
-                        Command="{Binding $parent[labs:Swipe].((vm:ItemViewModelBase)DataContext).FakeDeleteCommand}"
-                        Svg.Css=".default { fill: #f0f0f0; }">
-                        <Image
-                            Width="16"
-                            Height="16"
-                            Source="{SvgImage /Assets/fa-trash-can.svg}" />
-                    </Button>
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                    <Image x:DataType="vm:SessionViewModel"
+                           Width="14" Height="14" Margin="0,0,5,0"
+                           IsVisible="{Binding IsCombinedSession, FallbackValue=False}"
+                           Source="{SvgImage /Assets/fa-chain.svg}" />
+                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                </StackPanel>
+                <TextBlock Grid.Column="3" Text="{Binding Timestamp}" VerticalAlignment="Center" />
+                <Image
+                    Grid.Column="4"
+                    Width="16"
+                    Height="16"
+                    IsVisible="{Binding !IsComplete}"
+                    Source="{SvgImage /Assets/fa-cloud-arrow-down.svg}" />
+            </Grid>
+        </Button>
+
+        <!-- Expanded sub-sessions for combined sessions -->
+        <ItemsRepeater x:DataType="vm:SessionViewModel"
+                       ItemsSource="{Binding SubSessions}"
+                       IsVisible="{Binding IsExpanded, FallbackValue=False}">
+            <ItemsRepeater.ItemTemplate>
+                <DataTemplate x:DataType="vm:SessionViewModel">
+                    <StackPanel>
+                        <Button Height="40" Padding="40,0,10,0"
+                                HorizontalAlignment="Stretch"
+                                VerticalContentAlignment="Center"
+                                Background="#1a1e21" CornerRadius="0"
+                                Command="{Binding OpenPageCommand}"
+                                CommandParameter="{Binding}">
+                            <Grid ColumnDefinitions="auto * auto" HorizontalAlignment="Stretch">
+                                <TextBlock Grid.Column="0" Text="{Binding Name}"
+                                           Foreground="#B0B0B0" FontSize="13"
+                                           VerticalAlignment="Center" />
+                                <TextBlock Grid.Column="2" Text="{Binding Timestamp}"
+                                           Foreground="#606060" FontSize="12"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                        </Button>
+                        <Separator Height="1" Margin="40,0,0,0"
+                                   Background="#2a2e32" />
+                    </StackPanel>
                 </DataTemplate>
-            </labs:Swipe.Left>
-        </labs:Swipe>
-    </Panel>
+            </ItemsRepeater.ItemTemplate>
+        </ItemsRepeater>
+    </StackPanel>
 </UserControl>
