@@ -739,23 +739,32 @@ public class TelemetryData
         var suspension = type == SuspensionType.Front ? Front : Rear;
         var step = suspension.VelocityBins[1] - suspension.VelocityBins[0];
 
-        var totalSamples = suspension.Strokes.Compressions.Sum(s => s.Stat.Count)
-                         + suspension.Strokes.Rebounds.Sum(s => s.Stat.Count);
-        var strokeVelocity = new List<double>(totalSamples);
-        foreach (var s in suspension.Strokes.Compressions)
+        // Welford's online algorithm — avoids allocating a list of all velocity samples
+        long n = 0;
+        double mean = 0.0, m2 = 0.0;
+        double min = double.MaxValue, max = double.MinValue;
+
+        foreach (var s in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
         {
-            for (var i = s.Start; i <= s.End; i++) strokeVelocity.Add(suspension.Velocity[i]);
-        }
-        foreach (var s in suspension.Strokes.Rebounds)
-        {
-            for (var i = s.Start; i <= s.End; i++) strokeVelocity.Add(suspension.Velocity[i]);
+            if (s.End < s.Start || s.Start < 0 || s.End >= suspension.Velocity.Length) continue;
+            for (var i = s.Start; i <= s.End; i++)
+            {
+                var v = suspension.Velocity[i];
+                n++;
+                var delta = v - mean;
+                mean += delta / n;
+                m2 += delta * (v - mean);
+                if (v < min) min = v;
+                if (v > max) max = v;
+            }
         }
 
-        var mu = strokeVelocity.Mean();
-        var std = strokeVelocity.StandardDeviation();
+        if (n < 2)
+            return new NormalDistributionData([], []);
 
-        var min = strokeVelocity.Min();
-        var max = strokeVelocity.Max();
+        var mu = mean;
+        var std = Math.Sqrt(m2 / (n - 1));
+
         var range = max - min;
         var ny = new double[100];
         for (int i = 0; i < 100; i++)
@@ -782,20 +791,28 @@ public class TelemetryData
         var suspension = type == SuspensionType.Front ? Front : Rear;
         var fineStep = suspension.FineVelocityBins[1] - suspension.FineVelocityBins[0];
 
-        var totalSamples = suspension.Strokes.Compressions.Sum(s => s.Stat.Count)
-                         + suspension.Strokes.Rebounds.Sum(s => s.Stat.Count);
-        var strokeVelocity = new List<double>(totalSamples);
-        foreach (var s in suspension.Strokes.Compressions)
+        // Welford's online algorithm — avoids allocating a list of all velocity samples
+        long n = 0;
+        double mean = 0.0, m2 = 0.0;
+
+        foreach (var s in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
         {
-            for (var i = s.Start; i <= s.End; i++) strokeVelocity.Add(suspension.Velocity[i]);
-        }
-        foreach (var s in suspension.Strokes.Rebounds)
-        {
-            for (var i = s.Start; i <= s.End; i++) strokeVelocity.Add(suspension.Velocity[i]);
+            if (s.End < s.Start || s.Start < 0 || s.End >= suspension.Velocity.Length) continue;
+            for (var i = s.Start; i <= s.End; i++)
+            {
+                var v = suspension.Velocity[i];
+                n++;
+                var delta = v - mean;
+                mean += delta / n;
+                m2 += delta * (v - mean);
+            }
         }
 
-        var mu = strokeVelocity.Mean();
-        var std = strokeVelocity.PopulationStandardDeviation();
+        if (n < 1)
+            return new NormalDistributionData([], []);
+
+        var mu = mean;
+        var std = Math.Sqrt(m2 / n); // population std
 
         var limit = highSpeedThreshold + 50; // match the plot display range (velocityLimit)
         const int numPoints = 100;
@@ -918,6 +935,8 @@ public class TelemetryData
         // Process compressions
         foreach (var compression in suspension.Strokes.Compressions)
         {
+            if (compression.End < compression.Start || compression.Start < 0 || compression.End >= velocity.Length)
+                continue;
             totalCount += compression.Stat.Count;
             for (int i = compression.Start; i <= compression.End; i++)
             {
@@ -938,6 +957,8 @@ public class TelemetryData
         // Process rebounds
         foreach (var rebound in suspension.Strokes.Rebounds)
         {
+            if (rebound.End < rebound.Start || rebound.Start < 0 || rebound.End >= velocity.Length)
+                continue;
             totalCount += rebound.Stat.Count;
             for (int i = rebound.Start; i <= rebound.End; i++)
             {
@@ -952,6 +973,9 @@ public class TelemetryData
             }
         }
 
+        if (totalCount == 0)
+            return new VelocityBands(0, 0, 0, 0);
+
         var totalPercentage = 100.0 / totalCount;
         return new VelocityBands(
             lsc * totalPercentage,
@@ -963,12 +987,14 @@ public class TelemetryData
     public PositionVelocityData CalculatePositionVelocityData(SuspensionType type)
     {
         var suspension = type == SuspensionType.Front ? Front : Rear;
+        var arrayLen = Math.Min(suspension.Travel.Length, suspension.Velocity.Length);
         var travel = new List<double>();
         var velocity = new List<double>();
 
         foreach (var s in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
         {
-            for (var i = s.Start; i <= s.End && i < suspension.Travel.Length; i++)
+            if (s.End < s.Start || s.Start < 0 || s.End >= arrayLen) continue;
+            for (var i = s.Start; i <= s.End; i++)
             {
                 travel.Add(suspension.Travel[i]);
                 velocity.Add(suspension.Velocity[i]);
@@ -980,12 +1006,14 @@ public class TelemetryData
 
     public PositionVelocityData CalculateDamperPositionVelocityData()
     {
+        var arrayLen = Math.Min(Rear.Travel.Length, Rear.Velocity.Length);
         var travel = new List<double>();
         var velocity = new List<double>();
 
         foreach (var s in Rear.Strokes.Compressions.Concat(Rear.Strokes.Rebounds))
         {
-            for (var i = s.Start; i <= s.End && i < Rear.Travel.Length; i++)
+            if (s.End < s.Start || s.Start < 0 || s.End >= arrayLen) continue;
+            for (var i = s.Start; i <= s.End; i++)
             {
                 travel.Add(Linkage.WheelToDamperTravel(Rear.Travel[i]));
                 velocity.Add(Rear.Velocity[i]);
