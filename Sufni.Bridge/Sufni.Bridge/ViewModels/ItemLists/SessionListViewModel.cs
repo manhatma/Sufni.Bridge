@@ -8,7 +8,11 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DynamicData;
 using DynamicData.Binding;
+using MessagePack;
 using Microsoft.Extensions.DependencyInjection;
+using Sufni.Bridge.Models;
+using Sufni.Bridge.Models.Telemetry;
+using Sufni.Bridge.Services;
 using Sufni.Bridge.ViewModels.Items;
 
 namespace Sufni.Bridge.ViewModels.ItemLists;
@@ -33,14 +37,25 @@ public partial class SessionListViewModel : ItemListViewModelBase
     [ObservableProperty] private int compareSelectionCount;
     [ObservableProperty] private bool isFilterMenuOpen;
     [ObservableProperty] private bool isFilterActive;
+    [ObservableProperty] private bool isCombineMode;
+    [ObservableProperty] private int combineSelectionCount;
+    [ObservableProperty] private bool combineSetupMismatch;
+    [ObservableProperty] private bool combineDepthExceeded;
+    [ObservableProperty] private bool isCombining;
+    [ObservableProperty] private bool isDeleteMode;
+    [ObservableProperty] private int deleteSelectionCount;
 
     public ObservableCollection<SetupFilterItem> SetupFilters { get; } = [];
 
     // Track which setup IDs are currently allowed (null = no filter active / all)
     private HashSet<Guid?>? _allowedSetupIds;
 
-    // Remember previously selected session IDs across compare mode toggles
+    // Remember previously selected session IDs across mode toggles
     private readonly HashSet<Guid> _lastCompareSelection = [];
+    private readonly HashSet<Guid> _lastCombineSelection = [];
+
+    // Track combined session IDs for marking
+    private HashSet<Guid> _combinedIds = [];
 
     public override void ConnectSource()
     {
@@ -73,9 +88,37 @@ public partial class SessionListViewModel : ItemListViewModelBase
         try
         {
             var sessionList = await databaseService.GetSessionsAsync();
+            _combinedIds = await databaseService.GetAllCombinedIdsAsync();
+
+            // Build all ViewModels
+            var sessionMap = new Dictionary<Guid, SessionViewModel>();
             foreach (var session in sessionList)
             {
-                Source.AddOrUpdate(new SessionViewModel(session, true));
+                var svm = new SessionViewModel(session, true);
+                if (_combinedIds.Contains(session.Id))
+                    svm.IsCombinedSession = true;
+                sessionMap[session.Id] = svm;
+            }
+
+            // Populate SubSessions for combined sessions and collect all source IDs
+            var allSourceIds = new HashSet<Guid>();
+            foreach (var combinedId in _combinedIds)
+            {
+                if (!sessionMap.TryGetValue(combinedId, out var combinedVm)) continue;
+                var sourceIds = await databaseService.GetCombinedSourcesAsync(combinedId);
+                foreach (var sourceId in sourceIds)
+                {
+                    allSourceIds.Add(sourceId);
+                    if (sessionMap.TryGetValue(sourceId, out var sourceVm))
+                        combinedVm.SubSessions.Add(sourceVm);
+                }
+            }
+
+            // Add only non-source sessions to the main list
+            foreach (var (id, svm) in sessionMap)
+            {
+                if (!allSourceIds.Contains(id))
+                    Source.AddOrUpdate(svm);
             }
         }
         catch (Exception e)
@@ -158,24 +201,28 @@ public partial class SessionListViewModel : ItemListViewModelBase
         Source.Refresh();
     }
 
+    private void ClearSelectionMode()
+    {
+        foreach (var item in Items)
+            item.IsSelectedForCompare = false;
+        CompareSelectionCount = 0;
+        CombineSelectionCount = 0;
+        CombineSetupMismatch = false;
+        CombineDepthExceeded = false;
+        DeleteSelectionCount = 0;
+    }
+
     [RelayCommand]
     private void ToggleCompareMode()
     {
         IsCompareMode = !IsCompareMode;
-        if (!IsCompareMode)
+
+        if (IsCompareMode)
         {
-            // Save selection and clear UI state
-            _lastCompareSelection.Clear();
-            foreach (var item in Items)
-            {
-                if (item.IsSelectedForCompare)
-                    _lastCompareSelection.Add(item.Id);
-                item.IsSelectedForCompare = false;
-            }
-            CompareSelectionCount = 0;
-        }
-        else
-        {
+            IsCombineMode = false;
+            IsDeleteMode = false;
+            ClearSelectionMode();
+
             // Restore previous selection
             var count = 0;
             foreach (var item in Items)
@@ -187,6 +234,17 @@ public partial class SessionListViewModel : ItemListViewModelBase
                 }
             }
             CompareSelectionCount = count;
+        }
+        else
+        {
+            _lastCompareSelection.Clear();
+            foreach (var item in Items)
+            {
+                if (item.IsSelectedForCompare)
+                    _lastCompareSelection.Add(item.Id);
+                item.IsSelectedForCompare = false;
+            }
+            CompareSelectionCount = 0;
         }
     }
 
@@ -233,5 +291,249 @@ public partial class SessionListViewModel : ItemListViewModelBase
             item.IsSelectedForCompare = false;
         }
         CompareSelectionCount = 0;
+    }
+
+    [RelayCommand]
+    private void ToggleCombineMode()
+    {
+        IsCombineMode = !IsCombineMode;
+
+        if (IsCombineMode)
+        {
+            IsCompareMode = false;
+            IsDeleteMode = false;
+            ClearSelectionMode();
+
+            var count = 0;
+            foreach (var item in Items)
+            {
+                if (_lastCombineSelection.Contains(item.Id))
+                {
+                    item.IsSelectedForCompare = true;
+                    count++;
+                }
+            }
+            CombineSelectionCount = count;
+            CheckCombineCompatibility();
+        }
+        else
+        {
+            _lastCombineSelection.Clear();
+            foreach (var item in Items)
+            {
+                if (item.IsSelectedForCompare)
+                    _lastCombineSelection.Add(item.Id);
+                item.IsSelectedForCompare = false;
+            }
+            CombineSelectionCount = 0;
+            CombineSetupMismatch = false;
+            CombineDepthExceeded = false;
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleCombineSelection(ItemViewModelBase item)
+    {
+        if (item.IsSelectedForCompare)
+        {
+            item.IsSelectedForCompare = false;
+            CombineSelectionCount--;
+        }
+        else
+        {
+            item.IsSelectedForCompare = true;
+            CombineSelectionCount++;
+        }
+        CheckCombineCompatibility();
+    }
+
+    private void CheckCombineCompatibility()
+    {
+        var selected = Items
+            .Where(i => i.IsSelectedForCompare)
+            .OfType<SessionViewModel>()
+            .ToList();
+
+        if (selected.Count < 2)
+        {
+            CombineSetupMismatch = false;
+            CombineDepthExceeded = false;
+            return;
+        }
+
+        var firstSetup = selected[0].SessionModel.Setup;
+        CombineSetupMismatch = selected.Any(s => s.SessionModel.Setup != firstSetup);
+
+        // Max nesting depth is 3: result depth = max(sub-depths) + 1 ≤ 3
+        var maxDepth = selected.Max(s => s.NestingDepth);
+        CombineDepthExceeded = maxDepth + 1 > 3;
+    }
+
+    [RelayCommand]
+    private async Task CombineSessions()
+    {
+        var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
+        Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
+
+        var selected = Items
+            .Where(i => i.IsSelectedForCompare)
+            .OfType<SessionViewModel>()
+            .OrderBy(s => s.Timestamp)
+            .ToList();
+
+        if (selected.Count < 2) return;
+
+        IsCombining = true;
+        try
+        {
+            // Load telemetry data for all selected sessions
+            var telemetryDataList = new List<TelemetryData>();
+            foreach (var svm in selected)
+            {
+                var td = await databaseService.GetSessionPsstAsync(svm.Id);
+                if (td is null)
+                {
+                    ErrorMessages.Add($"Could not load telemetry for '{svm.Name}'");
+                    return;
+                }
+                telemetryDataList.Add(td);
+            }
+
+            // Build combined name — strip leading zeros from session names
+            var names = selected.Select(s =>
+            {
+                var trimmed = s.Name?.TrimStart('0') ?? "";
+                return trimmed.Length == 0 ? "0" : trimmed;
+            }).ToList();
+            var combinedName = string.Join(" + ", names);
+            if (combinedName.Length > 80)
+                combinedName = combinedName[..77] + "...";
+            // No text prefix — chain icon is shown in the list
+
+            // Combine telemetry
+            var combined = TelemetryData.CombineSessions(telemetryDataList, combinedName);
+            var serialized = MessagePackSerializer.Serialize(combined);
+
+            // Create session record
+            var firstSession = selected[0].SessionModel;
+            var newSession = new Session(
+                id: Guid.NewGuid(),
+                name: combinedName,
+                description: $"Combined from {selected.Count} sessions",
+                setup: firstSession.Setup,
+                timestamp: firstSession.Timestamp)
+            {
+                ProcessedData = serialized,
+                FrontSpringRate = firstSession.FrontSpringRate,
+                RearSpringRate = firstSession.RearSpringRate,
+                FrontVolSpc = firstSession.FrontVolSpc,
+                RearVolSpc = firstSession.RearVolSpc,
+                FrontHighSpeedCompression = firstSession.FrontHighSpeedCompression,
+                FrontLowSpeedCompression = firstSession.FrontLowSpeedCompression,
+                FrontLowSpeedRebound = firstSession.FrontLowSpeedRebound,
+                FrontHighSpeedRebound = firstSession.FrontHighSpeedRebound,
+                RearHighSpeedCompression = firstSession.RearHighSpeedCompression,
+                RearLowSpeedCompression = firstSession.RearLowSpeedCompression,
+                RearLowSpeedRebound = firstSession.RearLowSpeedRebound,
+                RearHighSpeedRebound = firstSession.RearHighSpeedRebound
+            };
+
+            // Persist
+            await databaseService.PutSessionAsync(newSession);
+            await databaseService.PutCombinedSourcesAsync(newSession.Id, selected.Select(s => s.Id).ToList());
+
+            // Add to UI — move source sessions from main list into SubSessions
+            var newVm = new SessionViewModel(newSession, true) { IsCombinedSession = true, IsExpanded = true };
+            foreach (var svm in selected)
+            {
+                newVm.SubSessions.Add(svm);
+                Source.Remove(svm);
+            }
+            Source.AddOrUpdate(newVm);
+            _combinedIds.Add(newSession.Id);
+
+            // Reset combine mode
+            IsCombineMode = false;
+            CombineSelectionCount = 0;
+        }
+        catch (Exception e)
+        {
+            ErrorMessages.Add($"Could not combine sessions: {e.Message}");
+        }
+        finally
+        {
+            IsCombining = false;
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleDeleteMode()
+    {
+        IsDeleteMode = !IsDeleteMode;
+
+        if (IsDeleteMode)
+        {
+            IsCompareMode = false;
+            IsCombineMode = false;
+            ClearSelectionMode();
+        }
+        else
+        {
+            foreach (var item in Items)
+                item.IsSelectedForCompare = false;
+            DeleteSelectionCount = 0;
+        }
+    }
+
+    [RelayCommand]
+    private void ToggleDeleteSelection(ItemViewModelBase item)
+    {
+        if (item.IsSelectedForCompare)
+        {
+            item.IsSelectedForCompare = false;
+            DeleteSelectionCount--;
+        }
+        else
+        {
+            item.IsSelectedForCompare = true;
+            DeleteSelectionCount++;
+        }
+    }
+
+    [RelayCommand]
+    private async Task DeleteSelectedSessions()
+    {
+        Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
+
+        var selected = Items
+            .Where(i => i.IsSelectedForCompare)
+            .ToList();
+
+        if (selected.Count == 0) return;
+
+        foreach (var item in selected)
+        {
+            if (item is SessionViewModel { IsCombinedSession: true } combinedVm)
+            {
+                // Dissolve combined session: delete grouping, restore sub-sessions to main list
+                await databaseService.DeleteCombinedSourcesAsync(combinedVm.Id);
+                await databaseService.DeleteSessionAsync(combinedVm.Id);
+                _combinedIds.Remove(combinedVm.Id);
+
+                foreach (var sub in combinedVm.SubSessions)
+                    Source.AddOrUpdate(sub);
+
+                Source.Remove(combinedVm);
+            }
+            else
+            {
+                Source.Remove(item);
+                await databaseService.DeleteSessionAsync(item.Id);
+            }
+        }
+
+        // Reset delete mode
+        IsDeleteMode = false;
+        DeleteSelectionCount = 0;
     }
 }

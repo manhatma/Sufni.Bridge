@@ -120,7 +120,8 @@ public class SqLiteDatabaseService : IDatabaseService
             typeof(Setup),
             typeof(Session),
             typeof(SessionCache),
-            typeof(Synchronization)
+            typeof(Synchronization),
+            typeof(CombinedSessionSource)
         });
 
         if (result.Results[typeof(CalibrationMethod)] == CreateTableResult.Created)
@@ -618,6 +619,21 @@ public class SqLiteDatabaseService : IDatabaseService
             session.Deleted = (int)DateTimeOffset.Now.ToUnixTimeSeconds();
             await connection.UpdateAsync(session);
         }
+
+        // Cascade: soft-delete any combined sessions that reference this session as a source
+        var affectedCombinedIds = await connection.QueryAsync<CombinedSessionSource>(
+            "SELECT DISTINCT combined_id FROM combined_session WHERE source_id = ?", id);
+        foreach (var row in affectedCombinedIds)
+        {
+            var combined = await connection.Table<Session>()
+                .Where(s => s.Id == row.CombinedId && s.Deleted == null)
+                .FirstOrDefaultAsync();
+            if (combined is not null)
+            {
+                combined.Deleted = (int)DateTimeOffset.Now.ToUnixTimeSeconds();
+                await connection.UpdateAsync(combined);
+            }
+        }
     }
 
     public async Task UndeleteAsync(Guid id, string table)
@@ -692,5 +708,43 @@ public class SqLiteDatabaseService : IDatabaseService
 
         await connection.QueryAsync<Synchronization>("UPDATE sync SET last_sync_time = ?",
             (int)DateTimeOffset.Now.ToUnixTimeSeconds());
+    }
+
+    public async Task<List<Guid>> GetCombinedSourcesAsync(Guid combinedId)
+    {
+        await Initialization;
+        var rows = await connection.Table<CombinedSessionSource>()
+            .Where(r => r.CombinedId == combinedId)
+            .OrderBy(r => r.SortOrder)
+            .ToListAsync();
+        return rows.Select(r => r.SourceId).ToList();
+    }
+
+    public async Task<HashSet<Guid>> GetAllCombinedIdsAsync()
+    {
+        await Initialization;
+        var rows = await connection.QueryAsync<CombinedSessionSource>(
+            "SELECT DISTINCT combined_id FROM combined_session");
+        return rows.Select(r => r.CombinedId).ToHashSet();
+    }
+
+    public async Task PutCombinedSourcesAsync(Guid combinedId, List<Guid> sourceIds)
+    {
+        await Initialization;
+        for (var i = 0; i < sourceIds.Count; i++)
+        {
+            await connection.InsertAsync(new CombinedSessionSource
+            {
+                CombinedId = combinedId,
+                SourceId = sourceIds[i],
+                SortOrder = i
+            });
+        }
+    }
+
+    public async Task DeleteCombinedSourcesAsync(Guid combinedId)
+    {
+        await Initialization;
+        await connection.ExecuteAsync("DELETE FROM combined_session WHERE combined_id = ?", combinedId);
     }
 }

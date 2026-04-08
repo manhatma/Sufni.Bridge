@@ -48,4 +48,8 @@ public interface IDatabaseService
     public Task<Guid> PutSessionCacheAsync(SessionCache sessionCache);
     public Task<int> GetLastSyncTimeAsync();
     public Task UpdateLastSyncTimeAsync();
+    public Task<List<Guid>> GetCombinedSourcesAsync(Guid combinedId);
+    public Task<HashSet<Guid>> GetAllCombinedIdsAsync();
+    public Task PutCombinedSourcesAsync(Guid combinedId, List<Guid> sourceIds);
+    public Task DeleteCombinedSourcesAsync(Guid combinedId);
 }

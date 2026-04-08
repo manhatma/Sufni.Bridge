@@ -28,14 +28,17 @@ public class FrontRearTravelScatterPlot(Plot plot) : TelemetryPlot(plot)
             return;
         }
 
-        var rear = telemetryData.Rear.Travel
-            .Take(count)
-            .Select(v => v / telemetryData.Linkage.MaxRearTravel * 100.0)
-            .ToArray();
-        var front = telemetryData.Front.Travel
-            .Take(count)
-            .Select(v => v / telemetryData.Linkage.MaxFrontTravel * 100.0)
-            .ToArray();
+        const int maxScatterPoints = 50_000;
+        var stride = count > maxScatterPoints ? count / maxScatterPoints : 1;
+        var sampledCount = (count + stride - 1) / stride;
+
+        var rear = new double[sampledCount];
+        var front = new double[sampledCount];
+        for (int i = 0, j = 0; i < count && j < sampledCount; i += stride, j++)
+        {
+            rear[j] = telemetryData.Rear.Travel[i] / telemetryData.Linkage.MaxRearTravel * 100.0;
+            front[j] = telemetryData.Front.Travel[i] / telemetryData.Linkage.MaxFrontTravel * 100.0;
+        }
 
         var scatter = Plot.Add.Scatter(rear, front);
         scatter.LineStyle.IsVisible = false;

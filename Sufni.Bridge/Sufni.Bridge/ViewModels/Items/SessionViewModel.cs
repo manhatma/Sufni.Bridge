@@ -25,7 +25,10 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 52;
+    private const int CurrentPlotVersion = 53;
+
+    // Limits concurrent plot generation tasks to reduce peak memory on iOS.
+    private static readonly SemaphoreSlim s_plotSemaphore = new(3, 3);
 
     // Shared across all instances — updated whenever any session loads with real bounds.
     // Default matches iPhone 15 Pro logical width; height/2 is used for plots.
@@ -46,6 +49,20 @@ public partial class SessionViewModel : ItemViewModelBase
     public override bool ShowPdfExportButton => true;
     [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private bool isGeneratingPdf;
     [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private bool isAnalyzingData;
+    [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private bool isCombinedSession;
+    [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private bool isExpanded;
+    public ObservableCollection<SessionViewModel> SubSessions { get; } = [];
+
+    public int NestingDepth => IsCombinedSession && SubSessions.Count > 0
+        ? SubSessions.Max(s => s.NestingDepth) + 1
+        : 1;
+
+    [RelayCommand]
+    private void ToggleExpand()
+    {
+        if (!IsCombinedSession) return;
+        IsExpanded = !IsExpanded;
+    }
 
     #region Private methods
 
@@ -181,6 +198,16 @@ public partial class SessionViewModel : ItemViewModelBase
         return (true, hasVdc, hasPvc);
     }
 
+    private static Task ThrottledPlotTask(Action work)
+    {
+        return Task.Run(async () =>
+        {
+            await s_plotSemaphore.WaitAsync();
+            try { work(); }
+            finally { s_plotSemaphore.Release(); }
+        });
+    }
+
     private async Task CreateCache(object? bounds, TelemetryData telemetryData)
     {
         var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
@@ -211,7 +238,7 @@ public partial class SessionViewModel : ItemViewModelBase
         // Spring comparison plots (Front+Rear)
         if (telemetryData.Front.Present && telemetryData.Rear.Present)
         {
-            tasks.Add(Task.Run(() =>
+            tasks.Add(ThrottledPlotTask(() =>
             {
                 var tcmp = new TravelHistogramComparisonPlot(new Plot());
                 tcmp.LoadTelemetryData(telemetryData);
@@ -220,7 +247,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { SpringPage.TravelComparisonHistogram = SourceToImage(travelCompSrc); });
             }));
 
-            tasks.Add(Task.Run(() =>
+            tasks.Add(ThrottledPlotTask(() =>
             {
                 var frs = new FrontRearTravelScatterPlot(new Plot());
                 frs.LoadTelemetryData(telemetryData);
@@ -241,7 +268,7 @@ public partial class SessionViewModel : ItemViewModelBase
         // Front plots — each in its own task
         if (telemetryData.Front.Present)
         {
-            tasks.Add(Task.Run(() =>
+            tasks.Add(ThrottledPlotTask(() =>
             {
                 var fth = new TravelHistogramPlot(new Plot(), SuspensionType.Front);
                 fth.LoadTelemetryData(telemetryData);
@@ -250,7 +277,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { SpringPage.FrontTravelHistogram = SourceToImage(frontTravelHistSrc); });
             }));
 
-            tasks.Add(Task.Run(() =>
+            tasks.Add(ThrottledPlotTask(() =>
             {
                 var fvh = new VelocityHistogramPlot(new Plot(), SuspensionType.Front);
                 fvh.LoadTelemetryData(telemetryData);
@@ -259,7 +286,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { DamperPage.FrontVelocityHistogram = SourceToImage(frontVelocityHistSrc); });
             }));
 
-            tasks.Add(Task.Run(() =>
+            tasks.Add(ThrottledPlotTask(() =>
             {
                 var flsvh = new LowSpeedVelocityHistogramPlot(new Plot(), SuspensionType.Front);
                 flsvh.LoadTelemetryData(telemetryData);
@@ -290,7 +317,7 @@ public partial class SessionViewModel : ItemViewModelBase
         // Rear plots — each in its own task
         if (telemetryData.Rear.Present)
         {
-            tasks.Add(Task.Run(() =>
+            tasks.Add(ThrottledPlotTask(() =>
             {
                 var rth = new TravelHistogramPlot(new Plot(), SuspensionType.Rear);
                 rth.LoadTelemetryData(telemetryData);
@@ -299,7 +326,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { SpringPage.RearTravelHistogram = SourceToImage(rearTravelHistSrc); });
             }));
 
-            tasks.Add(Task.Run(() =>
+            tasks.Add(ThrottledPlotTask(() =>
             {
                 var rvh = new VelocityHistogramPlot(new Plot(), SuspensionType.Rear);
                 rvh.LoadTelemetryData(telemetryData);
@@ -308,7 +335,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { DamperPage.RearVelocityHistogram = SourceToImage(rearVelocityHistSrc); });
             }));
 
-            tasks.Add(Task.Run(() =>
+            tasks.Add(ThrottledPlotTask(() =>
             {
                 var rlsvh = new LowSpeedVelocityHistogramPlot(new Plot(), SuspensionType.Rear);
                 rlsvh.LoadTelemetryData(telemetryData);
@@ -339,7 +366,7 @@ public partial class SessionViewModel : ItemViewModelBase
         // Balance plots — each in its own task
         if (telemetryData.Front.Present && telemetryData.Rear.Present)
         {
-            tasks.Add(Task.Run(() =>
+            tasks.Add(ThrottledPlotTask(() =>
             {
                 var combined = new CombinedBalancePlot(new Plot());
                 combined.LoadTelemetryData(telemetryData);
@@ -348,7 +375,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { BalancePage.CombinedBalance = SourceToImage(combinedBalanceSrc); });
             }));
 
-            tasks.Add(Task.Run(() =>
+            tasks.Add(ThrottledPlotTask(() =>
             {
                 var cb = new BalancePlot(new Plot(), BalanceType.Compression);
                 cb.LoadTelemetryData(telemetryData);
@@ -357,7 +384,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { BalancePage.CompressionBalance = SourceToImage(compressionBalanceSrc); });
             }));
 
-            tasks.Add(Task.Run(() =>
+            tasks.Add(ThrottledPlotTask(() =>
             {
                 var rb = new BalancePlot(new Plot(), BalanceType.Rebound);
                 rb.LoadTelemetryData(telemetryData);
@@ -372,7 +399,7 @@ public partial class SessionViewModel : ItemViewModelBase
         }
 
         // Misc plots — each in its own task
-        tasks.Add(Task.Run(() =>
+        tasks.Add(ThrottledPlotTask(() =>
         {
             var vdc = new VelocityDistributionComparisonPlot(new Plot());
             vdc.LoadTelemetryData(telemetryData);
@@ -381,7 +408,7 @@ public partial class SessionViewModel : ItemViewModelBase
             Dispatcher.UIThread.Post(() => { DamperPage.VelocityDistributionComparison = SourceToImage(velDistCompSrc); });
         }));
 
-        tasks.Add(Task.Run(() =>
+        tasks.Add(ThrottledPlotTask(() =>
         {
             var pvc = new PositionVelocityComparisonPlot(new Plot());
             pvc.LoadTelemetryData(telemetryData);
@@ -392,7 +419,7 @@ public partial class SessionViewModel : ItemViewModelBase
 
         if (telemetryData.Front.Present)
         {
-            tasks.Add(Task.Run(() =>
+            tasks.Add(ThrottledPlotTask(() =>
             {
                 var fpv = new PositionVelocityPlot(new Plot(), SuspensionType.Front);
                 fpv.LoadTelemetryData(telemetryData);
@@ -404,7 +431,7 @@ public partial class SessionViewModel : ItemViewModelBase
 
         if (telemetryData.Rear.Present)
         {
-            tasks.Add(Task.Run(() =>
+            tasks.Add(ThrottledPlotTask(() =>
             {
                 var rpv = new PositionVelocityPlot(new Plot(), SuspensionType.Rear);
                 rpv.LoadTelemetryData(telemetryData);
