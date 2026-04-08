@@ -90,7 +90,7 @@ public class TelemetryData
 
     // Increment when velocity processing parameters change (e.g. smoother lambda).
     // Blobs with a lower version are automatically re-processed from Travel arrays on load.
-    public const int CurrentProcessingVersion = 1;
+    public const int CurrentProcessingVersion = 2;
 
     #region Public properties
 
@@ -302,7 +302,7 @@ public class TelemetryData
         }
 
         // Create Whittaker-Henderson smoother for velocity smoothing
-        var smoother = new WhittakerHendersonSmoother(2, 60);
+        var smoother = new WhittakerHendersonSmoother(2, 5);
 
         if (Front.Present)
         {
@@ -399,7 +399,7 @@ public class TelemetryData
     /// </summary>
     public byte[] ReprocessVelocity()
     {
-        var smoother = new WhittakerHendersonSmoother(2, 60);
+        var smoother = new WhittakerHendersonSmoother(2, 5);
 
         if (Front.Present)
         {
@@ -453,6 +453,34 @@ public class TelemetryData
 
     #endregion
 
+    /// <summary>
+    /// Concatenates travel arrays from multiple sessions with a linear ramp between each pair.
+    /// Without the ramp, a step discontinuity in travel (e.g. 50mm → 5mm) produces a massive
+    /// velocity spike when differentiated, corrupting stroke statistics.
+    /// </summary>
+    private static double[] ConcatenateTravelWithTransitions(List<double[]> travelArrays, int sampleRate)
+    {
+        // Transition duration: 0.5s — long enough that even a full-travel ramp
+        // stays within normal velocity range (e.g. 200mm / 0.5s = 400 mm/s)
+        var transitionSamples = sampleRate / 2;
+        var result = new List<double>(travelArrays.Sum(a => a.Length) + transitionSamples * (travelArrays.Count - 1));
+
+        for (var s = 0; s < travelArrays.Count; s++)
+        {
+            if (s > 0)
+            {
+                var from = result[^1];
+                var to = travelArrays[s][0];
+                for (var i = 1; i <= transitionSamples; i++)
+                    result.Add(from + (to - from) * i / transitionSamples);
+            }
+
+            result.AddRange(travelArrays[s]);
+        }
+
+        return result.ToArray();
+    }
+
     public static TelemetryData CombineSessions(List<TelemetryData> sessions, string name)
     {
         if (sessions.Count < 2)
@@ -482,22 +510,27 @@ public class TelemetryData
             Rear = new Suspension { Present = hasRear, Strokes = new Strokes() }
         };
 
+        var smoother = new WhittakerHendersonSmoother(2, 5);
+
         if (hasFront)
         {
-            combined.Front.Travel = sessions.SelectMany(s => s.Front.Travel).ToArray();
-            combined.Front.Velocity = sessions.SelectMany(s => s.Front.Velocity).ToArray();
+            combined.Front.Travel = ConcatenateTravelWithTransitions(
+                sessions.Select(s => s.Front.Travel).ToList(), first.SampleRate);
             combined.Front.Calibration = first.Front.Calibration;
 
             var tbins = Linspace(0, first.Linkage.MaxFrontTravel, Parameters.TravelHistBins + 1);
             var dt = Digitize(combined.Front.Travel, tbins);
             combined.Front.TravelBins = tbins;
 
-            var (vbins, dv) = DigitizeVelocity(combined.Front.Velocity, Parameters.VelocityHistStep);
+            // Re-derive velocity from combined travel to avoid discontinuities at session boundaries
+            var v = smoother.Smooth(ComputeVelocity(combined.Front.Travel, first.SampleRate));
+            combined.Front.Velocity = v;
+            var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             combined.Front.VelocityBins = vbins;
-            var (vbinsFine, dvFine) = DigitizeVelocity(combined.Front.Velocity, Parameters.VelocityHistStepFine);
+            var (vbinsFine, dvFine) = DigitizeVelocity(v, Parameters.VelocityHistStepFine);
             combined.Front.FineVelocityBins = vbinsFine;
 
-            var strokes = Strokes.FilterStrokes(combined.Front.Velocity, combined.Front.Travel,
+            var strokes = Strokes.FilterStrokes(v, combined.Front.Travel,
                 first.Linkage.MaxFrontTravel, first.SampleRate);
             combined.Front.Strokes.Categorize(strokes);
             if (combined.Front.Strokes.Compressions.Length == 0 && combined.Front.Strokes.Rebounds.Length == 0)
@@ -508,20 +541,23 @@ public class TelemetryData
 
         if (hasRear)
         {
-            combined.Rear.Travel = sessions.SelectMany(s => s.Rear.Travel).ToArray();
-            combined.Rear.Velocity = sessions.SelectMany(s => s.Rear.Velocity).ToArray();
+            combined.Rear.Travel = ConcatenateTravelWithTransitions(
+                sessions.Select(s => s.Rear.Travel).ToList(), first.SampleRate);
             combined.Rear.Calibration = first.Rear.Calibration;
 
             var tbins = Linspace(0, first.Linkage.MaxRearTravel, Parameters.TravelHistBins + 1);
             var dt = Digitize(combined.Rear.Travel, tbins);
             combined.Rear.TravelBins = tbins;
 
-            var (vbins, dv) = DigitizeVelocity(combined.Rear.Velocity, Parameters.VelocityHistStep);
+            // Re-derive velocity from combined travel to avoid discontinuities at session boundaries
+            var v = smoother.Smooth(ComputeVelocity(combined.Rear.Travel, first.SampleRate));
+            combined.Rear.Velocity = v;
+            var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             combined.Rear.VelocityBins = vbins;
-            var (vbinsFine, dvFine) = DigitizeVelocity(combined.Rear.Velocity, Parameters.VelocityHistStepFine);
+            var (vbinsFine, dvFine) = DigitizeVelocity(v, Parameters.VelocityHistStepFine);
             combined.Rear.FineVelocityBins = vbinsFine;
 
-            var strokes = Strokes.FilterStrokes(combined.Rear.Velocity, combined.Rear.Travel,
+            var strokes = Strokes.FilterStrokes(v, combined.Rear.Travel,
                 first.Linkage.MaxRearTravel, first.SampleRate);
             combined.Rear.Strokes.Categorize(strokes);
             if (combined.Rear.Strokes.Compressions.Length == 0 && combined.Rear.Strokes.Rebounds.Length == 0)
