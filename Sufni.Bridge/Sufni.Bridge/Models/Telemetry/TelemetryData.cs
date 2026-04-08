@@ -88,10 +88,15 @@ public class TelemetryData
 {
     public const int TravelBinsForVelocityHistogram = 10;
 
+    // Increment when velocity processing parameters change (e.g. smoother lambda).
+    // Blobs with a lower version are automatically re-processed from Travel arrays on load.
+    public const int CurrentProcessingVersion = 1;
+
     #region Public properties
 
     public string Name { get; set; }
     public int Version { get; set; }
+    public int ProcessingVersion { get; set; }
     public int SampleRate { get; set; }
     public int Timestamp { get; set; }
     public Suspension Front { get; set; }
@@ -297,7 +302,7 @@ public class TelemetryData
         }
 
         // Create Whittaker-Henderson smoother for velocity smoothing
-        var smoother = new WhittakerHendersonSmoother(2, 260);
+        var smoother = new WhittakerHendersonSmoother(2, 60);
 
         if (Front.Present)
         {
@@ -382,6 +387,66 @@ public class TelemetryData
         }
 
         CalculateAirTimes();
+        ProcessingVersion = CurrentProcessingVersion;
+
+        return MessagePackSerializer.Serialize(this);
+    }
+
+    /// <summary>
+    /// Re-derives Velocity, Strokes, VelocityBins from the stored Travel arrays
+    /// using current smoother parameters. Called when ProcessingVersion is outdated.
+    /// Returns the updated serialized blob.
+    /// </summary>
+    public byte[] ReprocessVelocity()
+    {
+        var smoother = new WhittakerHendersonSmoother(2, 60);
+
+        if (Front.Present)
+        {
+            var tbins = Linspace(0, Linkage.MaxFrontTravel, Parameters.TravelHistBins + 1);
+            var dt = Digitize(Front.Travel, tbins);
+            Front.TravelBins = tbins;
+
+            var v = smoother.Smooth(ComputeVelocity(Front.Travel, SampleRate));
+            Front.Velocity = v;
+            var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
+            Front.VelocityBins = vbins;
+            var (vbinsFine, dvFine) = DigitizeVelocity(v, Parameters.VelocityHistStepFine);
+            Front.FineVelocityBins = vbinsFine;
+
+            Front.Strokes = new Strokes();
+            var strokes = Strokes.FilterStrokes(v, Front.Travel, Linkage.MaxFrontTravel, SampleRate);
+            Front.Strokes.Categorize(strokes);
+            if (Front.Strokes.Compressions.Length == 0 && Front.Strokes.Rebounds.Length == 0)
+                Front.Present = false;
+            else
+                Front.Strokes.Digitize(dt, dv, dvFine);
+        }
+
+        if (Rear.Present)
+        {
+            var tbins = Linspace(0, Linkage.MaxRearTravel, Parameters.TravelHistBins + 1);
+            var dt = Digitize(Rear.Travel, tbins);
+            Rear.TravelBins = tbins;
+
+            var v = smoother.Smooth(ComputeVelocity(Rear.Travel, SampleRate));
+            Rear.Velocity = v;
+            var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
+            Rear.VelocityBins = vbins;
+            var (vbinsFine, dvFine) = DigitizeVelocity(v, Parameters.VelocityHistStepFine);
+            Rear.FineVelocityBins = vbinsFine;
+
+            Rear.Strokes = new Strokes();
+            var strokes = Strokes.FilterStrokes(v, Rear.Travel, Linkage.MaxRearTravel, SampleRate);
+            Rear.Strokes.Categorize(strokes);
+            if (Rear.Strokes.Compressions.Length == 0 && Rear.Strokes.Rebounds.Length == 0)
+                Rear.Present = false;
+            else
+                Rear.Strokes.Digitize(dt, dv, dvFine);
+        }
+
+        CalculateAirTimes();
+        ProcessingVersion = CurrentProcessingVersion;
 
         return MessagePackSerializer.Serialize(this);
     }

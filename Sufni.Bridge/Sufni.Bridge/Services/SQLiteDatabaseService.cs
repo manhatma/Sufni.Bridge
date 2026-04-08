@@ -526,7 +526,16 @@ public class SqLiteDatabaseService : IDatabaseService
         await Initialization;
         var sessions = await connection.QueryAsync<Session>(
             "SELECT data FROM session WHERE deleted IS null AND id = ?", id);
-        return sessions.Count == 1 ? MessagePackSerializer.Deserialize<TelemetryData>(sessions[0].ProcessedData) : null;
+        if (sessions.Count != 1) return null;
+
+        var td = MessagePackSerializer.Deserialize<TelemetryData>(sessions[0].ProcessedData);
+        if (td.ProcessingVersion < TelemetryData.CurrentProcessingVersion)
+        {
+            var updatedBlob = td.ReprocessVelocity();
+            await connection.ExecuteAsync("UPDATE session SET data=? WHERE id=?", [updatedBlob, id]);
+        }
+
+        return td;
     }
 
     public async Task<byte[]?> GetSessionRawPsstAsync(Guid id)
