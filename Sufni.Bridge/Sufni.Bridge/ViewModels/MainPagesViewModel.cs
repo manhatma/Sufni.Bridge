@@ -49,7 +49,7 @@ public partial class MainPagesViewModel : ViewModelBase
         SetupsPage.MenuItems.Add(new("sync", SyncCommand));
         SetupsPage.MenuItems.Add(new("add", SetupsPage.AddCommand));
         SessionsPage.MenuItems.Add(new("sync", SyncCommand));
-        SessionsPage.MenuItems.Add(new("import", OpenPageCommand, importSessionsPage));
+        SessionsPage.MenuItems.Add(new("import", ShowImportPageCommand));
 
         SettingsPage.PropertyChanged += (_, args) =>
         {
