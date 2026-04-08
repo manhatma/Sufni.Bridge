@@ -955,11 +955,9 @@ public class TelemetryData
         var frontPoly = FitPolynomial(frontTravelVelocity.Item1, frontTravelVelocity.Item2);
         var rearPoly = FitPolynomial(rearTravelVelocity.Item1, rearTravelVelocity.Item2);
 
-        var frontTrend = frontTravelVelocity.Item1.Select(t => frontPoly(t)).ToList();
-        var rearTrend = rearTravelVelocity.Item1.Select(t => rearPoly(t)).ToList();
-
-        var sum = frontTrend.Zip(rearTrend, (fx, gx) => fx - gx).Sum();
-        var msd = sum / frontTrend.Count;
+        var evalPoints = Enumerable.Range(0, 100).Select(i => i + 0.5).ToArray();
+        var sum = evalPoints.Sum(t => frontPoly(t) - rearPoly(t));
+        var msd = sum / evalPoints.Length;
 
         return new BalanceData(
             [.. frontTravelVelocity.Item1],
