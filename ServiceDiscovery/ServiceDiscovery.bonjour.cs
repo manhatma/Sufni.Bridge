@@ -10,6 +10,7 @@ public class ServiceDiscovery : IServiceDiscovery
     public event EventHandler<ServiceAnnouncementEventArgs>? ServiceRemoved;
 
     private readonly DispatchQueue dispatchQueue = new("com.sghctoma.sufni-bridge.serviceDiscovery");
+    private NWBrowser? browser;
     private IPAddress? currentIpAddress;
     private ushort? currentPort;
 
@@ -69,8 +70,9 @@ public class ServiceDiscovery : IServiceDiscovery
 
     public void StartBrowse(string type)
     {
+        browser?.Cancel();
         var browserDescriptor = NWBrowserDescriptor.CreateBonjourService(type, "local.");
-        var browser = new NWBrowser(browserDescriptor, parameters);
+        browser = new NWBrowser(browserDescriptor, parameters);
         browser.SetDispatchQueue(dispatchQueue);
 
         browser.CompleteChangesDelegate = changes =>

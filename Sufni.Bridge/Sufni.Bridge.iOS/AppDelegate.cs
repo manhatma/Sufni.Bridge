@@ -6,11 +6,12 @@ using Microsoft.Extensions.DependencyInjection;
 using SecureStorage;
 using ServiceDiscovery;
 using Sufni.Bridge.Services;
+using UIKit;
 
 namespace Sufni.Bridge.iOS
 {
-    // The UIApplicationDelegate for the application. This class is responsible for launching the 
-    // User Interface of the application, as well as listening (and optionally responding) to 
+    // The UIApplicationDelegate for the application. This class is responsible for launching the
+    // User Interface of the application, as well as listening (and optionally responding) to
     // application events from iOS.
     [Register("AppDelegate")]
     public partial class AppDelegate : AvaloniaAppDelegate<App>
@@ -24,6 +25,13 @@ namespace Sufni.Bridge.iOS
             return base.CustomizeAppBuilder(builder)
                 .WithInterFont()
                 .With(new SkiaOptions { UseOpacitySaveLayer = true });
+        }
+
+        [Export("applicationWillEnterForeground:")]
+        public void WillEnterForeground(UIApplication application)
+        {
+            var serviceDiscovery = App.Current?.Services?.GetService<IServiceDiscovery>();
+            serviceDiscovery?.StartBrowse(ITelemetryDataStoreService.ServiceType);
         }
     }
 }

@@ -33,7 +33,7 @@ internal class DriveInfoComparer : IEqualityComparer<DriveInfo>
 
 internal class TelemetryDataStoreService : ITelemetryDataStoreService
 {
-    private const string ServiceType = "_gosst._tcp";
+    private const string ServiceType = ITelemetryDataStoreService.ServiceType;
     private static readonly object DataStoreLock = new();
     public ObservableCollection<ITelemetryDataStore> DataStores { get; } = new();
 
