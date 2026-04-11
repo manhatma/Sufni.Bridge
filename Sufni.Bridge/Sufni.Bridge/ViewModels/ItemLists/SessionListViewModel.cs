@@ -416,12 +416,16 @@ public partial class SessionListViewModel : ItemListViewModelBase
 
             // Create session record
             var firstSession = selected[0].SessionModel;
+            var firstTimestamp = selected
+                .Where(s => s.SessionModel.Timestamp.HasValue)
+                .Min(s => s.SessionModel.Timestamp)
+                ?? firstSession.Timestamp;
             var newSession = new Session(
                 id: Guid.NewGuid(),
                 name: combinedName,
                 description: $"Combined from {selected.Count} sessions",
                 setup: firstSession.Setup,
-                timestamp: firstSession.Timestamp)
+                timestamp: firstTimestamp)
             {
                 ProcessedData = serialized,
                 FrontSpringRate = firstSession.FrontSpringRate,

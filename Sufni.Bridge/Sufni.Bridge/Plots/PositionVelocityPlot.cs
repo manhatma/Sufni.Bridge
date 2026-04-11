@@ -1,6 +1,5 @@
 using System;
 using ScottPlot;
-using ScottPlot.TickGenerators;
 using Sufni.Bridge.Models.Telemetry;
 
 namespace Sufni.Bridge.Plots;
@@ -12,21 +11,24 @@ public class PositionVelocityPlot(Plot plot, SuspensionType type) : TelemetryPlo
         base.LoadTelemetryData(telemetryData);
 
         SetTitle(type == SuspensionType.Front
-            ? "Front position vs velocity"
+            ? "Fork position vs. velocity"
             : "Damper position vs velocity");
         Plot.Layout.Fixed(new PixelPadding(70, 14, 50, 40));
 
         var useDamperTravel = type == SuspensionType.Rear;
-        Plot.Axes.Bottom.Label.Text = useDamperTravel ? "Damper travel (mm)" : "Wheel travel (mm)";
+        var useForkTravel = type == SuspensionType.Front;
+        Plot.Axes.Bottom.Label.Text = useDamperTravel ? "Damper travel (mm)" : "Fork travel (mm)";
         Plot.Axes.Left.Label.Text = "Velocity (mm/s)";
 
         var data = useDamperTravel
             ? telemetryData.CalculateDamperPositionVelocityData()
-            : telemetryData.CalculatePositionVelocityData(type);
+            : useForkTravel
+                ? telemetryData.CalculateForkPositionVelocityData()
+                : telemetryData.CalculatePositionVelocityData(type);
         var maxTravel = useDamperTravel
             ? telemetryData.Linkage.MaxRearStroke!.Value
-            : type == SuspensionType.Front
-                ? telemetryData.Linkage.MaxFrontTravel
+            : useForkTravel
+                ? telemetryData.Linkage.MaxFrontStroke!.Value
                 : telemetryData.Linkage.MaxRearTravel;
         var color = type == SuspensionType.Front ? FrontColor : RearColor;
 
@@ -63,8 +65,6 @@ public class PositionVelocityPlot(Plot plot, SuspensionType type) : TelemetryPlo
             right: maxTravel,
             bottom: -bottomLimit,
             top: topLimit);
-
-        Plot.Axes.Left.TickGenerator = new NumericFixedInterval(500);
 
         var label = type == SuspensionType.Front ? "Front" : "Rear";
         var legend = Plot.Add.Text(label, maxTravel, topLimit * 0.95);

@@ -1,6 +1,5 @@
 using System;
 using ScottPlot;
-using ScottPlot.TickGenerators;
 using Sufni.Bridge.Models.Telemetry;
 
 namespace Sufni.Bridge.Plots;
@@ -73,8 +72,6 @@ public class PositionVelocityComparisonPlot(Plot plot) : TelemetryPlot(plot)
             right: maxTravel,
             bottom: -bottomLimit,
             top: topLimit);
-
-        Plot.Axes.Left.TickGenerator = new NumericFixedInterval(500);
 
         if (telemetryData.Front.Present)
         {

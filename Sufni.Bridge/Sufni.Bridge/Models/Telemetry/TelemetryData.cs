@@ -1059,6 +1059,26 @@ public class TelemetryData
         return new PositionVelocityData(travel.ToArray(), velocity.ToArray());
     }
 
+    public PositionVelocityData CalculateForkPositionVelocityData()
+    {
+        var sinHeadAngle = Math.Sin(Linkage.HeadAngle * Math.PI / 180.0);
+        var arrayLen = Math.Min(Front.Travel.Length, Front.Velocity.Length);
+        var travel = new List<double>();
+        var velocity = new List<double>();
+
+        foreach (var s in Front.Strokes.Compressions.Concat(Front.Strokes.Rebounds))
+        {
+            if (s.End < s.Start || s.Start < 0 || s.End >= arrayLen) continue;
+            for (var i = s.Start; i <= s.End; i++)
+            {
+                travel.Add(sinHeadAngle > 0 ? Front.Travel[i] / sinHeadAngle : 0);
+                velocity.Add(Front.Velocity[i]);
+            }
+        }
+
+        return new PositionVelocityData(travel.ToArray(), velocity.ToArray());
+    }
+
     private static Func<double, double> FitPolynomial(double[] x, double[] y)
     {
         var coefficients = Fit.Polynomial(x, y, 1);
