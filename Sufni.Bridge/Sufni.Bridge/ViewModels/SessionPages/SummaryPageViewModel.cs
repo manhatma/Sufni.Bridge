@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Sufni.Bridge.ViewModels.Items;
 
 namespace Sufni.Bridge.ViewModels.SessionPages;
 
@@ -8,6 +10,9 @@ public partial class SummaryPageViewModel() : PageViewModelBase("Summary")
     [ObservableProperty] private ObservableCollection<SummaryValueRow> runDataRows = [];
     [ObservableProperty] private ObservableCollection<SummaryComparisonRow> forkShockRows = [];
     [ObservableProperty] private ObservableCollection<SummaryComparisonRow> wheelRows = [];
+    [ObservableProperty] private SetupViewModel? selectedSetup;
+    [ObservableProperty] private IAsyncRelayCommand? changeSetupCommand;
+    public ObservableCollection<SetupViewModel> AvailableSetups { get; } = [];
 }
 
 public class SummaryValueRow(string label, string value)

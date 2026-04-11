@@ -46,6 +46,8 @@ public interface IDatabaseService
     public Task<HashSet<string>> GetImportedSourceIdentifiersAsync();
     public Task<SessionCache?> GetSessionCacheAsync(Guid sessionId);
     public Task<Guid> PutSessionCacheAsync(SessionCache sessionCache);
+    public Task<int> ReassignSetupInSessionsAsync(Guid oldSetupId, Guid newSetupId);
+    public Task ReassignSessionSetupAsync(Guid sessionId, Guid newSetupId);
     public Task<int> GetLastSyncTimeAsync();
     public Task UpdateLastSyncTimeAsync();
     public Task<List<Guid>> GetCombinedSourcesAsync(Guid combinedId);

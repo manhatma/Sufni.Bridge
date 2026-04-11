@@ -5,6 +5,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="clr-namespace:Sufni.Bridge.ViewModels.SessionPages"
+    xmlns:items="clr-namespace:Sufni.Bridge.ViewModels.Items"
     d:DesignHeight="600"
     d:DesignWidth="500"
     x:DataType="vm:SummaryPageViewModel"
@@ -46,9 +47,35 @@
 
     <ScrollViewer Width="{Binding $parent[ScrollViewer].Bounds.Width}" Height="{Binding $parent[ScrollViewer].Bounds.Height}" IsScrollChainingEnabled="False">
         <StackPanel Margin="0,0,0,10" Orientation="Vertical" Spacing="12">
-            <Grid RowDefinitions="auto auto" ColumnDefinitions="*">
+            <Grid RowDefinitions="auto auto auto" ColumnDefinitions="*">
                 <TextBlock Grid.Row="0" Classes="summary-title" Text="RUN DATA" />
-                <ItemsControl Grid.Row="1" ItemsSource="{Binding RunDataRows}">
+                <Grid Grid.Row="1" ColumnDefinitions="110,*">
+                    <Border Grid.Column="0" Classes="summary-cell">
+                        <TextBlock Text="Setup" />
+                    </Border>
+                    <Border Grid.Column="1" Classes="summary-cell">
+                        <Grid ColumnDefinitions="* auto">
+                            <ComboBox
+                                Grid.Column="0"
+                                HorizontalAlignment="Stretch"
+                                ItemsSource="{Binding AvailableSetups}"
+                                SelectedItem="{Binding SelectedSetup}">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate x:DataType="items:SetupViewModel">
+                                        <TextBlock Text="{Binding Name}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <Button
+                                Grid.Column="1"
+                                Classes="embedded"
+                                Command="{Binding ChangeSetupCommand}">
+                                <Image Width="16" Source="{SvgImage /Assets/fa-rotate-right.svg}" />
+                            </Button>
+                        </Grid>
+                    </Border>
+                </Grid>
+                <ItemsControl Grid.Row="2" ItemsSource="{Binding RunDataRows}">
                     <ItemsControl.ItemTemplate>
                         <DataTemplate x:DataType="vm:SummaryValueRow">
                             <Grid ColumnDefinitions="110,*">

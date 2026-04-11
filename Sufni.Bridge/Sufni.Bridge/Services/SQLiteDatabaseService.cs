@@ -694,6 +694,60 @@ public class SqLiteDatabaseService : IDatabaseService
         return sessionCache.SessionId;
     }
 
+    public async Task<int> ReassignSetupInSessionsAsync(Guid oldSetupId, Guid newSetupId)
+    {
+        await Initialization;
+
+        var newSetup = await GetSetupAsync(newSetupId)
+            ?? throw new Exception("Target setup not found.");
+        var newLinkage = await GetLinkageAsync(newSetup.LinkageId)
+            ?? throw new Exception("Target setup's linkage not found.");
+
+        var sessions = await connection.QueryAsync<Session>(
+            "SELECT id FROM session WHERE setup_id = ? AND deleted IS NULL AND data IS NOT NULL", oldSetupId);
+
+        var count = 0;
+        foreach (var session in sessions)
+        {
+            var rawData = await GetSessionRawPsstAsync(session.Id);
+            if (rawData == null) continue;
+
+            var td = MessagePackSerializer.Deserialize<TelemetryData>(rawData);
+            td.Linkage = newLinkage;
+            var newBlob = td.ReprocessVelocity();
+
+            await connection.ExecuteAsync(
+                "UPDATE session SET setup_id=?, data=? WHERE id=?",
+                [newSetupId, newBlob, session.Id]);
+            await connection.ExecuteAsync("DELETE FROM session_cache WHERE session_id=?", session.Id);
+            count++;
+        }
+
+        return count;
+    }
+
+    public async Task ReassignSessionSetupAsync(Guid sessionId, Guid newSetupId)
+    {
+        await Initialization;
+
+        var newSetup = await GetSetupAsync(newSetupId)
+            ?? throw new Exception("Target setup not found.");
+        var newLinkage = await GetLinkageAsync(newSetup.LinkageId)
+            ?? throw new Exception("Target setup's linkage not found.");
+
+        var rawData = await GetSessionRawPsstAsync(sessionId);
+        if (rawData == null) return;
+
+        var td = MessagePackSerializer.Deserialize<TelemetryData>(rawData);
+        td.Linkage = newLinkage;
+        var newBlob = td.ReprocessVelocity();
+
+        await connection.ExecuteAsync(
+            "UPDATE session SET setup_id=?, data=? WHERE id=?",
+            [newSetupId, newBlob, sessionId]);
+        await connection.ExecuteAsync("DELETE FROM session_cache WHERE session_id=?", sessionId);
+    }
+
     public async Task<int> GetLastSyncTimeAsync()
     {
         await Initialization;

@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Linq;
@@ -45,6 +46,22 @@ public partial class SetupViewModel : ItemViewModelBase
 
     public ReadOnlyObservableCollection<ItemViewModelBase> Calibrations => calibrations;
     private readonly ReadOnlyObservableCollection<ItemViewModelBase> calibrations;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ReassignSessionsCommand))]
+    private SetupViewModel? reassignTarget;
+
+    public IEnumerable<SetupViewModel> OtherSetups
+    {
+        get
+        {
+            var mainPagesViewModel = App.Current?.Services?.GetService<MainPagesViewModel>();
+            if (mainPagesViewModel == null) return [];
+            return mainPagesViewModel.SetupsPage.Items
+                .OfType<SetupViewModel>()
+                .Where(svm => svm.Id != Id);
+        }
+    }
 
     #endregion
 
@@ -178,6 +195,39 @@ public partial class SetupViewModel : ItemViewModelBase
     #endregion
 
     #region Commands
+
+    private bool CanReassignSessions() => IsInDatabase && ReassignTarget != null;
+
+    [RelayCommand(CanExecute = nameof(CanReassignSessions))]
+    private async Task ReassignSessions()
+    {
+        var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
+        Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
+
+        try
+        {
+            var target = ReassignTarget!;
+            var count = await databaseService.ReassignSetupInSessionsAsync(Id, target.Id);
+
+            // Update in-memory session models so PopulateSummary picks up the new setup
+            var mainPagesViewModel = App.Current?.Services?.GetService<MainPagesViewModel>();
+            if (mainPagesViewModel != null)
+            {
+                foreach (var item in mainPagesViewModel.SessionsPage.Items)
+                {
+                    if (item is SessionViewModel svm && svm.SessionModel.Setup == Id)
+                        svm.SessionModel.Setup = target.Id;
+                }
+            }
+
+            ReassignTarget = null;
+            Notifications.Add($"{count} session(s) reassigned to setup \"{target.Name}\".");
+        }
+        catch (Exception e)
+        {
+            ErrorMessages.Add($"Reassignment failed: {e.Message}");
+        }
+    }
 
     [RelayCommand]
     private void AddLinkage()
