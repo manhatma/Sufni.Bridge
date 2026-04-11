@@ -44,6 +44,7 @@ public partial class SessionListViewModel : ItemListViewModelBase
     [ObservableProperty] private bool isCombining;
     [ObservableProperty] private bool isDeleteMode;
     [ObservableProperty] private int deleteSelectionCount;
+    public string DeleteConfirmLabel => HasSelectedCombinedSessions ? "Uncombine" : "Delete";
 
     public ObservableCollection<SetupFilterItem> SetupFilters { get; } = [];
 
@@ -56,6 +57,17 @@ public partial class SessionListViewModel : ItemListViewModelBase
 
     // Track combined session IDs for marking
     private HashSet<Guid> _combinedIds = [];
+    private bool HasSelectedCombinedSessions
+    {
+        get
+        {
+            var selected = Items
+                .Where(i => i.IsSelectedForCompare)
+                .OfType<SessionViewModel>()
+                .ToList();
+            return selected.Count > 0 && selected.All(s => s.IsCombinedSession);
+        }
+    }
 
     public override void ConnectSource()
     {
@@ -210,6 +222,7 @@ public partial class SessionListViewModel : ItemListViewModelBase
         CombineSetupMismatch = false;
         CombineDepthExceeded = false;
         DeleteSelectionCount = 0;
+        OnPropertyChanged(nameof(DeleteConfirmLabel));
     }
 
     [RelayCommand]
@@ -487,6 +500,7 @@ public partial class SessionListViewModel : ItemListViewModelBase
                 item.IsSelectedForCompare = false;
             DeleteSelectionCount = 0;
         }
+        OnPropertyChanged(nameof(DeleteConfirmLabel));
     }
 
     [RelayCommand]
@@ -502,6 +516,7 @@ public partial class SessionListViewModel : ItemListViewModelBase
             item.IsSelectedForCompare = true;
             DeleteSelectionCount++;
         }
+        OnPropertyChanged(nameof(DeleteConfirmLabel));
     }
 
     [RelayCommand]
@@ -539,5 +554,6 @@ public partial class SessionListViewModel : ItemListViewModelBase
         // Reset delete mode
         IsDeleteMode = false;
         DeleteSelectionCount = 0;
+        OnPropertyChanged(nameof(DeleteConfirmLabel));
     }
 }

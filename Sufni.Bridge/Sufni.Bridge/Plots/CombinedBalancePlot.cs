@@ -71,17 +71,22 @@ public class CombinedBalancePlot(Plot plot) : TelemetryPlot(plot)
         rearRebTrend.LineStyle.Color = RearColor;
         rearRebTrend.LineStyle.Width = 2;
 
-        // Legend
-        var frontLegend = Plot.Add.Text("Front", 100, roundedMaxComp * 0.95);
+        // Legend (upper-left, with larger vertical spacing)
+        var legendX = 2.0;
+        var legendYTop = roundedMaxComp * 0.95;
+        var legendStep = roundedMaxComp * 0.08;
+
+        var frontLegend = Plot.Add.Text("Front", legendX, legendYTop);
         frontLegend.LabelFontColor = FrontColor;
         frontLegend.LabelFontSize = 12;
-        frontLegend.LabelAlignment = Alignment.UpperRight;
-        frontLegend.LabelOffsetX = -6;
+        frontLegend.LabelAlignment = Alignment.UpperLeft;
+        frontLegend.LabelOffsetX = 4;
 
-        var rearLegend = Plot.Add.Text("Rear", 100, roundedMaxComp * 0.87);
+        var rearLegend = Plot.Add.Text("Rear", legendX, legendYTop - legendStep);
         rearLegend.LabelFontColor = RearColor;
         rearLegend.LabelFontSize = 12;
-        rearLegend.LabelAlignment = Alignment.UpperRight;
-        rearLegend.LabelOffsetX = -6;
+        rearLegend.LabelAlignment = Alignment.UpperLeft;
+        rearLegend.LabelOffsetX = 4;
+        rearLegend.LabelOffsetY = 8;
     }
 }
