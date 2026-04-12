@@ -32,4 +32,7 @@ public class SessionCache
     [Column("rear_position_velocity")] public string? RearPositionVelocity { get; set; }
     [Column("summary_json")] public string? SummaryJson { get; set; }
     [Column("plot_version")] public int PlotVersion { get; set; }
+    [Column("crop_start_sample")] public int? CropStartSample { get; set; }
+    [Column("crop_end_sample")] public int? CropEndSample { get; set; }
+    [Column("travel_time_history")] public string? TravelTimeHistory { get; set; }
 }

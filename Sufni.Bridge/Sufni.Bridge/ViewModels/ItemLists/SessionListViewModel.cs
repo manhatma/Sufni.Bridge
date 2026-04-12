@@ -409,6 +409,9 @@ public partial class SessionListViewModel : ItemListViewModelBase
                     ErrorMessages.Add($"Could not load telemetry for '{svm.Name}'");
                     return;
                 }
+                // Apply crop if set — combine uses the cropped slice, not the full session
+                if (svm.SessionModel.CropStartSample.HasValue && svm.SessionModel.CropEndSample.HasValue)
+                    td = td.CreateCroppedCopy(svm.SessionModel.CropStartSample.Value, svm.SessionModel.CropEndSample.Value);
                 telemetryDataList.Add(td);
             }
 

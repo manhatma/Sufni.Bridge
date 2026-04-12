@@ -1,0 +1,106 @@
+<UserControl
+    x:Class="Sufni.Bridge.Views.SessionPages.CropPageView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="clr-namespace:Sufni.Bridge.ViewModels.SessionPages"
+    d:DesignHeight="600"
+    d:DesignWidth="500"
+    x:DataType="vm:CropPageViewModel"
+    mc:Ignorable="d">
+
+    <Design.DataContext>
+        <vm:CropPageViewModel />
+    </Design.DataContext>
+
+    <UserControl.Styles>
+        <Style Selector="TextBlock.crop-label">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="#D0D0D0" />
+        </Style>
+        <Style Selector="TextBlock.crop-value">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="#66c2a5" />
+            <Setter Property="FontFamily" Value="Courier New, Courier, monospace" />
+        </Style>
+    </UserControl.Styles>
+
+    <ScrollViewer
+        Width="{Binding $parent[ScrollViewer].Bounds.Width}"
+        Height="{Binding $parent[ScrollViewer].Bounds.Height}"
+        IsScrollChainingEnabled="False">
+
+        <StackPanel Orientation="Vertical" Spacing="8" Margin="0,0,0,12">
+
+            <!-- Time-history chart with crop overlays.
+                 OverlayGrid Margin matches TravelTimeHistoryPlot.PixelPadding(left=55, right=14, bottom=50, top=40)
+                 so the dark overlay is clipped to the data area only, not title or axis labels. -->
+            <Grid>
+                <Image Source="{Binding TravelTimeHistory}" />
+                <Grid x:Name="OverlayGrid" Margin="55,40,14,50" IsHitTestVisible="False">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="0" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="0" />
+                    </Grid.ColumnDefinitions>
+                    <Border Grid.Column="0" Background="#70000000" />
+                    <Border Grid.Column="2" Background="#70000000" />
+                </Grid>
+            </Grid>
+
+            <!-- Cropped preview chart — directly below the full chart for fine-grained control -->
+            <Image
+                Source="{Binding CropPreview}"
+                IsVisible="{Binding CropPreview, Converter={x:Static ObjectConverters.IsNotNull}}" />
+
+            <!-- Time labels + nudge buttons — aligned with the data area (same 55/14 px inset) -->
+            <Grid ColumnDefinitions="*,*,*" Margin="55,-4,14,0">
+                <StackPanel Grid.Column="0" Orientation="Vertical" Spacing="1" HorizontalAlignment="Center">
+                    <TextBlock Classes="crop-label" Text="Start" HorizontalAlignment="Center" />
+                    <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                        <Button Padding="4,2" FontSize="10" Background="Transparent" Command="{Binding NudgeStartBackCommand}" Content="◀◀" />
+                        <TextBlock Classes="crop-value" Text="{Binding CropStartTime}" VerticalAlignment="Center" />
+                        <Button Padding="4,2" FontSize="10" Background="Transparent" Command="{Binding NudgeStartForwardCommand}" Content="▶▶" />
+                    </StackPanel>
+                </StackPanel>
+                <StackPanel Grid.Column="1" Orientation="Vertical" Spacing="1" HorizontalAlignment="Center">
+                    <TextBlock Classes="crop-label" Text="Duration" HorizontalAlignment="Center" />
+                    <TextBlock Classes="crop-value" Text="{Binding CropDuration}" HorizontalAlignment="Center" />
+                </StackPanel>
+                <StackPanel Grid.Column="2" Orientation="Vertical" Spacing="1" HorizontalAlignment="Center">
+                    <TextBlock Classes="crop-label" Text="End" HorizontalAlignment="Center" />
+                    <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">
+                        <Button Padding="4,2" FontSize="10" Background="Transparent" Command="{Binding NudgeEndBackCommand}" Content="◀◀" />
+                        <TextBlock Classes="crop-value" Text="{Binding CropEndTime}" VerticalAlignment="Center" />
+                        <Button Padding="4,2" FontSize="10" Background="Transparent" Command="{Binding NudgeEndForwardCommand}" Content="▶▶" />
+                    </StackPanel>
+                </StackPanel>
+            </Grid>
+
+            <!-- Sliders — compact, labeled, track aligned with data area -->
+            <Grid ColumnDefinitions="55,*,14" Margin="0,-4,0,0">
+                <TextBlock Grid.Column="0" Classes="crop-label" Text="Start" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0" />
+                <Slider
+                    Grid.Column="1"
+                    Minimum="0"
+                    Maximum="{Binding TotalSamples}"
+                    Value="{Binding CropStartSample, Mode=TwoWay}"
+                    IsSnapToTickEnabled="True"
+                    TickFrequency="1" />
+            </Grid>
+
+            <Grid ColumnDefinitions="55,*,14" Margin="0,-8,0,0">
+                <TextBlock Grid.Column="0" Classes="crop-label" Text="End" VerticalAlignment="Center" HorizontalAlignment="Right" Margin="0,0,8,0" />
+                <Slider
+                    Grid.Column="1"
+                    Minimum="0"
+                    Maximum="{Binding TotalSamples}"
+                    Value="{Binding CropEndSample, Mode=TwoWay}"
+                    IsSnapToTickEnabled="True"
+                    TickFrequency="1" />
+            </Grid>
+
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>

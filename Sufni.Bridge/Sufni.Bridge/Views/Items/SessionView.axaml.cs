@@ -74,6 +74,11 @@ public partial class SessionView : UserControl
         (TabHeaders.Items[index] as PageViewModelBase)!.Selected = true;
     }
 
+    private void CancelDeleteButton_Click(object? sender, RoutedEventArgs e)
+    {
+        DeleteButton?.Flyout?.Hide();
+    }
+
     private void TabScrollViewer_OnSizeChanged(object? sender, SizeChangedEventArgs e)
     {
         sizeChanging = true;

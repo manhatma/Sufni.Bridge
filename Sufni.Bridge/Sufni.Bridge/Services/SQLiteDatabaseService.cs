@@ -170,6 +170,8 @@ public class SqLiteDatabaseService : IDatabaseService
         await AddColumnIfMissing("front_volspc");
         await AddColumnIfMissing("rear_volspc");
         await AddColumnIfMissing("source_id", "TEXT");
+        await AddColumnIfMissing("crop_start_sample", "INTEGER");
+        await AddColumnIfMissing("crop_end_sample", "INTEGER");
     }
 
     private async Task EnsureSessionCacheColumns()
@@ -194,6 +196,9 @@ public class SqLiteDatabaseService : IDatabaseService
         await AddColumnIfMissing("summary_json");
         await AddColumnIfMissing("plot_version", "INTEGER");
         await AddColumnIfMissing("combined_balance");
+        await AddColumnIfMissing("crop_start_sample", "INTEGER");
+        await AddColumnIfMissing("crop_end_sample", "INTEGER");
+        await AddColumnIfMissing("travel_time_history");
     }
 
     private class TableInfoRecord
@@ -491,6 +496,7 @@ public class SqLiteDatabaseService : IDatabaseService
                                  track_id,
                                  front_springrate, front_volspc, front_hsc, front_lsc, front_lsr, front_hsr,
                                  rear_springrate, rear_volspc, rear_hsc, rear_lsc, rear_lsr, rear_hsr,
+                                 crop_start_sample, crop_end_sample,
                                  CASE
                                     WHEN data IS NOT NULL THEN 1
                                     ELSE 0
@@ -563,7 +569,8 @@ public class SqLiteDatabaseService : IDatabaseService
                                      name=?,
                                      description=?,
                                      front_springrate=?, front_volspc=?, front_hsc=?, front_lsc=?, front_lsr=?, front_hsr=?,
-                                     rear_springrate=?, rear_volspc=?, rear_hsc=?, rear_lsc=?, rear_lsr=?, rear_hsr=?
+                                     rear_springrate=?, rear_volspc=?, rear_hsc=?, rear_lsc=?, rear_lsr=?, rear_hsr=?,
+                                     crop_start_sample=?, crop_end_sample=?
                                  WHERE
                                      id=?
                                  """;
@@ -583,6 +590,8 @@ public class SqLiteDatabaseService : IDatabaseService
                     session.RearLowSpeedCompression,
                     session.RearLowSpeedRebound,
                     session.RearHighSpeedRebound,
+                    session.CropStartSample,
+                    session.CropEndSample,
                     session.Id]);
         }
         else

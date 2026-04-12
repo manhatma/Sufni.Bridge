@@ -118,8 +118,133 @@
         <!--  Error messages for Session instance  -->
         <v:ErrorMessagesBar Grid.Row="3" Margin="10,5,10,0" />
 
-        <!--  Back, Save, Reset and Delete buttons  -->
-        <v:CommonButtonLine Grid.Row="4" Margin="10,0,10,0" />
+        <!--  Crop page overlay  -->
+        <Panel
+            Grid.Row="2"
+            IsVisible="{Binding IsCropVisible}"
+            ZIndex="50"
+            Background="{StaticResource SufniRegion}">
+            <sessionpages:CropPageView DataContext="{Binding CropPage}" />
+        </Panel>
+
+        <!--  Back, Save, Crop, PDF, Reset and Delete buttons  -->
+        <Grid
+            Grid.Row="4"
+            Margin="10,15,10,5"
+            ColumnDefinitions="auto * auto auto auto auto"
+            RowDefinitions="39">
+            <Button
+                Grid.Row="0"
+                Grid.Column="0"
+                Width="39"
+                Height="39"
+                Margin="0,0,10,0"
+                HorizontalContentAlignment="Center"
+                VerticalContentAlignment="Center"
+                Command="{Binding OpenPreviousPageCommand}">
+                <Image
+                    Width="16"
+                    Height="16"
+                    Source="{SvgImage /Assets/fa-arrow-left.svg}" />
+            </Button>
+            <Button
+                Grid.Row="0"
+                Grid.Column="1"
+                Margin="0,0,10,0"
+                HorizontalAlignment="Stretch"
+                VerticalAlignment="Stretch"
+                HorizontalContentAlignment="Center"
+                VerticalContentAlignment="Center"
+                Command="{Binding ContextSaveCommand}"
+                Content="{Binding SaveLabel}" />
+            <Button
+                Grid.Row="0"
+                Grid.Column="2"
+                Width="39"
+                Height="39"
+                Margin="0,0,5,0"
+                HorizontalContentAlignment="Center"
+                VerticalContentAlignment="Center"
+                Command="{Binding ToggleCropPageCommand}"
+                IsVisible="{Binding ShowPdfExportButton}"
+                Svg.Css=".default { fill: #a0a0a0; }">
+                <Image
+                    Width="20"
+                    Height="20"
+                    Source="{SvgImage /Assets/fa-crop.svg}" />
+            </Button>
+            <Button
+                Grid.Row="0"
+                Grid.Column="3"
+                Width="39"
+                Height="39"
+                Margin="0,0,5,0"
+                HorizontalContentAlignment="Center"
+                VerticalContentAlignment="Center"
+                Command="{Binding ExportPdfCommand}"
+                IsVisible="{Binding ShowPdfExportButton}"
+                Svg.Css=".default { fill: #a0a0a0; }">
+                <Image
+                    Width="16"
+                    Height="16"
+                    Source="{SvgImage /Assets/fa-file-pdf.svg}" />
+            </Button>
+            <Button
+                Grid.Row="0"
+                Grid.Column="4"
+                Width="39"
+                Height="39"
+                Margin="0,0,5,0"
+                HorizontalContentAlignment="Center"
+                VerticalContentAlignment="Center"
+                Command="{Binding ContextResetCommand}">
+                <Image
+                    Width="16"
+                    Height="16"
+                    Source="{SvgImage /Assets/fa-rotate-left.svg}" />
+            </Button>
+            <Button
+                Name="DeleteButton"
+                Grid.Row="0"
+                Grid.Column="5"
+                Width="39"
+                Height="39"
+                Margin="0,0,2,0"
+                HorizontalContentAlignment="Center"
+                VerticalContentAlignment="Center"
+                Command="{Binding FakeDeleteCommand}">
+                <Button.Flyout>
+                    <Flyout
+                        HorizontalOffset="40"
+                        Placement="Left"
+                        PlacementAnchor="Right">
+                        <StackPanel
+                            Width="{Binding $parent[Grid].Bounds.Width}"
+                            FlowDirection="RightToLeft"
+                            Orientation="Horizontal">
+                            <Button
+                                Name="CancelDeleteButton"
+                                VerticalContentAlignment="Center"
+                                Classes="embedded"
+                                Click="CancelDeleteButton_Click"
+                                Content="cancel" />
+                            <Button
+                                Name="InnerDeleteButton"
+                                Margin="5,0,0,0"
+                                VerticalContentAlignment="Center"
+                                Classes="embedded dangerous"
+                                Command="{Binding DeleteCommand}"
+                                CommandParameter="{x:True}"
+                                Content="delete" />
+                        </StackPanel>
+                    </Flyout>
+                </Button.Flyout>
+                <Image
+                    Width="16"
+                    Height="16"
+                    Source="{SvgImage /Assets/fa-trash-can.svg}" />
+            </Button>
+        </Grid>
 
         <!--  Session Loading Overlay  -->
         <Panel

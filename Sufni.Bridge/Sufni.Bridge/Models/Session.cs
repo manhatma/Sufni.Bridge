@@ -115,4 +115,12 @@ public class Session : Synchronizable
     [JsonIgnore]
     [Column("has_data")]
     public bool HasProcessedData { get; set; }
+
+    [JsonIgnore]
+    [Column("crop_start_sample")]
+    public int? CropStartSample { get; set; }
+
+    [JsonIgnore]
+    [Column("crop_end_sample")]
+    public int? CropEndSample { get; set; }
 }

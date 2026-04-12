@@ -44,7 +44,7 @@
                     <Image Width="17" Height="17"
                            Source="{SvgImage /Assets/fa-chain.svg}">
                         <Image.RenderTransform>
-                            <RotateTransform Angle="90" />
+                            <RotateTransform Angle="{Binding ChainIconAngle, FallbackValue=90}" />
                         </Image.RenderTransform>
                     </Image>
                 </Button>

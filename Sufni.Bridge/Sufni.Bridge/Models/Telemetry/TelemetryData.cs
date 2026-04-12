@@ -480,6 +480,80 @@ public class TelemetryData
         return result.ToArray();
     }
 
+    /// <summary>
+    /// Creates an in-memory copy of this TelemetryData with travel arrays sliced to [startSample..endSample].
+    /// Velocity, Strokes, Bins are fully recomputed on the cropped travel.
+    /// The original is not modified and nothing is persisted.
+    /// </summary>
+    public TelemetryData CreateCroppedCopy(int startSample, int endSample)
+    {
+        var cropped = new TelemetryData
+        {
+            Name = Name,
+            Version = Version,
+            SampleRate = SampleRate,
+            Timestamp = Timestamp,
+            Linkage = Linkage,
+            Front = new Suspension { Present = Front.Present, Calibration = Front.Calibration, Strokes = new Strokes() },
+            Rear  = new Suspension { Present = Rear.Present,  Calibration = Rear.Calibration,  Strokes = new Strokes() }
+        };
+
+        var smoother = new WhittakerHendersonSmoother(2, 5);
+
+        if (Front.Present && Front.Travel.Length > 0)
+        {
+            var s = Math.Max(0, Math.Min(startSample, Front.Travel.Length - 1));
+            var e = Math.Max(s + 1, Math.Min(endSample, Front.Travel.Length));
+            cropped.Front.Travel = Front.Travel[s..e];
+
+            var tbins = Linspace(0, Linkage.MaxFrontTravel, Parameters.TravelHistBins + 1);
+            var dt = Digitize(cropped.Front.Travel, tbins);
+            cropped.Front.TravelBins = tbins;
+
+            var v = smoother.Smooth(ComputeVelocity(cropped.Front.Travel, SampleRate));
+            cropped.Front.Velocity = v;
+            var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
+            cropped.Front.VelocityBins = vbins;
+            var (vbinsFine, dvFine) = DigitizeVelocity(v, Parameters.VelocityHistStepFine);
+            cropped.Front.FineVelocityBins = vbinsFine;
+
+            var strokes = Strokes.FilterStrokes(v, cropped.Front.Travel, Linkage.MaxFrontTravel, SampleRate);
+            cropped.Front.Strokes.Categorize(strokes);
+            if (cropped.Front.Strokes.Compressions.Length == 0 && cropped.Front.Strokes.Rebounds.Length == 0)
+                cropped.Front.Present = false;
+            else
+                cropped.Front.Strokes.Digitize(dt, dv, dvFine);
+        }
+
+        if (Rear.Present && Rear.Travel.Length > 0)
+        {
+            var s = Math.Max(0, Math.Min(startSample, Rear.Travel.Length - 1));
+            var e = Math.Max(s + 1, Math.Min(endSample, Rear.Travel.Length));
+            cropped.Rear.Travel = Rear.Travel[s..e];
+
+            var tbins = Linspace(0, Linkage.MaxRearTravel, Parameters.TravelHistBins + 1);
+            var dt = Digitize(cropped.Rear.Travel, tbins);
+            cropped.Rear.TravelBins = tbins;
+
+            var v = smoother.Smooth(ComputeVelocity(cropped.Rear.Travel, SampleRate));
+            cropped.Rear.Velocity = v;
+            var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
+            cropped.Rear.VelocityBins = vbins;
+            var (vbinsFine, dvFine) = DigitizeVelocity(v, Parameters.VelocityHistStepFine);
+            cropped.Rear.FineVelocityBins = vbinsFine;
+
+            var strokes = Strokes.FilterStrokes(v, cropped.Rear.Travel, Linkage.MaxRearTravel, SampleRate);
+            cropped.Rear.Strokes.Categorize(strokes);
+            if (cropped.Rear.Strokes.Compressions.Length == 0 && cropped.Rear.Strokes.Rebounds.Length == 0)
+                cropped.Rear.Present = false;
+            else
+                cropped.Rear.Strokes.Digitize(dt, dv, dvFine);
+        }
+
+        cropped.CalculateAirTimes();
+        return cropped;
+    }
+
     public static TelemetryData CombineSessions(List<TelemetryData> sessions, string name)
     {
         if (sessions.Count < 2)

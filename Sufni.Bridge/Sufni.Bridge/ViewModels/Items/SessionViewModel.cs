@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 59;
+    private const int CurrentPlotVersion = 61;
 
     // Limits concurrent plot generation tasks to reduce peak memory on iOS.
     private static readonly SemaphoreSlim s_plotSemaphore = new(3, 3);
@@ -42,6 +42,7 @@ public partial class SessionViewModel : ItemViewModelBase
     private BalancePageViewModel BalancePage { get; } = new();
     private MiscPageViewModel MiscPage { get; } = new();
     private SummaryPageViewModel SummaryPage { get; } = new();
+    public CropPageViewModel CropPage { get; } = new();
     private NotesPageViewModel NotesPage { get; } = new();
     public ObservableCollection<PageViewModelBase> Pages { get; }
     public string Description => NotesPage.Description ?? "";
@@ -51,17 +52,39 @@ public partial class SessionViewModel : ItemViewModelBase
     [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private bool isAnalyzingData;
     [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private bool isCombinedSession;
     [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private bool isExpanded;
+    [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private bool isCropVisible;
     public ObservableCollection<SessionViewModel> SubSessions { get; } = [];
 
     public int NestingDepth => IsCombinedSession && SubSessions.Count > 0
         ? SubSessions.Max(s => s.NestingDepth) + 1
         : 1;
 
+    public double ChainIconAngle => IsExpanded ? 0 : 90;
+
     [RelayCommand]
     private void ToggleExpand()
     {
         if (!IsCombinedSession) return;
         IsExpanded = !IsExpanded;
+        OnPropertyChanged(nameof(ChainIconAngle));
+    }
+
+    // Toolbar commands that switch meaning when crop overlay is open
+    public System.Windows.Input.ICommand ContextSaveCommand  => IsCropVisible ? CropPage.ApplyCropCommand! : SaveCommand;
+    public System.Windows.Input.ICommand ContextResetCommand => IsCropVisible ? CropPage.ResetCropCommand! : ResetCommand;
+    public string SaveLabel => IsCropVisible ? "apply" : "save";
+
+    partial void OnIsCropVisibleChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ContextSaveCommand));
+        OnPropertyChanged(nameof(ContextResetCommand));
+        OnPropertyChanged(nameof(SaveLabel));
+    }
+
+    [RelayCommand]
+    private void ToggleCropPage()
+    {
+        IsCropVisible = !IsCropVisible;
     }
 
     #region Private methods
@@ -86,6 +109,20 @@ public partial class SessionViewModel : ItemViewModelBase
         if (cache is null || cache.PlotVersion != CurrentPlotVersion)
         {
             return (false, false, false);
+        }
+
+        // Cache is stale when crop boundaries differ from what was cached
+        if (cache.CropStartSample != session.CropStartSample ||
+            cache.CropEndSample   != session.CropEndSample)
+        {
+            return (false, false, false);
+        }
+
+        // Load TravelTimeHistory (full data, always in cache)
+        if (cache.TravelTimeHistory is not null)
+        {
+            var tthSrc = await Task.Run(() => SvgToSource(cache.TravelTimeHistory));
+            CropPage.TravelTimeHistory = SourceToImage(tthSrc);
         }
 
         var hasVdc = cache.VelocityDistributionComparison is not null;
@@ -208,16 +245,35 @@ public partial class SessionViewModel : ItemViewModelBase
         });
     }
 
-    private async Task CreateCache(object? bounds, TelemetryData telemetryData)
+    private async Task CreateCache(object? bounds, TelemetryData telemetryData, TelemetryData? fullData = null)
     {
         var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
         Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
 
         var b = (Rect)bounds!;
         var (width, height) = ((int)b.Width, (int)(b.Height / 2.0));
+        var tthHeight = (int)(height * 0.8);
 
-        var sessionCache = new SessionCache { SessionId = Id, PlotVersion = CurrentPlotVersion };
+        var sessionCache = new SessionCache
+        {
+            SessionId = Id,
+            PlotVersion = CurrentPlotVersion,
+            CropStartSample = session.CropStartSample,
+            CropEndSample   = session.CropEndSample
+        };
         var tasks = new List<Task>();
+
+        // TravelTimeHistory — always uses full (uncompressed) data
+        var tthSource = fullData ?? telemetryData;
+        tasks.Add(ThrottledPlotTask(() =>
+        {
+            var tth = new TravelTimeHistoryPlot(new Plot());
+            tth.LoadTelemetryData(tthSource);
+            tth.Plot.Axes.Title.Label.Text = "Travel over time (full)";
+            sessionCache.TravelTimeHistory = tth.Plot.GetSvgXml(width, tthHeight);
+            var tthSrc = SvgToSource(sessionCache.TravelTimeHistory);
+            Dispatcher.UIThread.Post(() => { CropPage.TravelTimeHistory = SourceToImage(tthSrc); });
+        }));
 
         // Shared VelocityBands tasks — computed once, used by both DamperPage UI and summary
         Task<VelocityBands?> frontBandsTask = Task.FromResult<VelocityBands?>(null);
@@ -967,6 +1023,8 @@ public partial class SessionViewModel : ItemViewModelBase
         IsInDatabase = false;
         Pages = [SummaryPage, SpringPage, DamperPage, BalancePage, MiscPage, NotesPage];
         SummaryPage.ChangeSetupCommand = new AsyncRelayCommand(HandleSetupReassign);
+        CropPage.ApplyCropCommand = new AsyncRelayCommand(HandleApplyCrop);
+        CropPage.ResetCropCommand = new AsyncRelayCommand(HandleResetCrop);
     }
 
     public SessionViewModel(Session session, bool fromDatabase)
@@ -975,6 +1033,8 @@ public partial class SessionViewModel : ItemViewModelBase
         IsInDatabase = fromDatabase;
         Pages = [SummaryPage, SpringPage, DamperPage, BalancePage, MiscPage, NotesPage];
         SummaryPage.ChangeSetupCommand = new AsyncRelayCommand(HandleSetupReassign);
+        CropPage.ApplyCropCommand = new AsyncRelayCommand(HandleApplyCrop);
+        CropPage.ResetCropCommand = new AsyncRelayCommand(HandleResetCrop);
 
         NotesPage.ForkSettings.PropertyChanged += (_, _) => EvaluateDirtiness();
         NotesPage.ShockSettings.PropertyChanged += (_, _) => EvaluateDirtiness();
@@ -1020,6 +1080,8 @@ public partial class SessionViewModel : ItemViewModelBase
                 RearLowSpeedRebound = NotesPage.ShockSettings.LowSpeedRebound,
                 RearHighSpeedRebound = NotesPage.ShockSettings.HighSpeedRebound,
                 HasProcessedData = IsComplete,
+                CropStartSample = session.CropStartSample,
+                CropEndSample   = session.CropEndSample,
             };
 
             await databaseService.PutSessionAsync(newSession);
@@ -1078,11 +1140,98 @@ public partial class SessionViewModel : ItemViewModelBase
             var telemetryData = await databaseService.GetSessionPsstAsync(Id);
             if (telemetryData is null) return;
 
-            await CreateCache(LastKnownBounds, telemetryData);
+            if (session.CropStartSample.HasValue && session.CropEndSample.HasValue)
+            {
+                var cropped = telemetryData.CreateCroppedCopy(session.CropStartSample.Value, session.CropEndSample.Value);
+                await CreateCache(LastKnownBounds, cropped, telemetryData);
+            }
+            else
+            {
+                await CreateCache(LastKnownBounds, telemetryData);
+            }
         }
         catch
         {
             // Best-effort — user opening the session will retry
+        }
+    }
+
+    private async Task HandleApplyCrop()
+    {
+        var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
+        Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
+
+        var start = CropPage.CropStartSample;
+        var end   = CropPage.CropEndSample;
+
+        // Minimum crop length guard
+        if (end - start < 100)
+        {
+            ErrorMessages.Add("Crop region too short (minimum 100 samples).");
+            return;
+        }
+
+        try
+        {
+            IsAnalyzingData = true;
+
+            session.CropStartSample = start;
+            session.CropEndSample   = end;
+            await databaseService.PutSessionAsync(session);
+
+            var fullData = await databaseService.GetSessionPsstAsync(Id);
+            if (fullData is null) throw new Exception("Session data not found.");
+
+            CropPage.FullData   = fullData;
+            CropPage.ViewBounds = LastKnownBounds;
+
+            var cropped = fullData.CreateCroppedCopy(start, end);
+            await CreateCache(LastKnownBounds, cropped, fullData);
+            IsCropVisible = false;
+        }
+        catch (Exception e)
+        {
+            ErrorMessages.Add($"Crop failed: {e.Message}");
+        }
+        finally
+        {
+            IsAnalyzingData = false;
+        }
+    }
+
+    private async Task HandleResetCrop()
+    {
+        var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
+        Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
+
+        try
+        {
+            IsAnalyzingData = true;
+
+            session.CropStartSample = null;
+            session.CropEndSample   = null;
+            await databaseService.PutSessionAsync(session);
+
+            // Reset UI sliders to full range
+            CropPage.CropStartSample = 0;
+            CropPage.CropEndSample   = CropPage.TotalSamples;
+
+            var fullData = await databaseService.GetSessionPsstAsync(Id);
+            if (fullData is null) throw new Exception("Session data not found.");
+
+            CropPage.FullData   = fullData;
+            CropPage.ViewBounds = LastKnownBounds;
+
+            await CreateCache(LastKnownBounds, fullData);
+            IsCropVisible = false;
+        }
+        catch (Exception e)
+        {
+            ErrorMessages.Add($"Reset crop failed: {e.Message}");
+        }
+        finally
+        {
+            IsAnalyzingData = false;
         }
     }
 
@@ -1136,7 +1285,17 @@ public partial class SessionViewModel : ItemViewModelBase
                 subSession.SessionModel.Setup = newSetup.Id;
             var telemetryData = await databaseService.GetSessionPsstAsync(Id);
             if (telemetryData != null)
-                await CreateCache(LastKnownBounds, telemetryData);
+            {
+                if (session.CropStartSample.HasValue && session.CropEndSample.HasValue)
+                {
+                    var cropped = telemetryData.CreateCroppedCopy(session.CropStartSample.Value, session.CropEndSample.Value);
+                    await CreateCache(LastKnownBounds, cropped, telemetryData);
+                }
+                else
+                {
+                    await CreateCache(LastKnownBounds, telemetryData);
+                }
+            }
         }
         catch (Exception e)
         {
@@ -1190,24 +1349,42 @@ public partial class SessionViewModel : ItemViewModelBase
             // Only hit the DB if we actually need to rebuild cache or summary
             if (needsRecreate || needsSummary)
             {
-                var telemetryData = await databaseService.GetSessionPsstAsync(Id);
+                var fullData = await databaseService.GetSessionPsstAsync(Id);
 
                 if (needsRecreate)
                 {
-                    if (telemetryData is null)
+                    if (fullData is null)
                     {
                         throw new Exception("Database error");
                     }
 
+                    // Initialize CropPage slider state from session boundaries
+                    var totalSamples = fullData.Front.Present
+                        ? fullData.Front.Travel.Length
+                        : fullData.Rear.Present ? fullData.Rear.Travel.Length : 0;
+                    CropPage.SampleRate    = fullData.SampleRate;
+                    CropPage.TotalSamples  = totalSamples;
+                    CropPage.CropStartSample = session.CropStartSample ?? 0;
+                    CropPage.CropEndSample   = session.CropEndSample   ?? totalSamples;
+                    CropPage.FullData    = fullData;
+                    CropPage.ViewBounds  = bounds;
+
+                    // If crop boundaries are set, analyze the cropped slice; TravelTimeHistory always uses full data
+                    TelemetryData analyzeData;
+                    if (session.CropStartSample.HasValue && session.CropEndSample.HasValue)
+                        analyzeData = fullData.CreateCroppedCopy(session.CropStartSample.Value, session.CropEndSample.Value);
+                    else
+                        analyzeData = fullData;
+
                     // CreateCache also populates summary and persists both
                     IsAnalyzingData = true;
-                    try { await CreateCache(bounds, telemetryData); }
+                    try { await CreateCache(bounds, analyzeData, fullData); }
                     finally { IsAnalyzingData = false; }
                 }
-                else if (telemetryData is not null && needsSummary)
+                else if (fullData is not null && needsSummary)
                 {
                     // Cache was valid but summary was missing (old cache without summary_json)
-                    var summaryData = await PopulateSummary(telemetryData);
+                    var summaryData = await PopulateSummary(fullData);
 
                     var cache = await databaseService.GetSessionCacheAsync(Id);
                     if (cache is not null)
@@ -1215,6 +1392,24 @@ public partial class SessionViewModel : ItemViewModelBase
                         cache.SummaryJson = JsonSerializer.Serialize(summaryData);
                         await databaseService.PutSessionCacheAsync(cache);
                     }
+                }
+            }
+
+            // Initialize CropPage slider state from cache (when cache was valid, fullData not loaded)
+            if (!needsRecreate && CropPage.TotalSamples == 0)
+            {
+                var cachedData = await databaseService.GetSessionPsstAsync(Id);
+                if (cachedData is not null)
+                {
+                    var totalSamples = cachedData.Front.Present
+                        ? cachedData.Front.Travel.Length
+                        : cachedData.Rear.Present ? cachedData.Rear.Travel.Length : 0;
+                    CropPage.SampleRate      = cachedData.SampleRate;
+                    CropPage.TotalSamples    = totalSamples;
+                    CropPage.CropStartSample = session.CropStartSample ?? 0;
+                    CropPage.CropEndSample   = session.CropEndSample   ?? totalSamples;
+                    CropPage.FullData    = cachedData;
+                    CropPage.ViewBounds  = LastKnownBounds;
                 }
             }
         }
