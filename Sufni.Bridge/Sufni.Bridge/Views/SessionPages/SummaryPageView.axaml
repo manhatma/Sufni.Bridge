@@ -43,6 +43,10 @@
             <Setter Property="HorizontalAlignment" Value="Center" />
             <Setter Property="Foreground" Value="#15191c" />
         </Style>
+        <Style Selector="ComboBox.summary-setup">
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Padding" Value="6,2" />
+        </Style>
     </UserControl.Styles>
 
     <ScrollViewer Width="{Binding $parent[ScrollViewer].Bounds.Width}" Height="{Binding $parent[ScrollViewer].Bounds.Height}" IsScrollChainingEnabled="False">
@@ -56,6 +60,7 @@
                     <Border Grid.Column="1" Classes="summary-cell">
                         <Grid ColumnDefinitions="* auto">
                             <ComboBox
+                                Classes="summary-setup"
                                 Grid.Column="0"
                                 HorizontalAlignment="Stretch"
                                 ItemsSource="{Binding AvailableSetups}"

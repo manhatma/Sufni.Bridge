@@ -41,22 +41,14 @@
                         Width="20" Height="48"
                         Command="{Binding ToggleExpandCommand}"
                         IsVisible="{Binding IsCombinedSession, FallbackValue=False}">
-                    <Panel>
-                        <TextBlock Text="▶" FontSize="9" Foreground="#808080"
-                                   x:DataType="vm:SessionViewModel"
-                                   VerticalAlignment="Center" HorizontalAlignment="Center"
-                                   IsVisible="{Binding !IsExpanded, FallbackValue=True}" />
-                        <TextBlock Text="▼" FontSize="9" Foreground="#808080"
-                                   x:DataType="vm:SessionViewModel"
-                                   VerticalAlignment="Center" HorizontalAlignment="Center"
-                                   IsVisible="{Binding IsExpanded, FallbackValue=False}" />
-                    </Panel>
+                    <Image Width="17" Height="17"
+                           Source="{SvgImage /Assets/fa-chain.svg}">
+                        <Image.RenderTransform>
+                            <RotateTransform Angle="90" />
+                        </Image.RenderTransform>
+                    </Image>
                 </Button>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Image x:DataType="vm:SessionViewModel"
-                           Width="14" Height="14" Margin="0,0,5,0"
-                           IsVisible="{Binding IsCombinedSession, FallbackValue=False}"
-                           Source="{SvgImage /Assets/fa-chain.svg}" />
                     <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
                 </StackPanel>
                 <TextBlock Grid.Column="3" Text="{Binding Timestamp}" VerticalAlignment="Center" />

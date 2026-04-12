@@ -90,7 +90,7 @@ public class TelemetryData
 
     // Increment when velocity processing parameters change (e.g. smoother lambda).
     // Blobs with a lower version are automatically re-processed from Travel arrays on load.
-    public const int CurrentProcessingVersion = 2;
+    public const int CurrentProcessingVersion = 3;
 
     #region Public properties
 
@@ -272,10 +272,9 @@ public class TelemetryData
 
     private static (double[], int[]) DigitizeVelocity(double[] v, double step)
     {
-        // Subtracting half bin ensures that 0 will be at the middle of one bin
-        var mn = (Math.Floor(v.Min() / step) - 0.5) * step;
-        // Adding 1.5 bins ensures that all values will fit in bins, and that the last bin fits the step boundary.
-        var mx = (Math.Floor(v.Max() / step) + 1.5) * step;
+        // 0 lies on a bin edge — negative and positive velocities get separate bins
+        var mn = Math.Floor(v.Min() / step) * step;
+        var mx = (Math.Floor(v.Max() / step) + 1) * step;
         var bins = Linspace(mn, mx, (int)((mx - mn) / step) + 1);
         var data = Digitize(v, bins);
         return (bins, data);
@@ -768,6 +767,47 @@ public class TelemetryData
 
         return new StackedHistogramData(
             suspension.FineVelocityBins.ToList().GetRange(0, suspension.FineVelocityBins.Length), [.. hist]);
+    }
+
+    public static double CalculateVelocityHistogramSymmetry(StackedHistogramData histogram)
+    {
+        if (histogram.Bins.Count < 2 || histogram.Values.Count == 0)
+            return 0.0;
+
+        var step = histogram.Bins[1] - histogram.Bins[0];
+        if (Math.Abs(step) < 1e-9)
+            return 0.0;
+
+        var totalsByHalfStepKey = new Dictionary<long, double>(histogram.Values.Count);
+        for (var i = 0; i < histogram.Values.Count; i++)
+        {
+            var total = histogram.Values[i].Sum();
+            var midpoint = histogram.Bins[i] + step / 2.0;
+            var key = (long)Math.Round(midpoint / step * 2.0);
+            totalsByHalfStepKey[key] = total;
+        }
+
+        double numerator = 0.0;
+        double denominator = 0.0;
+        var processed = new HashSet<long>();
+        foreach (var key in totalsByHalfStepKey.Keys)
+        {
+            var absKey = Math.Abs(key);
+            if (absKey == 0 || processed.Contains(absKey))
+                continue;
+
+            processed.Add(absKey);
+            var positive = totalsByHalfStepKey.GetValueOrDefault(absKey, 0.0);
+            var negative = totalsByHalfStepKey.GetValueOrDefault(-absKey, 0.0);
+            numerator += Math.Abs(positive - negative);
+            denominator += positive + negative;
+        }
+
+        if (denominator <= 1e-9)
+            return 0.0;
+
+        var symmetry = 1.0 - numerator / denominator;
+        return Math.Clamp(symmetry, 0.0, 1.0);
     }
 
     public NormalDistributionData CalculateNormalDistribution(SuspensionType type)

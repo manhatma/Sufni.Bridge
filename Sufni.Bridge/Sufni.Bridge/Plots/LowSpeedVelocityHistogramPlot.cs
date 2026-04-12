@@ -86,5 +86,19 @@ public class LowSpeedVelocityHistogramPlot(Plot plot, SuspensionType type, doubl
         normal.MarkerStyle.IsVisible = false;
         normal.LineStyle.Width = 3;
         normal.LineStyle.Pattern = LinePattern.Dotted;
+
+        var symmetry = TelemetryData.CalculateVelocityHistogramSymmetry(data);
+        var color = type == SuspensionType.Front ? FrontColor : RearColor;
+        var label = Plot.Add.Text($"Sym: {symmetry:0.00}", -velocityLimit, yRangeTop * 0.97);
+        label.LabelFontColor = color;
+        label.LabelFontSize = 10;
+        label.LabelFontName = "Menlo";
+        label.LabelAlignment = Alignment.UpperLeft;
+        label.LabelOffsetX = 5;
+        label.LabelBold = true;
+        label.LabelBackgroundColor = Color.FromHex("#15191C").WithAlpha(220);
+        label.LabelBorderColor = color.WithAlpha(80);
+        label.LabelBorderWidth = 1;
+        label.LabelPadding = 5;
     }
 }

@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 56;
+    private const int CurrentPlotVersion = 59;
 
     // Limits concurrent plot generation tasks to reduce peak memory on iOS.
     private static readonly SemaphoreSlim s_plotSemaphore = new(3, 3);
@@ -1097,8 +1097,43 @@ public partial class SessionViewModel : ItemViewModelBase
         try
         {
             IsAnalyzingData = true;
-            await databaseService.ReassignSessionSetupAsync(Id, newSetup.Id);
+            if (IsCombinedSession)
+            {
+                var idsToReassign = new HashSet<Guid> { Id };
+                var visitedCombined = new HashSet<Guid>();
+
+                async Task CollectLeafSourceSessionIds(Guid combinedId)
+                {
+                    if (!visitedCombined.Add(combinedId))
+                        return;
+
+                    var sourceIds = await databaseService.GetCombinedSourcesAsync(combinedId);
+                    foreach (var sourceId in sourceIds)
+                    {
+                        var nestedSources = await databaseService.GetCombinedSourcesAsync(sourceId);
+                        if (nestedSources.Count == 0)
+                        {
+                            idsToReassign.Add(sourceId);
+                        }
+                        else
+                        {
+                            await CollectLeafSourceSessionIds(sourceId);
+                        }
+                    }
+                }
+
+                await CollectLeafSourceSessionIds(Id);
+                foreach (var sessionId in idsToReassign)
+                    await databaseService.ReassignSessionSetupAsync(sessionId, newSetup.Id);
+            }
+            else
+            {
+                await databaseService.ReassignSessionSetupAsync(Id, newSetup.Id);
+            }
+
             session.Setup = newSetup.Id;
+            foreach (var subSession in SubSessions)
+                subSession.SessionModel.Setup = newSetup.Id;
             var telemetryData = await databaseService.GetSessionPsstAsync(Id);
             if (telemetryData != null)
                 await CreateCache(LastKnownBounds, telemetryData);

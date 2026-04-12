@@ -71,6 +71,23 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
         box.LabelPadding = 5;
     }
 
+    private void AddSymmetryLabel(StackedHistogramData data, double yRangeTop)
+    {
+        var symmetry = TelemetryData.CalculateVelocityHistogramSymmetry(data);
+        var color = type == SuspensionType.Front ? FrontColor : RearColor;
+        var label = Plot.Add.Text($"Sym: {symmetry:0.00}", -VelocityLimitMs, yRangeTop * 0.97);
+        label.LabelFontColor = color;
+        label.LabelFontSize = 10;
+        label.LabelFontName = "Menlo";
+        label.LabelAlignment = Alignment.UpperLeft;
+        label.LabelOffsetX = 5;
+        label.LabelBold = true;
+        label.LabelBackgroundColor = Color.FromHex("#15191C").WithAlpha(220);
+        label.LabelBorderColor = color.WithAlpha(80);
+        label.LabelBorderWidth = 1;
+        label.LabelPadding = 5;
+    }
+
     public override void LoadTelemetryData(TelemetryData telemetryData)
     {
         base.LoadTelemetryData(telemetryData);
@@ -134,6 +151,7 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
         normal.LineStyle.Width = 3;
         normal.LineStyle.Pattern = LinePattern.Dotted;
 
+        AddSymmetryLabel(data, yRangeTop);
         AddStatsBox(telemetryData, yRangeTop);
     }
 }

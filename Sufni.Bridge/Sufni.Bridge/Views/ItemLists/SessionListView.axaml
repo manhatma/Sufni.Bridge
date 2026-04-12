@@ -30,8 +30,8 @@
             <Setter Property="BorderBrush" Value="#505558" />
         </Style>
         <Style Selector="Button.compare-toggle-active">
-            <Setter Property="Background" Value="#66c2a5" />
-            <Setter Property="Foreground" Value="#15191c" />
+            <Setter Property="Background" Value="#3288bd" />
+            <Setter Property="Foreground" Value="#ffffff" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Padding" Value="8,4" />
             <Setter Property="CornerRadius" Value="4" />
@@ -46,8 +46,8 @@
             <Setter Property="Background" Value="#1f2327" />
         </Style>
         <Style Selector="Button.compare-open">
-            <Setter Property="Background" Value="#66c2a5" />
-            <Setter Property="Foreground" Value="#15191c" />
+            <Setter Property="Background" Value="#3288bd" />
+            <Setter Property="Foreground" Value="#ffffff" />
             <Setter Property="FontWeight" Value="Bold" />
             <Setter Property="FontSize" Value="14" />
             <Setter Property="HorizontalAlignment" Value="Stretch" />
@@ -88,7 +88,7 @@
             <Setter Property="BorderBrush" Value="#505558" />
         </Style>
         <Style Selector="Button.combine-toggle-active">
-            <Setter Property="Background" Value="#fc8d62" />
+            <Setter Property="Background" Value="#66c2a5" />
             <Setter Property="Foreground" Value="#15191c" />
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Padding" Value="8,4" />
@@ -96,7 +96,7 @@
             <Setter Property="BorderThickness" Value="0" />
         </Style>
         <Style Selector="Button.combine-open">
-            <Setter Property="Background" Value="#fc8d62" />
+            <Setter Property="Background" Value="#66c2a5" />
             <Setter Property="Foreground" Value="#15191c" />
             <Setter Property="FontWeight" Value="Bold" />
             <Setter Property="FontSize" Value="14" />
@@ -139,7 +139,7 @@
     <Grid ColumnDefinitions="*" RowDefinitions="auto auto * auto auto auto">
 
         <!-- Filter + Delete + Combine + Compare mode toggle buttons -->
-        <Grid Grid.Row="0" Margin="10,8,10,0" ColumnDefinitions="auto * auto auto auto">
+        <Grid Grid.Row="0" Margin="10,8,10,0" ColumnDefinitions="auto auto * auto auto">
             <Button Grid.Column="0"
                     Classes.filter-toggle="{Binding !IsFilterMenuOpen}"
                     Classes.filter-toggle-active="{Binding IsFilterMenuOpen}"
@@ -147,7 +147,7 @@
                     Command="{Binding ToggleFilterMenuCommand}">
                 <TextBlock Text="Filter" />
             </Button>
-            <Button Grid.Column="2" Margin="0,0,6,0"
+            <Button Grid.Column="1" Margin="6,0,0,0"
                     Classes.delete-toggle="{Binding !IsDeleteMode}"
                     Classes.delete-toggle-active="{Binding IsDeleteMode}"
                     Command="{Binding ToggleDeleteModeCommand}">
@@ -171,7 +171,7 @@
                     Command="{Binding ToggleCompareModeCommand}">
                 <Panel>
                     <TextBlock Text="Compare" IsVisible="{Binding !IsCompareMode}" />
-                    <TextBlock Text="Cancel" IsVisible="{Binding IsCompareMode}" Foreground="#15191c" />
+                    <TextBlock Text="Cancel" IsVisible="{Binding IsCompareMode}" Foreground="#ffffff" />
                 </Panel>
             </Button>
         </Grid>
@@ -255,7 +255,7 @@
                 Classes="compare-open"
                 IsVisible="{Binding IsCompareMode}"
                 Command="{Binding OpenComparisonCommand}">
-            <TextBlock Foreground="#15191c">
+            <TextBlock Foreground="#ffffff">
                 <Run Text="Compare" />
                 <Run Text="{Binding CompareSelectionCount, StringFormat=' ({0})'}" />
             </TextBlock>
@@ -353,7 +353,7 @@
                 IsVisible="{Binding IsDeleteMode}"
                 Command="{Binding DeleteSelectedSessionsCommand}">
             <TextBlock Foreground="#ffffff">
-                <Run Text="Delete" />
+                <Run Text="{Binding DeleteConfirmLabel}" />
                 <Run Text="{Binding DeleteSelectionCount, StringFormat=' ({0})'}" />
             </TextBlock>
         </Button>
