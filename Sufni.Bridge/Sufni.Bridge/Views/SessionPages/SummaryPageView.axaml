@@ -44,8 +44,8 @@
             <Setter Property="Foreground" Value="#15191c" />
         </Style>
         <Style Selector="ComboBox.summary-setup">
-            <Setter Property="MinHeight" Value="28" />
-            <Setter Property="Padding" Value="6,2" />
+            <Setter Property="MinHeight" Value="24" />
+            <Setter Property="Padding" Value="6,0" />
         </Style>
     </UserControl.Styles>
 
@@ -54,14 +54,30 @@
             <Grid RowDefinitions="auto auto auto" ColumnDefinitions="*">
                 <TextBlock Grid.Row="0" Classes="summary-title" Text="RUN DATA" />
                 <Grid Grid.Row="1" ColumnDefinitions="110,*">
-                    <Border Grid.Column="0" Classes="summary-cell">
-                        <TextBlock Text="Setup" />
+                    <Border Grid.Column="0" Classes="summary-cell" Padding="8,2">
+                        <TextBlock Text="Setup" VerticalAlignment="Center" />
                     </Border>
-                    <Border Grid.Column="1" Classes="summary-cell">
+                    <Border Grid.Column="1" Classes="summary-cell" Padding="4,2">
                         <Grid ColumnDefinitions="* auto">
+                            <!-- View mode: setup name + pencil button -->
+                            <TextBlock
+                                Grid.Column="0"
+                                IsVisible="{Binding !IsEditingSetup}"
+                                HorizontalAlignment="Right"
+                                VerticalAlignment="Center"
+                                Text="{Binding SelectedSetup.Name}" />
+                            <Button
+                                Grid.Column="1"
+                                IsVisible="{Binding !IsEditingSetup}"
+                                Classes="embedded"
+                                Command="{Binding ToggleEditSetupCommand}">
+                                <Image Width="14" Source="{SvgImage /Assets/fa-pen-square.svg}" />
+                            </Button>
+                            <!-- Edit mode: dropdown + refresh button -->
                             <ComboBox
                                 Classes="summary-setup"
                                 Grid.Column="0"
+                                IsVisible="{Binding IsEditingSetup}"
                                 HorizontalAlignment="Stretch"
                                 ItemsSource="{Binding AvailableSetups}"
                                 SelectedItem="{Binding SelectedSetup}">
@@ -73,6 +89,7 @@
                             </ComboBox>
                             <Button
                                 Grid.Column="1"
+                                IsVisible="{Binding IsEditingSetup}"
                                 Classes="embedded"
                                 Command="{Binding ChangeSetupCommand}">
                                 <Image Width="16" Source="{SvgImage /Assets/fa-rotate-right.svg}" />

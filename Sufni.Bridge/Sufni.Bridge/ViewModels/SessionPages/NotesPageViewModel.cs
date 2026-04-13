@@ -22,6 +22,7 @@ public partial class SuspensionSettings : ObservableObject
     [ObservableProperty] private uint? lowSpeedCompression;
     [ObservableProperty] private uint? lowSpeedRebound;
     [ObservableProperty] private uint? highSpeedRebound;
+    [ObservableProperty] private double? tirePressure;
 }
 
 public partial class NotesPageViewModel() : PageViewModelBase("Notes")
@@ -46,6 +47,8 @@ public partial class NotesPageViewModel() : PageViewModelBase("Notes")
             (!(ShockSettings.LowSpeedCompression is null && session.RearLowSpeedCompression is null) && ShockSettings.LowSpeedCompression != session.RearLowSpeedCompression) ||
             (!(ShockSettings.LowSpeedRebound is null && session.RearLowSpeedRebound is null) && ShockSettings.LowSpeedRebound != session.RearLowSpeedRebound) ||
             (!(ShockSettings.HighSpeedRebound is null && session.RearHighSpeedRebound is null) && ShockSettings.HighSpeedRebound != session.RearHighSpeedRebound) ||
-            (ShockSettings.VolSpc ?? 0) != (session.RearVolSpc ?? 0);
+            (ShockSettings.VolSpc ?? 0) != (session.RearVolSpc ?? 0) ||
+            (ForkSettings.TirePressure ?? 0) != (session.FrontTirePressure ?? 0) ||
+            (ShockSettings.TirePressure ?? 0) != (session.RearTirePressure ?? 0);
     }
 }

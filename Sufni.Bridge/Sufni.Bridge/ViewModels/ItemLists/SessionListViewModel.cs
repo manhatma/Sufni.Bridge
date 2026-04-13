@@ -415,9 +415,11 @@ public partial class SessionListViewModel : ItemListViewModelBase
                 telemetryDataList.Add(td);
             }
 
-            // Build combined name — strip leading zeros from session names
+            // Build combined name — use date-only from timestamp to keep title short
             var names = selected.Select(s =>
             {
+                if (s.Timestamp.HasValue)
+                    return s.Timestamp.Value.ToString("yyyy-MM-dd");
                 var trimmed = s.Name?.TrimStart('0') ?? "";
                 return trimmed.Length == 0 ? "0" : trimmed;
             }).ToList();

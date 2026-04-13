@@ -109,6 +109,14 @@ public class Session : Synchronizable
     public uint? RearHighSpeedRebound { get; set; }
 
     [JsonIgnore]
+    [Column("front_tire_pressure")]
+    public double? FrontTirePressure { get; set; }
+
+    [JsonIgnore]
+    [Column("rear_tire_pressure")]
+    public double? RearTirePressure { get; set; }
+
+    [JsonIgnore]
     [Column("source_id")]
     public string? SourceIdentifier { get; set; }
 

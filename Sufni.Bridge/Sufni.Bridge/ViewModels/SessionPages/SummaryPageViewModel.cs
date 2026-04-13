@@ -12,7 +12,11 @@ public partial class SummaryPageViewModel() : PageViewModelBase("Summary")
     [ObservableProperty] private ObservableCollection<SummaryComparisonRow> wheelRows = [];
     [ObservableProperty] private SetupViewModel? selectedSetup;
     [ObservableProperty] private IAsyncRelayCommand? changeSetupCommand;
+    [ObservableProperty] private bool isEditingSetup;
     public ObservableCollection<SetupViewModel> AvailableSetups { get; } = [];
+
+    [RelayCommand]
+    private void ToggleEditSetup() => IsEditingSetup = !IsEditingSetup;
 }
 
 public class SummaryValueRow(string label, string value)

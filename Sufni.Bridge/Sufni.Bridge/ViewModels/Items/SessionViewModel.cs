@@ -1073,12 +1073,14 @@ public partial class SessionViewModel : ItemViewModelBase
                 FrontLowSpeedCompression = NotesPage.ForkSettings.LowSpeedCompression,
                 FrontLowSpeedRebound = NotesPage.ForkSettings.LowSpeedRebound,
                 FrontHighSpeedRebound = NotesPage.ForkSettings.HighSpeedRebound,
+                FrontTirePressure = NotesPage.ForkSettings.TirePressure,
                 RearSpringRate = NotesPage.ShockSettings.SpringRate,
                 RearVolSpc = NotesPage.ShockSettings.VolSpc,
                 RearHighSpeedCompression = NotesPage.ShockSettings.HighSpeedCompression,
                 RearLowSpeedCompression = NotesPage.ShockSettings.LowSpeedCompression,
                 RearLowSpeedRebound = NotesPage.ShockSettings.LowSpeedRebound,
                 RearHighSpeedRebound = NotesPage.ShockSettings.HighSpeedRebound,
+                RearTirePressure = NotesPage.ShockSettings.TirePressure,
                 HasProcessedData = IsComplete,
                 CropStartSample = session.CropStartSample,
                 CropEndSample   = session.CropEndSample,
@@ -1107,6 +1109,7 @@ public partial class SessionViewModel : ItemViewModelBase
         NotesPage.ForkSettings.LowSpeedCompression = session.FrontLowSpeedCompression;
         NotesPage.ForkSettings.LowSpeedRebound = session.FrontLowSpeedRebound;
         NotesPage.ForkSettings.HighSpeedRebound = session.FrontHighSpeedRebound;
+        NotesPage.ForkSettings.TirePressure = session.FrontTirePressure;
 
         NotesPage.ShockSettings.SpringRate = session.RearSpringRate;
         NotesPage.ShockSettings.VolSpc = session.RearVolSpc;
@@ -1114,6 +1117,7 @@ public partial class SessionViewModel : ItemViewModelBase
         NotesPage.ShockSettings.LowSpeedCompression = session.RearLowSpeedCompression;
         NotesPage.ShockSettings.LowSpeedRebound = session.RearLowSpeedRebound;
         NotesPage.ShockSettings.HighSpeedRebound = session.RearHighSpeedRebound;
+        NotesPage.ShockSettings.TirePressure = session.RearTirePressure;
 
         Timestamp = DateTimeOffset.FromUnixTimeSeconds(session.Timestamp ?? 0).DateTime;
 
@@ -1283,6 +1287,7 @@ public partial class SessionViewModel : ItemViewModelBase
             session.Setup = newSetup.Id;
             foreach (var subSession in SubSessions)
                 subSession.SessionModel.Setup = newSetup.Id;
+            SummaryPage.IsEditingSetup = false;
             var telemetryData = await databaseService.GetSessionPsstAsync(Id);
             if (telemetryData != null)
             {
@@ -1610,6 +1615,7 @@ public partial class SessionViewModel : ItemViewModelBase
             ("LSC",     notes.ForkSettings.LowSpeedCompression?.ToString(),  notes.ShockSettings.LowSpeedCompression?.ToString()),
             ("LSR",     notes.ForkSettings.LowSpeedRebound?.ToString(),      notes.ShockSettings.LowSpeedRebound?.ToString()),
             ("HSR",     notes.ForkSettings.HighSpeedRebound?.ToString(),     notes.ShockSettings.HighSpeedRebound?.ToString()),
+            ("Tire pres.", notes.ForkSettings.TirePressure?.ToString("F1"),  notes.ShockSettings.TirePressure?.ToString("F1")),
         };
 
         bool hasDescription = !string.IsNullOrWhiteSpace(notes.Description);

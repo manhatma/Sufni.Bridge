@@ -172,6 +172,8 @@ public class SqLiteDatabaseService : IDatabaseService
         await AddColumnIfMissing("source_id", "TEXT");
         await AddColumnIfMissing("crop_start_sample", "INTEGER");
         await AddColumnIfMissing("crop_end_sample", "INTEGER");
+        await AddColumnIfMissing("front_tire_pressure", "REAL");
+        await AddColumnIfMissing("rear_tire_pressure", "REAL");
     }
 
     private async Task EnsureSessionCacheColumns()
@@ -495,7 +497,9 @@ public class SqLiteDatabaseService : IDatabaseService
                                  timestamp,
                                  track_id,
                                  front_springrate, front_volspc, front_hsc, front_lsc, front_lsr, front_hsr,
+                                 front_tire_pressure,
                                  rear_springrate, rear_volspc, rear_hsc, rear_lsc, rear_lsr, rear_hsr,
+                                 rear_tire_pressure,
                                  crop_start_sample, crop_end_sample,
                                  CASE
                                     WHEN data IS NOT NULL THEN 1
@@ -569,7 +573,9 @@ public class SqLiteDatabaseService : IDatabaseService
                                      name=?,
                                      description=?,
                                      front_springrate=?, front_volspc=?, front_hsc=?, front_lsc=?, front_lsr=?, front_hsr=?,
+                                     front_tire_pressure=?,
                                      rear_springrate=?, rear_volspc=?, rear_hsc=?, rear_lsc=?, rear_lsr=?, rear_hsr=?,
+                                     rear_tire_pressure=?,
                                      crop_start_sample=?, crop_end_sample=?
                                  WHERE
                                      id=?
@@ -584,12 +590,14 @@ public class SqLiteDatabaseService : IDatabaseService
                     session.FrontLowSpeedCompression,
                     session.FrontLowSpeedRebound,
                     session.FrontHighSpeedRebound,
+                    session.FrontTirePressure,
                     session.RearSpringRate,
                     session.RearVolSpc,
                     session.RearHighSpeedCompression,
                     session.RearLowSpeedCompression,
                     session.RearLowSpeedRebound,
                     session.RearHighSpeedRebound,
+                    session.RearTirePressure,
                     session.CropStartSample,
                     session.CropEndSample,
                     session.Id]);
@@ -667,7 +675,9 @@ public class SqLiteDatabaseService : IDatabaseService
                              SELECT
                                  description,
                                  front_springrate, front_volspc, front_hsc, front_lsc, front_lsr, front_hsr,
-                                 rear_springrate, rear_volspc, rear_hsc, rear_lsc, rear_lsr, rear_hsr
+                                 front_tire_pressure,
+                                 rear_springrate, rear_volspc, rear_hsc, rear_lsc, rear_lsr, rear_hsr,
+                                 rear_tire_pressure
                              FROM session
                              WHERE deleted IS NULL
                              ORDER BY timestamp DESC
