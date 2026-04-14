@@ -368,6 +368,7 @@ Sufni.Bridge/Sufni.Bridge.Android/lib
 # IDE files
 .idea/
 .vscode/
+.DS_Store
 
 # User dictionary
 Sufni.Bridge.sln.DotSettings
