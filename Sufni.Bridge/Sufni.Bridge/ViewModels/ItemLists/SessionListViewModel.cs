@@ -415,15 +415,24 @@ public partial class SessionListViewModel : ItemListViewModelBase
                 telemetryDataList.Add(td);
             }
 
-            // Build combined name — use date-only from timestamp to keep title short
-            var names = selected.Select(s =>
+            // Build combined name — session names + shared date in parentheses if all on same day
+            // Strip any existing date suffix "(dd.MM.yyyy)" so re-combining doesn't duplicate it
+            var sessionNames = selected.Select(s =>
             {
-                if (s.Timestamp.HasValue)
-                    return s.Timestamp.Value.ToString("yyyy-MM-dd");
                 var trimmed = s.Name?.TrimStart('0') ?? "";
+                trimmed = System.Text.RegularExpressions.Regex.Replace(trimmed, @"\s*\(\d{2}\.\d{2}\.\d{4}\)\s*$", "").TrimEnd();
                 return trimmed.Length == 0 ? "0" : trimmed;
             }).ToList();
-            var combinedName = string.Join(" + ", names);
+            var namesPart = string.Join(" + ", sessionNames);
+
+            var dates = selected
+                .Where(s => s.Timestamp.HasValue)
+                .Select(s => s.Timestamp!.Value.Date)
+                .Distinct()
+                .ToList();
+            var datePart = dates.Count == 1 ? $" ({dates[0]:dd.MM.yyyy})" : "";
+
+            var combinedName = namesPart + datePart;
             if (combinedName.Length > 80)
                 combinedName = combinedName[..77] + "...";
             // No text prefix — chain icon is shown in the list

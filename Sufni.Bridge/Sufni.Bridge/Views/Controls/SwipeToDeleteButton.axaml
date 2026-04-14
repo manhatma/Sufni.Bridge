@@ -51,7 +51,9 @@
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                     <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
                 </StackPanel>
-                <TextBlock Grid.Column="3" Text="{Binding Timestamp}" VerticalAlignment="Center" />
+                <TextBlock Grid.Column="3" Text="{Binding Timestamp}" VerticalAlignment="Center"
+                           x:DataType="vm:SessionViewModel"
+                           IsVisible="{Binding !IsCombinedSession, FallbackValue=True}" />
                 <Image
                     Grid.Column="4"
                     Width="16"
