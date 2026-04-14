@@ -24,8 +24,10 @@
     </UserControl.Styles>
 
     <StackPanel>
+        <!-- Thick date-group separator (visible when this is first item of a new day) -->
+        <Border Height="2" Background="#2e3438" IsVisible="{Binding IsFirstOfDay}" />
         <Button
-            Height="48"
+            Height="34"
             Padding="10,0,10,0"
             HorizontalAlignment="Stretch"
             VerticalContentAlignment="Center"
@@ -33,12 +35,12 @@
             Command="{Binding OpenPageCommand}"
             CommandParameter="{Binding}"
             CornerRadius="0">
-            <Grid HorizontalAlignment="Stretch" ColumnDefinitions="20 auto * auto 40">
+            <Grid HorizontalAlignment="Stretch" ColumnDefinitions="30 auto * auto 40">
                 <!-- Chevron for combined sessions -->
                 <Button Grid.Column="0" Background="Transparent" Padding="0"
                         x:DataType="vm:SessionViewModel"
-                        VerticalAlignment="Center" HorizontalAlignment="Center"
-                        Width="20" Height="48"
+                        VerticalAlignment="Center" HorizontalAlignment="Left"
+                        Width="30" Height="34"
                         Command="{Binding ToggleExpandCommand}"
                         IsVisible="{Binding IsCombinedSession, FallbackValue=False}">
                     <Image Width="17" Height="17"
@@ -49,9 +51,10 @@
                     </Image>
                 </Button>
                 <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" />
+                    <TextBlock Text="{Binding Name}" VerticalAlignment="Center" FontSize="13" />
                 </StackPanel>
                 <TextBlock Grid.Column="3" Text="{Binding Timestamp}" VerticalAlignment="Center"
+                           FontSize="13"
                            x:DataType="vm:SessionViewModel"
                            IsVisible="{Binding !IsCombinedSession, FallbackValue=True}" />
                 <Image
@@ -70,7 +73,7 @@
             <ItemsRepeater.ItemTemplate>
                 <DataTemplate x:DataType="vm:SessionViewModel">
                     <StackPanel>
-                        <Button Height="40" Padding="40,0,10,0"
+                        <Button Height="28" Padding="50,0,10,0"
                                 HorizontalAlignment="Stretch"
                                 VerticalContentAlignment="Center"
                                 Background="#1a1e21" CornerRadius="0"
@@ -78,7 +81,7 @@
                                 CommandParameter="{Binding}">
                             <Grid ColumnDefinitions="auto * auto" HorizontalAlignment="Stretch">
                                 <TextBlock Grid.Column="0" Text="{Binding Name}"
-                                           Foreground="#B0B0B0" FontSize="13"
+                                           Foreground="#B0B0B0" FontSize="12"
                                            VerticalAlignment="Center" />
                                 <TextBlock Grid.Column="2" Text="{Binding Timestamp}"
                                            Foreground="#606060" FontSize="12"

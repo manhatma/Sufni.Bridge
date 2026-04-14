@@ -227,7 +227,7 @@
                 <ItemsRepeater.ItemTemplate>
                     <DataTemplate x:DataType="vmi:ItemViewModelBase">
                         <StackPanel>
-                            <Button Height="48"
+                            <Button Height="34"
                                     HorizontalAlignment="Stretch"
                                     VerticalContentAlignment="Center"
                                     Classes="compare-item"
@@ -237,9 +237,9 @@
                                     <CheckBox Grid.Column="0" IsChecked="{Binding IsSelectedForCompare}"
                                               IsHitTestVisible="False" VerticalAlignment="Center" />
                                     <TextBlock Grid.Column="1" Text="{Binding Name}"
-                                               VerticalAlignment="Center" />
+                                               VerticalAlignment="Center" FontSize="13" />
                                     <TextBlock Grid.Column="3" Text="{Binding Timestamp}"
-                                               VerticalAlignment="Center" Foreground="#808080" />
+                                               VerticalAlignment="Center" Foreground="#808080" FontSize="13" />
                                 </Grid>
                             </Button>
                             <Separator Height="1" Margin="0"
@@ -267,7 +267,7 @@
                 <ItemsRepeater.ItemTemplate>
                     <DataTemplate x:DataType="vmi:ItemViewModelBase">
                         <StackPanel>
-                            <Button Height="48"
+                            <Button Height="34"
                                     HorizontalAlignment="Stretch"
                                     VerticalContentAlignment="Center"
                                     Classes="compare-item"
@@ -277,9 +277,9 @@
                                     <CheckBox Grid.Column="0" IsChecked="{Binding IsSelectedForCompare}"
                                               IsHitTestVisible="False" VerticalAlignment="Center" />
                                     <TextBlock Grid.Column="1" Text="{Binding Name}"
-                                               VerticalAlignment="Center" />
+                                               VerticalAlignment="Center" FontSize="13" />
                                     <TextBlock Grid.Column="3" Text="{Binding Timestamp}"
-                                               VerticalAlignment="Center" Foreground="#808080" />
+                                               VerticalAlignment="Center" Foreground="#808080" FontSize="13" />
                                 </Grid>
                             </Button>
                             <Separator Height="1" Margin="0"
@@ -324,7 +324,7 @@
                 <ItemsRepeater.ItemTemplate>
                     <DataTemplate x:DataType="vmi:ItemViewModelBase">
                         <StackPanel>
-                            <Button Height="48"
+                            <Button Height="34"
                                     HorizontalAlignment="Stretch"
                                     VerticalContentAlignment="Center"
                                     Classes="compare-item"
@@ -334,9 +334,9 @@
                                     <CheckBox Grid.Column="0" IsChecked="{Binding IsSelectedForCompare}"
                                               IsHitTestVisible="False" VerticalAlignment="Center" />
                                     <TextBlock Grid.Column="1" Text="{Binding Name}"
-                                               VerticalAlignment="Center" />
+                                               VerticalAlignment="Center" FontSize="13" />
                                     <TextBlock Grid.Column="3" Text="{Binding Timestamp}"
-                                               VerticalAlignment="Center" Foreground="#808080" />
+                                               VerticalAlignment="Center" Foreground="#808080" FontSize="13" />
                                 </Grid>
                             </Button>
                             <Separator Height="1" Margin="0"

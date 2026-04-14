@@ -69,6 +69,18 @@ public partial class SessionListViewModel : ItemListViewModelBase
         }
     }
 
+    private void UpdateDayBoundaries()
+    {
+        string? lastDate = null;
+        for (int i = 0; i < items.Count; i++)
+        {
+            var date = items[i].Timestamp?.Date.ToString("yyyy-MM-dd");
+            // Show thick separator above first item of each new date group, but not the very first item
+            items[i].IsFirstOfDay = i > 0 && date != lastDate;
+            lastDate = date;
+        }
+    }
+
     public override void ConnectSource()
     {
         Source.Connect()
@@ -84,7 +96,7 @@ public partial class SessionListViewModel : ItemListViewModelBase
                           (vm is SessionViewModel svm && _allowedSetupIds.Contains(svm.SessionModel.Setup)))
             .SortAndBind(out items, SortExpressionComparer<ItemViewModelBase>.Descending(svm => svm.Timestamp!))
             .DisposeMany()
-            .Subscribe();
+            .Subscribe(_ => UpdateDayBoundaries());
     }
 
     protected override async Task DeleteImplementation(ItemViewModelBase vm)
