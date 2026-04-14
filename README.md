@@ -12,7 +12,7 @@ Recorded sessions can be non-destructively cropped, merged with combine, or plac
 
 ## Session List
 
-The session list is the main entry point of the app. It shows all imported sessions with their name, date, and time. A toolbar at the top provides quick access to **Filter**, **Delete**, **Combine**, and **Compare** actions. A search bar allows instant text-based filtering by session name.
+The session list is the main entry point of the app. It shows all imported sessions with their name, date, and time. A toolbar at the top provides quick access to **Filter**, **Delete**, **Combine**, and **Compare** actions. A search bar allows instant text-based filtering by session name and/or date.
 
 <table>
   <tr>
@@ -24,7 +24,7 @@ The session list is the main entry point of the app. It shows all imported sessi
 
 ## Filter
 
-The filter panel lets you narrow down the session list by criteria such as track name and date range. Filtered results update the session list immediately, and the active filter is indicated in the toolbar.
+The filter panel lets you narrow down the session list by bike setup. A setup consists of a DAQ board ID, a linkage definition, and a calibration. Filtered results update the session list immediately, and the active filter is indicated in the toolbar.
 
 <table>
   <tr>
@@ -39,7 +39,7 @@ The filter panel lets you narrow down the session list by criteria such as track
 
 ## Summary
 
-The Summary tab provides a quick overview of the most important metrics for a session: maximum travel, average travel, and bottom-out count for both front and rear suspension. A setup dropdown lets you switch between different bike setups linked to a session.
+The Summary tab provides a quick overview of the most important metrics for a session: maximum travel, average travel, and bottom-out count for both front and rear suspension. A setup dropdown lets you switch between different bike setups linked to a session. This is particularly useful when a session was accidentally recorded with the wrong setup — for example, if the wrong chainstay length, head angle, or progression curve was selected. Reassigning the correct setup recalculates all derived values accordingly.
 
 <table>
   <tr>
@@ -105,7 +105,7 @@ The Notes tab provides a free-form text field for recording setup details alongs
 
 ## Misc
 
-The Misc tab shows additional session metadata and derived information, including session-level details and the ability to assign or change the bike setup associated with a session.
+The Misc tab shows velocity over travel for both fork and shock. This visualizes how damper velocity relates to suspension position throughout the ride.
 
 <table>
   <tr>
@@ -122,7 +122,6 @@ The Crop feature lets you non-destructively trim a session to a specific time ra
 
 <table>
   <tr>
-    <td><img src="Sufni.Bridge/Sufni.Bridge.iOS/screenshots/Crop.png" width="260"/></td>
     <td><img src="Sufni.Bridge/Sufni.Bridge.iOS/screenshots/Crop-1.png" width="260"/></td>
     <td><img src="Sufni.Bridge/Sufni.Bridge.iOS/screenshots/Crop-2.png" width="260"/></td>
     <td><img src="Sufni.Bridge/Sufni.Bridge.iOS/screenshots/Crop-3.png" width="260"/></td>
@@ -134,7 +133,7 @@ The Crop feature lets you non-destructively trim a session to a specific time ra
 
 ## Combine
 
-The Combine feature merges multiple sessions into a single unified session. This is useful when a ride was recorded in separate segments — for example, after a DAQ restart mid-run. Combined sessions appear in the list with an ∞ symbol, and their constituent child sessions are shown indented below. The combined session aggregates all data from its children and can be analyzed just like any other session.
+The Combine feature merges multiple sessions into a single unified session. This is useful when a ride was recorded in separate segments — for example, after a DAQ restart mid-run. Beyond fixing interrupted recordings, combine can also be used to aggregate an entire day of riding: by combining all sessions from a day, you can evaluate how the suspension setup performed across many different tracks and runs rather than judging it on a single segment. Combined sessions appear in the list with an ∞ symbol, and their constituent child sessions are shown indented below. The combined session aggregates all data from its children and can be analyzed just like any other session.
 
 <table>
   <tr>
@@ -190,7 +189,7 @@ Three-session comparison works identically to two-session compare, but overlays 
 
 ## Delete
 
-Sessions can be deleted by swiping left on a session row to reveal the Delete button. A confirmation dialog prevents accidental deletion. Once confirmed, the session is removed from the list permanently.
+Sessions can be deleted by selecting them and tapping the Delete button in the toolbar. A confirmation dialog prevents accidental deletion. Once confirmed, the session is removed from the list permanently. When Delete is used on a combined session, the session is not deleted — instead, the grouping is dissolved and the child sessions reappear individually in the list.
 
 <table>
   <tr>
