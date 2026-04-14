@@ -90,7 +90,7 @@ public class TelemetryData
 
     // Increment when velocity processing parameters change (e.g. smoother lambda).
     // Blobs with a lower version are automatically re-processed from Travel arrays on load.
-    public const int CurrentProcessingVersion = 3;
+    public const int CurrentProcessingVersion = 4;
 
     #region Public properties
 
@@ -326,7 +326,7 @@ public class TelemetryData
             var dt = Digitize(Front.Travel, tbins);
             Front.TravelBins = tbins;
 
-            var v = smoother.Smooth(ComputeVelocity(Front.Travel, SampleRate));
+            var v = ComputeVelocity(smoother.Smooth(Front.Travel), SampleRate);
             Front.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             Front.VelocityBins = vbins;
@@ -366,7 +366,7 @@ public class TelemetryData
             var dt = Digitize(Rear.Travel, tbins);
             Rear.TravelBins = tbins;
 
-            var v = smoother.Smooth(ComputeVelocity(Rear.Travel, SampleRate));
+            var v = ComputeVelocity(smoother.Smooth(Rear.Travel), SampleRate);
             Rear.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             Rear.VelocityBins = vbins;
@@ -406,7 +406,7 @@ public class TelemetryData
             var dt = Digitize(Front.Travel, tbins);
             Front.TravelBins = tbins;
 
-            var v = smoother.Smooth(ComputeVelocity(Front.Travel, SampleRate));
+            var v = ComputeVelocity(smoother.Smooth(Front.Travel), SampleRate);
             Front.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             Front.VelocityBins = vbins;
@@ -428,7 +428,7 @@ public class TelemetryData
             var dt = Digitize(Rear.Travel, tbins);
             Rear.TravelBins = tbins;
 
-            var v = smoother.Smooth(ComputeVelocity(Rear.Travel, SampleRate));
+            var v = ComputeVelocity(smoother.Smooth(Rear.Travel), SampleRate);
             Rear.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             Rear.VelocityBins = vbins;
@@ -510,7 +510,7 @@ public class TelemetryData
             var dt = Digitize(cropped.Front.Travel, tbins);
             cropped.Front.TravelBins = tbins;
 
-            var v = smoother.Smooth(ComputeVelocity(cropped.Front.Travel, SampleRate));
+            var v = ComputeVelocity(smoother.Smooth(cropped.Front.Travel), SampleRate);
             cropped.Front.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             cropped.Front.VelocityBins = vbins;
@@ -535,7 +535,7 @@ public class TelemetryData
             var dt = Digitize(cropped.Rear.Travel, tbins);
             cropped.Rear.TravelBins = tbins;
 
-            var v = smoother.Smooth(ComputeVelocity(cropped.Rear.Travel, SampleRate));
+            var v = ComputeVelocity(smoother.Smooth(cropped.Rear.Travel), SampleRate);
             cropped.Rear.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             cropped.Rear.VelocityBins = vbins;
@@ -596,7 +596,7 @@ public class TelemetryData
             combined.Front.TravelBins = tbins;
 
             // Re-derive velocity from combined travel to avoid discontinuities at session boundaries
-            var v = smoother.Smooth(ComputeVelocity(combined.Front.Travel, first.SampleRate));
+            var v = ComputeVelocity(smoother.Smooth(combined.Front.Travel), first.SampleRate);
             combined.Front.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             combined.Front.VelocityBins = vbins;
@@ -623,7 +623,7 @@ public class TelemetryData
             combined.Rear.TravelBins = tbins;
 
             // Re-derive velocity from combined travel to avoid discontinuities at session boundaries
-            var v = smoother.Smooth(ComputeVelocity(combined.Rear.Travel, first.SampleRate));
+            var v = ComputeVelocity(smoother.Smooth(combined.Rear.Travel), first.SampleRate);
             combined.Rear.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             combined.Rear.VelocityBins = vbins;
