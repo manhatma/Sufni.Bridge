@@ -42,7 +42,7 @@
                         Command="{Binding ToggleExpandCommand}"
                         IsVisible="{Binding IsCombinedSession, FallbackValue=False}">
                     <Image Width="17" Height="17"
-                           Source="{SvgImage /Assets/fa-chain.svg}">
+                           Source="{SvgImage /Assets/fa-link.svg}">
                         <Image.RenderTransform>
                             <RotateTransform Angle="{Binding ChainIconAngle, FallbackValue=90}" />
                         </Image.RenderTransform>
