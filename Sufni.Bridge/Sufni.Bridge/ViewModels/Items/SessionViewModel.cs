@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 67;
+    private const int CurrentPlotVersion = 71;
 
     // Limits concurrent plot generation tasks to reduce peak memory on iOS.
     private static readonly SemaphoreSlim s_plotSemaphore = new(3, 3);
@@ -183,11 +183,12 @@ public partial class SessionViewModel : ItemViewModelBase
                 var rearPosVelTask   = Task.Run(() => SvgToSource(cache.RearPositionVelocity));
                 var travelCropTask   = Task.Run(() => SvgToSource(cache.TravelTimeCropped));
                 var velocityCropTask = Task.Run(() => SvgToSource(cache.VelocityTimeCropped));
+                var accelCropTask    = Task.Run(() => SvgToSource(cache.AccelerationTimeCropped));
 
                 await Task.WhenAll(frontVelHistTask, frontLsVelHistTask, rearVelHistTask, rearLsVelHistTask,
                     combBalTask, compBalTask, rebBalTask,
                     velDistCompTask, posVelCompTask, frontPosVelTask, rearPosVelTask,
-                    travelCropTask, velocityCropTask);
+                    travelCropTask, velocityCropTask, accelCropTask);
 
                 var frontVelHistSrc   = frontVelHistTask.Result;
                 var frontLsVelHistSrc = frontLsVelHistTask.Result;
@@ -230,6 +231,7 @@ public partial class SessionViewModel : ItemViewModelBase
                     DamperPage.VelocityDistributionComparison = SourceToImage(velDistCompSrc);
                     MiscPage.TravelTimeCropped                = SourceToImage(travelCropTask.Result);
                     MiscPage.VelocityTimeCropped              = SourceToImage(velocityCropTask.Result);
+                    MiscPage.AccelerationTimeCropped          = SourceToImage(accelCropTask.Result);
                     MiscPage.PositionVelocityComparison       = SourceToImage(posVelCompSrc);
                     MiscPage.FrontPositionVelocity            = SourceToImage(frontPosVelSrc);
                     MiscPage.RearPositionVelocity             = SourceToImage(rearPosVelSrc);
@@ -481,6 +483,15 @@ public partial class SessionViewModel : ItemViewModelBase
             sessionCache.VelocityTimeCropped = vtc.Plot.GetSvgXml(width, tthHeight);
             var velocityCropSrc = SvgToSource(sessionCache.VelocityTimeCropped);
             Dispatcher.UIThread.Post(() => { MiscPage.VelocityTimeCropped = SourceToImage(velocityCropSrc); });
+        }));
+
+        tasks.Add(ThrottledPlotTask(() =>
+        {
+            var atc = new AccelerationTimeCroppedPlot(new Plot());
+            atc.LoadTelemetryData(telemetryData);
+            sessionCache.AccelerationTimeCropped = atc.Plot.GetSvgXml(width, tthHeight);
+            var accelCropSrc = SvgToSource(sessionCache.AccelerationTimeCropped);
+            Dispatcher.UIThread.Post(() => { MiscPage.AccelerationTimeCropped = SourceToImage(accelCropSrc); });
         }));
 
         tasks.Add(ThrottledPlotTask(() =>
@@ -1514,6 +1525,7 @@ public partial class SessionViewModel : ItemViewModelBase
             // Misc tab
             svgEntries.Add(cache.TravelTimeCropped);
             svgEntries.Add(cache.VelocityTimeCropped);
+            svgEntries.Add(cache.AccelerationTimeCropped);
             svgEntries.Add(cache.PositionVelocityComparison);
             svgEntries.Add(cache.FrontPositionVelocity);
             svgEntries.Add(cache.RearPositionVelocity);

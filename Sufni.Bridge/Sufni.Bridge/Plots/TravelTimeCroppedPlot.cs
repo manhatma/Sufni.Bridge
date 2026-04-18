@@ -49,7 +49,7 @@ public class TravelTimeCroppedPlot(Plot plot) : TelemetryPlot(plot)
                 if (telemetryData.Rear.Travel[i] > actualMax) actualMax = telemetryData.Rear.Travel[i];
 
         var bottom = actualMax > 0 ? actualMax * 1.05 : 1.0;
-        var top    = actualMax > 0 ? -actualMax * 0.05 : 0.0;
+        var top    = 0.0;
         Plot.Axes.SetLimitsY(bottom: bottom, top: top);
 
         if (maxDuration > 0)

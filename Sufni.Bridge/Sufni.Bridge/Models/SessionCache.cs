@@ -37,4 +37,5 @@ public class SessionCache
     [Column("travel_time_history")] public string? TravelTimeHistory { get; set; }
     [Column("travel_time_cropped")] public string? TravelTimeCropped { get; set; }
     [Column("velocity_time_cropped")] public string? VelocityTimeCropped { get; set; }
+    [Column("acceleration_time_cropped")] public string? AccelerationTimeCropped { get; set; }
 }
