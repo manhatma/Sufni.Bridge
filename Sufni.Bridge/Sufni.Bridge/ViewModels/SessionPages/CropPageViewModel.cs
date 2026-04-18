@@ -100,7 +100,11 @@ public partial class CropPageViewModel() : PageViewModelBase("Crop")
 
         var bounds = ViewBounds;
         var w = bounds.Width > 0 ? bounds.Width : 393;
-        var h = w / 2.0;
+        var hFallback = bounds.Height > 0 ? bounds.Height : w;
+        // Match full-chart height in SessionViewModel, including the absorbed tab-bar space
+        // so the crop sliders keep their position when the tab bar collapses.
+        const double CollapsedTabBarHeight = 30.0;
+        var h = ((hFallback - CollapsedTabBarHeight) * 0.4 + w / 2.0 + CollapsedTabBarHeight) / 2.0;
 
         var plot = new Plot();
         plot.FigureBackground.Color = ScottPlot.Color.FromHex("#15191C");
@@ -108,6 +112,18 @@ public partial class CropPageViewModel() : PageViewModelBase("Crop")
         var chartPlot = new TravelTimeHistoryPlot(plot);
         chartPlot.LoadTelemetryData(cropped);
         plot.Axes.Title.Label.Text = "Travel over time (cropped)";
+
+        // Rescale Y-axis to the actual max travel within the cropped range,
+        // rather than the linkage-defined max used by the full chart.
+        double actualMax = 0;
+        if (cropped.Front.Present && cropped.Front.Travel.Length > 0)
+            for (int i = 0; i < cropped.Front.Travel.Length; i++)
+                if (cropped.Front.Travel[i] > actualMax) actualMax = cropped.Front.Travel[i];
+        if (cropped.Rear.Present && cropped.Rear.Travel.Length > 0)
+            for (int i = 0; i < cropped.Rear.Travel.Length; i++)
+                if (cropped.Rear.Travel[i] > actualMax) actualMax = cropped.Rear.Travel[i];
+        if (actualMax > 0)
+            plot.Axes.SetLimitsY(bottom: actualMax * 1.05, top: -actualMax * 0.05);
         var svgXml = plot.GetSvgXml((int)w, (int)h);
 
         if (token.IsCancellationRequested) return;

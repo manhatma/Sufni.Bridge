@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 61;
+    private const int CurrentPlotVersion = 63;
 
     // Limits concurrent plot generation tasks to reduce peak memory on iOS.
     private static readonly SemaphoreSlim s_plotSemaphore = new(3, 3);
@@ -252,7 +252,12 @@ public partial class SessionViewModel : ItemViewModelBase
 
         var b = (Rect)bounds!;
         var (width, height) = ((int)b.Width, (int)(b.Height / 2.0));
-        var tthHeight = (int)(height * 0.8);
+        // Full and cropped time-history share the total vertical budget equally.
+        // Previous split: full = height*0.8 (= b.Height*0.4), cropped = width/2.
+        // In crop mode the tab bar collapses (~30 px); absorb that into chart heights
+        // so the crop sliders keep their absolute Y position.
+        const double CollapsedTabBarHeight = 30.0;
+        var tthHeight = (int)(((b.Height - CollapsedTabBarHeight) * 0.4 + b.Width / 2.0 + CollapsedTabBarHeight) / 2.0);
 
         var sessionCache = new SessionCache
         {

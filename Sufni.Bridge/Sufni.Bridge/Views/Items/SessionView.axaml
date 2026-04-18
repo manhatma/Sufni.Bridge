@@ -34,6 +34,7 @@
             Name="TabHeaders"
             Grid.Row="1"
             HorizontalAlignment="Stretch"
+            IsVisible="{Binding !IsCropVisible}"
             ItemsSource="{Binding Pages}">
 
             <ItemsControl.ItemsPanel>
