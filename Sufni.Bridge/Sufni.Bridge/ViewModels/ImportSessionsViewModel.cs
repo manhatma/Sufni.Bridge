@@ -252,6 +252,17 @@ public partial class ImportSessionsViewModel : ViewModelBase
                 rcal?.Prepare(rmethod!, linkage.MaxRearStroke!.Value, linkage.MaxRearTravel);
                 var psst = await telemetryFile.GeneratePsstAsync(linkage, fcal, rcal);
 
+                // Compute duration from telemetry for day group time range display
+                int? durationSeconds = null;
+                try
+                {
+                    var td = MessagePack.MessagePackSerializer.Deserialize<Models.Telemetry.TelemetryData>(psst);
+                    var sampleCount = Math.Max(td.Front.Travel?.Length ?? 0, td.Rear.Travel?.Length ?? 0);
+                    if (td.SampleRate > 0)
+                        durationSeconds = sampleCount / td.SampleRate;
+                }
+                catch { /* duration is optional */ }
+
                 var session = new Session(
                     id: Guid.NewGuid(),
                     name: telemetryFile.Name,
@@ -273,6 +284,7 @@ public partial class ImportSessionsViewModel : ViewModelBase
                     RearLowSpeedCompression = lastSession?.RearLowSpeedCompression,
                     RearLowSpeedRebound = lastSession?.RearLowSpeedRebound,
                     RearHighSpeedRebound = lastSession?.RearHighSpeedRebound,
+                    DurationSeconds = durationSeconds,
                 };
 
                 await databaseService.PutSessionAsync(session);

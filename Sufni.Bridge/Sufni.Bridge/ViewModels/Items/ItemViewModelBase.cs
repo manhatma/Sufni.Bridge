@@ -22,7 +22,6 @@ public partial class ItemViewModelBase : ViewModelBase
     [ObservableProperty] private Guid id;
     [ObservableProperty] private DateTime? timestamp;
     [ObservableProperty] private bool isSelectedForCompare;
-    [ObservableProperty] private bool isFirstOfDay;
     public virtual bool IsComplete => true;
 
     protected virtual void EvaluateDirtiness() { IsDirty = false; }

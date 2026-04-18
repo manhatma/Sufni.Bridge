@@ -174,6 +174,7 @@ public class SqLiteDatabaseService : IDatabaseService
         await AddColumnIfMissing("crop_end_sample", "INTEGER");
         await AddColumnIfMissing("front_tire_pressure", "REAL");
         await AddColumnIfMissing("rear_tire_pressure", "REAL");
+        await AddColumnIfMissing("duration_seconds", "INTEGER");
     }
 
     private async Task EnsureSessionCacheColumns()
@@ -504,6 +505,7 @@ public class SqLiteDatabaseService : IDatabaseService
                                  rear_springrate, rear_volspc, rear_hsc, rear_lsc, rear_lsr, rear_hsr,
                                  rear_tire_pressure,
                                  crop_start_sample, crop_end_sample,
+                                 duration_seconds,
                                  CASE
                                     WHEN data IS NOT NULL THEN 1
                                     ELSE 0
@@ -579,7 +581,8 @@ public class SqLiteDatabaseService : IDatabaseService
                                      front_tire_pressure=?,
                                      rear_springrate=?, rear_volspc=?, rear_hsc=?, rear_lsc=?, rear_lsr=?, rear_hsr=?,
                                      rear_tire_pressure=?,
-                                     crop_start_sample=?, crop_end_sample=?
+                                     crop_start_sample=?, crop_end_sample=?,
+                                     duration_seconds=?
                                  WHERE
                                      id=?
                                  """;
@@ -603,6 +606,7 @@ public class SqLiteDatabaseService : IDatabaseService
                     session.RearTirePressure,
                     session.CropStartSample,
                     session.CropEndSample,
+                    session.DurationSeconds,
                     session.Id]);
         }
         else
@@ -822,5 +826,23 @@ public class SqLiteDatabaseService : IDatabaseService
     {
         await Initialization;
         await connection.ExecuteAsync("DELETE FROM combined_session WHERE combined_id = ?", combinedId);
+    }
+
+    public async Task BackfillDurationAsync()
+    {
+        await Initialization;
+        var sessions = await connection.QueryAsync<Session>(
+            "SELECT id, data FROM session WHERE deleted IS NULL AND data IS NOT NULL AND duration_seconds IS NULL");
+        foreach (var s in sessions)
+        {
+            try
+            {
+                var td = MessagePackSerializer.Deserialize<TelemetryData>(s.ProcessedData);
+                var sampleCount = Math.Max(td.Front.Travel?.Length ?? 0, td.Rear.Travel?.Length ?? 0);
+                var duration = td.SampleRate > 0 ? sampleCount / td.SampleRate : 0;
+                await connection.ExecuteAsync("UPDATE session SET duration_seconds=? WHERE id=?", duration, s.Id);
+            }
+            catch { /* skip sessions with corrupt data */ }
+        }
     }
 }

@@ -57,6 +57,8 @@ public partial class SessionListViewModel : ItemListViewModelBase
 
     // Track combined session IDs for marking
     private HashSet<Guid> _combinedIds = [];
+    private readonly Dictionary<DateOnly, bool> _expandState = new();
+    private bool _noDateExpanded;
     private bool HasSelectedCombinedSessions
     {
         get
@@ -69,15 +71,40 @@ public partial class SessionListViewModel : ItemListViewModelBase
         }
     }
 
-    private void UpdateDayBoundaries()
+    public ObservableCollection<SessionDayGroupViewModel> DayGroups { get; } = [];
+
+    private void RebuildDayGroups()
     {
-        string? lastDate = null;
-        for (int i = 0; i < items.Count; i++)
+        // Save expand states
+        foreach (var g in DayGroups)
         {
-            var date = items[i].Timestamp?.Date.ToString("yyyy-MM-dd");
-            // Show thick separator above first item of each new date group, but not the very first item
-            items[i].IsFirstOfDay = i > 0 && date != lastDate;
-            lastDate = date;
+            if (g.Date.HasValue)
+                _expandState[g.Date.Value] = g.IsExpanded;
+            else
+                _noDateExpanded = g.IsExpanded;
+        }
+
+        DayGroups.Clear();
+
+        var groups = items
+            .OfType<SessionViewModel>()
+            .GroupBy(s => s.Timestamp.HasValue ? DateOnly.FromDateTime(s.Timestamp.Value) : (DateOnly?)null)
+            .OrderByDescending(g => g.Key);
+
+        bool isFirst = true;
+        foreach (var g in groups)
+        {
+            bool expanded;
+            if (g.Key.HasValue)
+                expanded = _expandState.TryGetValue(g.Key.Value, out var saved) ? saved : isFirst;
+            else
+                expanded = _noDateExpanded;
+
+            var dayGroup = new SessionDayGroupViewModel(g.Key, expanded);
+            foreach (var s in g.OrderByDescending(s => s.Timestamp))
+                dayGroup.Sessions.Add(s);
+            DayGroups.Add(dayGroup);
+            isFirst = false;
         }
     }
 
@@ -96,7 +123,7 @@ public partial class SessionListViewModel : ItemListViewModelBase
                           (vm is SessionViewModel svm && _allowedSetupIds.Contains(svm.SessionModel.Setup)))
             .SortAndBind(out items, SortExpressionComparer<ItemViewModelBase>.Descending(svm => svm.Timestamp!))
             .DisposeMany()
-            .Subscribe(_ => UpdateDayBoundaries());
+            .Subscribe(_ => RebuildDayGroups());
     }
 
     protected override async Task DeleteImplementation(ItemViewModelBase vm)
@@ -156,6 +183,13 @@ public partial class SessionListViewModel : ItemListViewModelBase
         Source.Clear();
         await LoadSessionsAsync();
         await LoadSetupFiltersAsync();
+
+        // Backfill duration for sessions imported before duration tracking was added
+        _ = Task.Run(async () =>
+        {
+            try { await databaseService!.BackfillDurationAsync(); }
+            catch { /* non-critical */ }
+        });
     }
 
     private async Task LoadSetupFiltersAsync()
@@ -453,6 +487,10 @@ public partial class SessionListViewModel : ItemListViewModelBase
             var combined = TelemetryData.CombineSessions(telemetryDataList, combinedName);
             var serialized = MessagePackSerializer.Serialize(combined);
 
+            // Compute combined duration
+            var combinedSampleCount = Math.Max(combined.Front.Travel?.Length ?? 0, combined.Rear.Travel?.Length ?? 0);
+            var combinedDuration = combined.SampleRate > 0 ? combinedSampleCount / combined.SampleRate : 0;
+
             // Create session record
             var firstSession = selected[0].SessionModel;
             var firstTimestamp = selected
@@ -479,7 +517,8 @@ public partial class SessionListViewModel : ItemListViewModelBase
                 RearHighSpeedCompression = firstSession.RearHighSpeedCompression,
                 RearLowSpeedCompression = firstSession.RearLowSpeedCompression,
                 RearLowSpeedRebound = firstSession.RearLowSpeedRebound,
-                RearHighSpeedRebound = firstSession.RearHighSpeedRebound
+                RearHighSpeedRebound = firstSession.RearHighSpeedRebound,
+                DurationSeconds = combinedDuration
             };
 
             // Persist

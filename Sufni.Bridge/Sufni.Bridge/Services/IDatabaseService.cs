@@ -54,4 +54,5 @@ public interface IDatabaseService
     public Task<HashSet<Guid>> GetAllCombinedIdsAsync();
     public Task PutCombinedSourcesAsync(Guid combinedId, List<Guid> sourceIds);
     public Task DeleteCombinedSourcesAsync(Guid combinedId);
+    public Task BackfillDurationAsync();
 }

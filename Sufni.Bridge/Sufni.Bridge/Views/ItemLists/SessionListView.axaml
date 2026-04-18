@@ -207,7 +207,7 @@
             Grid.Row="2"
             Grid.Column="0"
             Margin="0,15,0,5"
-            Items="{Binding Items}"
+            Items="{Binding DayGroups}"
             MenuItems="{Binding MenuItems}">
             <controls:PullableMenuScrollViewer.IsVisible>
                 <MultiBinding Converter="{x:Static BoolConverters.And}">
@@ -219,6 +219,45 @@
             <controls:PullableMenuScrollViewer.TopContent>
                 <controls:SearchBarWithDateFilter />
             </controls:PullableMenuScrollViewer.TopContent>
+            <controls:PullableMenuScrollViewer.ItemTemplate>
+                <DataTemplate x:DataType="vmi:SessionDayGroupViewModel">
+                    <StackPanel>
+                        <!-- Day group header -->
+                        <Button Background="Transparent" Padding="10,8" CornerRadius="0"
+                                HorizontalAlignment="Stretch"
+                                Command="{Binding ToggleExpandCommand}">
+                            <Grid ColumnDefinitions="20 * auto" HorizontalAlignment="Stretch">
+                                <Image Grid.Column="0" Width="12" Height="12"
+                                       Source="{SvgImage /Assets/fa-chevron-right.svg}">
+                                    <Image.RenderTransform>
+                                        <RotateTransform Angle="{Binding ChevronAngle}" />
+                                    </Image.RenderTransform>
+                                </Image>
+                                <TextBlock Grid.Column="1" Text="{Binding Title}"
+                                           VerticalAlignment="Center" FontSize="13"
+                                           FontWeight="DemiBold" Foreground="#D0D0D0" />
+                                <TextBlock Grid.Column="2" Text="{Binding TimeRange}"
+                                           VerticalAlignment="Center" FontSize="12"
+                                           Foreground="#808080" />
+                            </Grid>
+                        </Button>
+                        <Border Height="1" Background="#2e3438" />
+                        <!-- Sessions in this day group -->
+                        <ItemsRepeater ItemsSource="{Binding Sessions}"
+                                       IsVisible="{Binding IsExpanded}">
+                            <ItemsRepeater.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel>
+                                        <controls:SwipeToDeleteButton />
+                                        <Separator Height="1" Margin="0"
+                                                   Background="{StaticResource SufniBackgroundDisabled}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsRepeater.ItemTemplate>
+                        </ItemsRepeater>
+                    </StackPanel>
+                </DataTemplate>
+            </controls:PullableMenuScrollViewer.ItemTemplate>
         </controls:PullableMenuScrollViewer>
 
         <!-- Compare mode session list with checkboxes -->

@@ -131,4 +131,8 @@ public class Session : Synchronizable
     [JsonIgnore]
     [Column("crop_end_sample")]
     public int? CropEndSample { get; set; }
+
+    [JsonIgnore]
+    [Column("duration_seconds")]
+    public int? DurationSeconds { get; set; }
 }

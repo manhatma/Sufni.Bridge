@@ -24,8 +24,6 @@
     </UserControl.Styles>
 
     <StackPanel>
-        <!-- Thick date-group separator (visible when this is first item of a new day) -->
-        <Border Height="2" Background="#2e3438" IsVisible="{Binding IsFirstOfDay}" />
         <Button
             Height="34"
             Padding="10,0,10,0"

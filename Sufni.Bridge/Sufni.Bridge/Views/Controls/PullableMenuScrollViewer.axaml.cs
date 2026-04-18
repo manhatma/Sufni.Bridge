@@ -85,6 +85,15 @@ public partial class PullableMenuScrollViewer : UserControl
         AddHandlersForMousePull();
     }
 
+    protected override void OnPropertyChanged(AvaloniaPropertyChangedEventArgs change)
+    {
+        base.OnPropertyChanged(change);
+        if (change.Property == ItemTemplateProperty && ItemsList is not null && change.NewValue is Avalonia.Controls.Templates.IDataTemplate dt)
+        {
+            ItemsList.ItemTemplate = dt;
+        }
+    }
+
     protected override void OnLoaded(RoutedEventArgs e)
     {
         base.OnLoaded(e);
@@ -122,6 +131,15 @@ public partial class PullableMenuScrollViewer : UserControl
     {
         get => this.GetValue(TopContentProperty);
         set => SetValue(TopContentProperty, value);
+    }
+
+    public static readonly StyledProperty<Avalonia.Controls.Templates.IDataTemplate?> ItemTemplateProperty =
+        AvaloniaProperty.Register<PullableMenuScrollViewer, Avalonia.Controls.Templates.IDataTemplate?>(nameof(ItemTemplate));
+
+    public Avalonia.Controls.Templates.IDataTemplate? ItemTemplate
+    {
+        get => GetValue(ItemTemplateProperty);
+        set => SetValue(ItemTemplateProperty, value);
     }
 
     #endregion
