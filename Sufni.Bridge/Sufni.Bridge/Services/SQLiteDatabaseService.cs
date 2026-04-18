@@ -201,6 +201,8 @@ public class SqLiteDatabaseService : IDatabaseService
         await AddColumnIfMissing("crop_start_sample", "INTEGER");
         await AddColumnIfMissing("crop_end_sample", "INTEGER");
         await AddColumnIfMissing("travel_time_history");
+        await AddColumnIfMissing("travel_time_cropped");
+        await AddColumnIfMissing("velocity_time_cropped");
     }
 
     private class TableInfoRecord

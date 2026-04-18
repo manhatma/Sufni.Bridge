@@ -35,4 +35,6 @@ public class SessionCache
     [Column("crop_start_sample")] public int? CropStartSample { get; set; }
     [Column("crop_end_sample")] public int? CropEndSample { get; set; }
     [Column("travel_time_history")] public string? TravelTimeHistory { get; set; }
+    [Column("travel_time_cropped")] public string? TravelTimeCropped { get; set; }
+    [Column("velocity_time_cropped")] public string? VelocityTimeCropped { get; set; }
 }
