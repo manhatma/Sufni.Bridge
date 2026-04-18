@@ -458,7 +458,8 @@ public partial class SessionListViewModel : ItemListViewModelBase
             var firstTimestamp = selected
                 .Where(s => s.SessionModel.Timestamp.HasValue)
                 .Min(s => s.SessionModel.Timestamp)
-                ?? firstSession.Timestamp;
+                ?? firstSession.Timestamp
+                ?? (int)DateTimeOffset.Now.ToUnixTimeSeconds();
             var newSession = new Session(
                 id: Guid.NewGuid(),
                 name: combinedName,

@@ -72,7 +72,7 @@ public partial class SessionViewModel : ItemViewModelBase
     // Toolbar commands that switch meaning when crop overlay is open
     public System.Windows.Input.ICommand ContextSaveCommand  => IsCropVisible ? CropPage.ApplyCropCommand! : SaveCommand;
     public System.Windows.Input.ICommand ContextResetCommand => IsCropVisible ? CropPage.ResetCropCommand! : ResetCommand;
-    public string SaveLabel => IsCropVisible ? "apply" : "save";
+    public string SaveLabel => IsCropVisible ? (CropPage.IsModified ? "apply" : "cancel") : "save";
 
     partial void OnIsCropVisibleChanged(bool value)
     {
@@ -1039,6 +1039,7 @@ public partial class SessionViewModel : ItemViewModelBase
         NotesPage.ForkSettings.PropertyChanged += (_, _) => EvaluateDirtiness();
         NotesPage.ShockSettings.PropertyChanged += (_, _) => EvaluateDirtiness();
         NotesPage.PropertyChanged += (_, _) => EvaluateDirtiness();
+        CropPage.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(CropPage.IsModified)) OnPropertyChanged(nameof(SaveLabel)); };
 
         ResetImplementation();
     }
@@ -1065,7 +1066,9 @@ public partial class SessionViewModel : ItemViewModelBase
                 id: session.Id,
                 name: Name ?? $"session #{session.Id}",
                 description: NotesPage.Description ?? $"session #{session.Id}",
-                setup: session.Setup)
+                setup: session.Setup,
+                timestamp: session.Timestamp,
+                track: session.Track)
             {
                 FrontSpringRate = NotesPage.ForkSettings.SpringRate,
                 FrontVolSpc = NotesPage.ForkSettings.VolSpc,
@@ -1175,6 +1178,15 @@ public partial class SessionViewModel : ItemViewModelBase
             return;
         }
 
+        // Skip reanalysis if crop is unchanged — treat "full range" as equivalent to "no crop"
+        var existingStart = session.CropStartSample ?? 0;
+        var existingEnd   = session.CropEndSample   ?? CropPage.TotalSamples;
+        if (start == existingStart && end == existingEnd)
+        {
+            IsCropVisible = false;
+            return;
+        }
+
         try
         {
             IsAnalyzingData = true;
@@ -1191,6 +1203,8 @@ public partial class SessionViewModel : ItemViewModelBase
 
             var cropped = fullData.CreateCroppedCopy(start, end);
             await CreateCache(LastKnownBounds, cropped, fullData);
+            CropPage.OriginalStartSample = start;
+            CropPage.OriginalEndSample   = end;
             IsCropVisible = false;
         }
         catch (Exception e)
@@ -1227,6 +1241,8 @@ public partial class SessionViewModel : ItemViewModelBase
             CropPage.ViewBounds = LastKnownBounds;
 
             await CreateCache(LastKnownBounds, fullData);
+            CropPage.OriginalStartSample = 0;
+            CropPage.OriginalEndSample   = CropPage.TotalSamples;
             IsCropVisible = false;
         }
         catch (Exception e)
@@ -1369,8 +1385,10 @@ public partial class SessionViewModel : ItemViewModelBase
                         : fullData.Rear.Present ? fullData.Rear.Travel.Length : 0;
                     CropPage.SampleRate    = fullData.SampleRate;
                     CropPage.TotalSamples  = totalSamples;
-                    CropPage.CropStartSample = session.CropStartSample ?? 0;
-                    CropPage.CropEndSample   = session.CropEndSample   ?? totalSamples;
+                    CropPage.OriginalStartSample = session.CropStartSample ?? 0;
+                    CropPage.OriginalEndSample   = session.CropEndSample   ?? totalSamples;
+                    CropPage.CropStartSample = CropPage.OriginalStartSample;
+                    CropPage.CropEndSample   = CropPage.OriginalEndSample;
                     CropPage.FullData    = fullData;
                     CropPage.ViewBounds  = bounds;
 
@@ -1411,8 +1429,10 @@ public partial class SessionViewModel : ItemViewModelBase
                         : cachedData.Rear.Present ? cachedData.Rear.Travel.Length : 0;
                     CropPage.SampleRate      = cachedData.SampleRate;
                     CropPage.TotalSamples    = totalSamples;
-                    CropPage.CropStartSample = session.CropStartSample ?? 0;
-                    CropPage.CropEndSample   = session.CropEndSample   ?? totalSamples;
+                    CropPage.OriginalStartSample = session.CropStartSample ?? 0;
+                    CropPage.OriginalEndSample   = session.CropEndSample   ?? totalSamples;
+                    CropPage.CropStartSample = CropPage.OriginalStartSample;
+                    CropPage.CropEndSample   = CropPage.OriginalEndSample;
                     CropPage.FullData    = cachedData;
                     CropPage.ViewBounds  = LastKnownBounds;
                 }

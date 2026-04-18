@@ -55,7 +55,7 @@
                 IsVisible="{Binding CropPreview, Converter={x:Static ObjectConverters.IsNotNull}}" />
 
             <!-- Time labels + nudge buttons — aligned with the data area (same 55/14 px inset) -->
-            <Grid ColumnDefinitions="*,*,*" Margin="55,-4,14,0">
+            <Grid ColumnDefinitions="*,*,*" Margin="55,28,14,0">
                 <StackPanel Grid.Column="0" Orientation="Vertical" Spacing="1" HorizontalAlignment="Center">
                     <TextBlock Classes="crop-label" Text="Start" HorizontalAlignment="Center" />
                     <StackPanel Orientation="Horizontal" Spacing="4" HorizontalAlignment="Center">

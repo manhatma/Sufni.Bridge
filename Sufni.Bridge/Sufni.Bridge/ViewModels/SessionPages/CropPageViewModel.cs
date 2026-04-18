@@ -25,11 +25,16 @@ public partial class CropPageViewModel() : PageViewModelBase("Crop")
     internal TelemetryData? FullData { get; set; }
     internal Rect ViewBounds { get; set; }
 
+    // Snapshot of values at the time the crop page was last initialized — used to detect user changes.
+    internal int OriginalStartSample { get; set; }
+    internal int OriginalEndSample { get; set; }
+
     public string CropStartTime => FormatTime(CropStartSample, SampleRate);
     public string CropEndTime   => FormatTime(CropEndSample,   SampleRate);
     public string CropDuration  => FormatTime(CropEndSample - CropStartSample, SampleRate);
 
-    public bool IsCropped => CropStartSample != 0 || CropEndSample != TotalSamples;
+    public bool IsCropped    => CropStartSample != 0 || CropEndSample != TotalSamples;
+    public bool IsModified   => CropStartSample != OriginalStartSample || CropEndSample != OriginalEndSample;
 
     private CancellationTokenSource? _previewCts;
 
@@ -38,6 +43,7 @@ public partial class CropPageViewModel() : PageViewModelBase("Crop")
         OnPropertyChanged(nameof(CropStartTime));
         OnPropertyChanged(nameof(CropDuration));
         OnPropertyChanged(nameof(IsCropped));
+        OnPropertyChanged(nameof(IsModified));
         SchedulePreviewUpdate();
     }
 
@@ -46,6 +52,7 @@ public partial class CropPageViewModel() : PageViewModelBase("Crop")
         OnPropertyChanged(nameof(CropEndTime));
         OnPropertyChanged(nameof(CropDuration));
         OnPropertyChanged(nameof(IsCropped));
+        OnPropertyChanged(nameof(IsModified));
         SchedulePreviewUpdate();
     }
 
