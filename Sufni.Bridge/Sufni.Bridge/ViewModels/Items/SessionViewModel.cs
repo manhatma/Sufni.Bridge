@@ -1161,7 +1161,7 @@ public partial class SessionViewModel : ItemViewModelBase
         NotesPage.ShockSettings.HighSpeedRebound = session.RearHighSpeedRebound;
         NotesPage.ShockSettings.TirePressure = session.RearTirePressure;
 
-        Timestamp = DateTimeOffset.FromUnixTimeSeconds(session.Timestamp ?? 0).DateTime;
+        Timestamp = DateTimeOffset.FromUnixTimeSeconds(session.Timestamp ?? 0).LocalDateTime;
 
         return Task.CompletedTask;
     }
