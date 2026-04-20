@@ -55,6 +55,33 @@ public static class SstTcpClient
         return buffer;
     }
 
+    public static async Task SendTime(IPEndPoint ipEndPoint, long epochUtc)
+    {
+        using Socket client = new(ipEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+        await client.ConnectAsync(ipEndPoint);
+
+        var epoch = BitConverter.GetBytes(epochUtc);
+        if (!BitConverter.IsLittleEndian)
+        {
+            Array.Reverse(epoch);
+        }
+
+        // Request time sync: [0x07 00 00 00][int64 epoch]
+        var payload = new byte[12];
+        payload[0] = 0x07;
+        Buffer.BlockCopy(epoch, 0, payload, 4, 8);
+        await client.SendAsync(payload, SocketFlags.None);
+
+        // Receive STATUS_TIME_SYNCED (11) ack
+        var statusBuffer = new byte[4];
+        await client.ReceiveAsync(statusBuffer);
+        var status = BitConverter.ToInt32(statusBuffer.AsSpan()[..4]);
+        Debug.Assert(status == 11);
+
+        // Send file received signal. Server will close connection after receiving this.
+        await client.SendAsync(new byte[] { 0x05, 0x00, 0x00, 0x00 });
+    }
+
     public static async Task TrashFile(IPEndPoint ipEndPoint, int fileId)
     {
         using Socket client = new(ipEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);

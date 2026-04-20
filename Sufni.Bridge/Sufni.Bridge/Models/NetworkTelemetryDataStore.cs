@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Net;
@@ -46,12 +47,32 @@ public class NetworkTelemetryDataStore : ITelemetryDataStore
         return files.OrderByDescending(f => f.StartTime).ToList();
     }
 
-    public NetworkTelemetryDataStore(IPAddress address, int port)
+    public NetworkTelemetryDataStore(IPAddress address, int port, int protocolVersion = 1)
     {
         ipEndPoint = new IPEndPoint(address, port);
         Name = $"gosst://{ipEndPoint.Address}:{ipEndPoint.Port}";
 
         // We need this to set BoardId
-        Initialization = GetFiles();
+        Initialization = InitializeAsync(protocolVersion);
+    }
+
+    private async Task InitializeAsync(int protocolVersion)
+    {
+        if (protocolVersion >= 2)
+        {
+            // Best-effort RTC sync — DAQs without internet rely on the iPhone
+            // to deliver wall-clock time. A failure here must not block the
+            // file listing.
+            try
+            {
+                await SstTcpClient.SendTime(ipEndPoint, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine($"RTC sync to {Name} failed: {e.Message}");
+            }
+        }
+
+        await GetFiles();
     }
 }

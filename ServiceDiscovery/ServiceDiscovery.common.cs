@@ -6,6 +6,7 @@ public class ServiceAnnouncement
 {
     public ushort Port { get; internal set; }
     public IPAddress Address { get; internal set; } = null!;
+    public int ProtocolVersion { get; internal set; } = 1;
 }
 
 public class ServiceAnnouncementEventArgs : EventArgs

@@ -107,8 +107,9 @@ internal class TelemetryDataStoreService : ITelemetryDataStoreService
     {
         var ipAddress = e.Announcement.Address;
         var port = e.Announcement.Port;
+        var protocolVersion = e.Announcement.ProtocolVersion;
 
-        var ds = new NetworkTelemetryDataStore(ipAddress, port);
+        var ds = new NetworkTelemetryDataStore(ipAddress, port, protocolVersion);
         await ds.Initialization;
 
         lock (DataStoreLock)

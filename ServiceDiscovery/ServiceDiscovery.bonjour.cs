@@ -1,4 +1,5 @@
 using System.Net;
+using System.Text;
 using CoreFoundation;
 using Network;
 
@@ -21,9 +22,33 @@ public class ServiceDiscovery : IServiceDiscovery
         FastOpenEnabled = true,
     };
 
+    private static int ParseProtocolVersion(NWBrowseResult? result)
+    {
+        if (result is null) return 1;
+
+        // NWBrowseResult.TxtRecord throws "handle is null" when the service
+        // announces no TXT record — older DAQ firmware has none, so this path
+        // is the common case and must not crash browsing.
+        NWTxtRecord? txt;
+        try { txt = result.TxtRecord; }
+        catch { return 1; }
+        if (txt is null) return 1;
+
+        var version = 1;
+        txt.GetValue("proto", (_, status, value) =>
+        {
+            if (status != NWTxtRecordFindKey.NonEmptyValue) return;
+            if (int.TryParse(Encoding.ASCII.GetString(value), out var parsed))
+                version = parsed;
+        });
+        return version;
+    }
+
     private void OnServiceAdded(NWBrowseResult? result)
     {
         if (result is null) return;
+
+        var protocolVersion = ParseProtocolVersion(result);
 
         // We need to initiate a connection to obtain the IP address and port,
         // because there is no other way to resolve the address:
@@ -48,6 +73,7 @@ public class ServiceDiscovery : IServiceDiscovery
                     {
                         Address = currentIpAddress,
                         Port = currentPort.Value,
+                        ProtocolVersion = protocolVersion,
                     }));
                     break;
                 }
