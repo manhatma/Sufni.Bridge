@@ -103,7 +103,8 @@ public partial class PullableMenuScrollViewer : UserControl
     protected override void OnSizeChanged(SizeChangedEventArgs e)
     {
         base.OnSizeChanged(e);
-        Scroll.Height = Bounds.Height - TopContainer.Bounds.Height;
+        var h = Bounds.Height - TopContainer.Bounds.Height;
+        Scroll.Height = h >= 0 ? h : 0;
     }
 
     #region Styled properties

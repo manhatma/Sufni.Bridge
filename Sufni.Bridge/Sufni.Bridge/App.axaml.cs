@@ -59,7 +59,8 @@ public partial class App : Application
                 singleViewPlatform.MainView.Loaded += (_, _) =>
                 {
                     var topLevel = TopLevel.GetTopLevel(singleViewPlatform.MainView);
-                    mainViewModel!.SafeAreaPadding = topLevel!.InsetsManager!.SafeAreaPadding;
+                    topLevel!.InsetsManager!.DisplayEdgeToEdge = true;
+                    mainViewModel!.SafeAreaPadding = topLevel.InsetsManager.SafeAreaPadding;
                     topLevel.InsetsManager.SafeAreaChanged += (_, e) =>
                     {
                         mainViewModel.SafeAreaPadding = e.SafeAreaPadding;
