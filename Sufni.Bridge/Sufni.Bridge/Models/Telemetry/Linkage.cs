@@ -167,15 +167,24 @@ public class LeverageRatioData
     private void ProcessWheelLeverageRatio(CsvReader reader)
     {
         var shock = 0.0;
+        double? prevWheel = null;
+        double? prevLeverage = null;
         while (reader.Read())
         {
             var wheel = reader.GetField<double>("Wheel_T");
             var leverage = reader.GetField<double>("Leverage_R");
 
+            if (prevWheel.HasValue && prevLeverage is > 0)
+            {
+                shock += (wheel - prevWheel.Value) / prevLeverage.Value;
+            }
+
             WheelTravel.Add(wheel);
             LeverageRatio.Add(leverage);
             ShockTravel.Add(shock);
-            shock += 1.0 / leverage;
+
+            prevWheel = wheel;
+            prevLeverage = leverage;
         }
     }
 
