@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 88;
+    private const int CurrentPlotVersion = 90;
 
     // Limits concurrent plot generation tasks to reduce peak memory on iOS.
     private static readonly SemaphoreSlim s_plotSemaphore = new(3, 3);
@@ -186,14 +186,13 @@ public partial class SessionViewModel : ItemViewModelBase
                 var frontVelCropTask    = Task.Run(() => SvgToSource(cache.FrontVelocityTimeCropped));
                 var rearVelCropTask     = Task.Run(() => SvgToSource(cache.RearVelocityTimeCropped));
                 var accelCropTask       = Task.Run(() => SvgToSource(cache.AccelerationTimeCropped));
-                var frontFftTask        = Task.Run(() => SvgToSource(cache.FrontTravelFft));
-                var rearFftTask         = Task.Run(() => SvgToSource(cache.RearTravelFft));
+                var combinedFftTask     = Task.Run(() => SvgToSource(cache.CombinedTravelFft));
 
                 await Task.WhenAll(frontVelHistTask, frontLsVelHistTask, rearVelHistTask, rearLsVelHistTask,
                     combBalTask, compBalTask, rebBalTask,
                     velDistCompTask, posVelCompTask, frontPosVelTask, rearPosVelTask,
                     frontTravelCropTask, rearTravelCropTask, frontVelCropTask, rearVelCropTask, accelCropTask,
-                    frontFftTask, rearFftTask);
+                    combinedFftTask);
 
                 var frontVelHistSrc   = frontVelHistTask.Result;
                 var frontLsVelHistSrc = frontLsVelHistTask.Result;
@@ -227,6 +226,16 @@ public partial class SessionViewModel : ItemViewModelBase
                         BalancePage.CombinedBalance    = SourceToImage(combBalSrc);
                         BalancePage.CompressionBalance = SourceToImage(compBalSrc);
                         BalancePage.ReboundBalance     = SourceToImage(rebBalSrc);
+                        BalancePage.CombinedTravelFft  = SourceToImage(combinedFftTask.Result);
+                        if (cache.BalanceMetricsJson is not null)
+                        {
+                            try
+                            {
+                                var m = JsonSerializer.Deserialize<BalanceMetrics>(cache.BalanceMetricsJson);
+                                if (m is not null) BalancePage.Metrics.Apply(m);
+                            }
+                            catch { /* corrupt metrics cache; will be rebuilt */ }
+                        }
                     }
                     else
                     {
@@ -238,8 +247,6 @@ public partial class SessionViewModel : ItemViewModelBase
                     SpringPage.RearTravelTimeCropped          = SourceToImage(rearTravelCropTask.Result);
                     DamperPage.FrontVelocityTimeCropped       = SourceToImage(frontVelCropTask.Result);
                     DamperPage.RearVelocityTimeCropped        = SourceToImage(rearVelCropTask.Result);
-                    SpringPage.FrontTravelFft                 = SourceToImage(frontFftTask.Result);
-                    SpringPage.RearTravelFft                  = SourceToImage(rearFftTask.Result);
                     MiscPage.AccelerationTimeCropped          = SourceToImage(accelCropTask.Result);
                     MiscPage.PositionVelocityComparison       = SourceToImage(posVelCompSrc);
                     MiscPage.FrontPositionVelocity            = SourceToImage(frontPosVelSrc);
@@ -495,14 +502,6 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { DamperPage.FrontVelocityTimeCropped = SourceToImage(src); });
             }));
 
-            tasks.Add(ThrottledPlotTask(() =>
-            {
-                var fft = new TravelFftPlot(new Plot(), SuspensionType.Front);
-                fft.LoadTelemetryData(telemetryData);
-                sessionCache.FrontTravelFft = fft.Plot.GetSvgXml(width, height);
-                var src = SvgToSource(sessionCache.FrontTravelFft);
-                Dispatcher.UIThread.Post(() => { SpringPage.FrontTravelFft = SourceToImage(src); });
-            }));
         }
 
         if (telemetryData.Rear.Present)
@@ -525,13 +524,25 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { DamperPage.RearVelocityTimeCropped = SourceToImage(src); });
             }));
 
+        }
+
+        // Combined Front+Rear FFT and Balance metrics — only when both sides are present.
+        if (telemetryData.Front.Present && telemetryData.Rear.Present)
+        {
             tasks.Add(ThrottledPlotTask(() =>
             {
-                var fft = new TravelFftPlot(new Plot(), SuspensionType.Rear);
+                var fft = new CombinedTravelFftPlot(new Plot());
                 fft.LoadTelemetryData(telemetryData);
-                sessionCache.RearTravelFft = fft.Plot.GetSvgXml(width, height);
-                var src = SvgToSource(sessionCache.RearTravelFft);
-                Dispatcher.UIThread.Post(() => { SpringPage.RearTravelFft = SourceToImage(src); });
+                sessionCache.CombinedTravelFft = fft.Plot.GetSvgXml(width, height);
+                var src = SvgToSource(sessionCache.CombinedTravelFft);
+                Dispatcher.UIThread.Post(() => { BalancePage.CombinedTravelFft = SourceToImage(src); });
+            }));
+
+            tasks.Add(Task.Run(() =>
+            {
+                var metrics = telemetryData.CalculateBalanceMetrics();
+                sessionCache.BalanceMetricsJson = JsonSerializer.Serialize(metrics);
+                Dispatcher.UIThread.Post(() => BalancePage.Metrics.Apply(metrics));
             }));
         }
 
@@ -1559,8 +1570,6 @@ public partial class SessionViewModel : ItemViewModelBase
             svgEntries.Add(cache.FrontRearTravelScatter);
             svgEntries.Add(cache.FrontTravelHistogram);
             svgEntries.Add(cache.RearTravelHistogram);
-            svgEntries.Add(cache.FrontTravelFft);
-            svgEntries.Add(cache.RearTravelFft);
 
             // Damper tab
             svgEntries.Add(cache.VelocityDistributionComparison);
@@ -1570,6 +1579,7 @@ public partial class SessionViewModel : ItemViewModelBase
             svgEntries.Add(cache.RearLowSpeedVelocityHistogram);
 
             // Balance tab
+            svgEntries.Add(cache.CombinedTravelFft);
             svgEntries.Add(cache.CombinedBalance);
             svgEntries.Add(cache.CompressionBalance);
             svgEntries.Add(cache.ReboundBalance);

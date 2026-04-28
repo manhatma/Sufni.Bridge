@@ -22,8 +22,6 @@
             <Image IsVisible="{Binding RearTravelHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearTravelHistogram}" />
             <Image IsVisible="{Binding FrontTravelTimeCropped, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontTravelTimeCropped}" />
             <Image IsVisible="{Binding RearTravelTimeCropped, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearTravelTimeCropped}" />
-            <Image IsVisible="{Binding FrontTravelFft, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontTravelFft}" />
-            <Image IsVisible="{Binding RearTravelFft, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearTravelFft}" />
         </StackPanel>
     </ScrollViewer>
 

@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Numerics;
 using MathNet.Numerics;
 using MathNet.Numerics.Distributions;
+using MathNet.Numerics.IntegralTransforms;
 using MathNet.Numerics.Statistics;
 using MessagePack;
 using Generate = ScottPlot.Generate;
@@ -82,6 +84,25 @@ public record BalanceData(
     List<double> RearVelocity,
     List<double> RearTrend,
     double MeanSignedDeviation);
+
+public record TravelSpectrum(double[] Frequencies, double[] Amplitudes);
+
+public record BalanceMetrics(
+    double? FrontSagPct,
+    double? RearSagPct,
+    double? SagDifferencePp,
+    double? FrontP95Pct,
+    double? RearP95Pct,
+    int? FrontBottomouts,
+    int? RearBottomouts,
+    double? CompressionVelocityRatio,
+    double? ReboundVelocityRatio,
+    double? CompressionMsd,
+    double? ReboundMsd,
+    double? FrontPeakFrequencyHz,
+    double? RearPeakFrequencyHz,
+    double? FrequencyDifferenceHz,
+    double? PeakAmplitudeRatio);
 
 [MessagePackObject(keyAsPropertyName: true)]
 public class TelemetryData
@@ -1246,6 +1267,179 @@ public class TelemetryData
             [.. rearTravelVelocity.Item2],
             rearTravelVelocity.Item1.Select(t => rearPoly(t)).ToList(),
             msd);
+    }
+
+    #endregion
+
+    #region Spectrum / balance metrics
+
+    // Welch's method: Hanning window, 50% overlap, averaged across segments.
+    // Returns (frequencies in Hz, single-sided amplitude in mm). Empty arrays if signal is too short.
+    public static TravelSpectrum ComputeWelchSpectrum(double[] signal, int sampleRate, int segLen = 4096)
+    {
+        if (signal == null || sampleRate <= 0) return new TravelSpectrum([], []);
+
+        int n = signal.Length;
+        if (segLen > n) segLen = n;
+        if ((segLen & 1) != 0) segLen--;
+        if (segLen < 64) return new TravelSpectrum([], []);
+
+        var window = Window.Hann(segLen);
+        double winSum = 0;
+        for (int i = 0; i < segLen; i++) winSum += window[i];
+
+        int step = segLen / 2;
+        int bins = segLen / 2;
+        var avgPower = new double[bins];
+        int segCount = 0;
+        var buffer = new Complex[segLen];
+
+        for (int start = 0; start + segLen <= n; start += step)
+        {
+            double mean = 0;
+            for (int i = 0; i < segLen; i++) mean += signal[start + i];
+            mean /= segLen;
+
+            for (int i = 0; i < segLen; i++)
+                buffer[i] = new Complex((signal[start + i] - mean) * window[i], 0);
+
+            Fourier.Forward(buffer, FourierOptions.NoScaling);
+
+            for (int k = 0; k < bins; k++)
+            {
+                var m = buffer[k].Magnitude;
+                avgPower[k] += m * m;
+            }
+            segCount++;
+        }
+
+        if (segCount == 0) return new TravelSpectrum([], []);
+
+        double powerScale = 2.0 / (winSum * winSum);
+        double dF = (double)sampleRate / segLen;
+
+        var freqs = new double[bins];
+        var amps = new double[bins];
+        for (int k = 0; k < bins; k++)
+        {
+            freqs[k] = k * dF;
+            var power = (avgPower[k] / segCount) * powerScale;
+            amps[k] = Math.Sqrt(power);
+        }
+        return new TravelSpectrum(freqs, amps);
+    }
+
+    public static (double Frequency, double Amplitude) FindDominantPeak(
+        TravelSpectrum spectrum, double fMin, double fMax)
+    {
+        double bestF = double.NaN, bestA = 0;
+        for (int i = 1; i < spectrum.Amplitudes.Length; i++)
+        {
+            var f = spectrum.Frequencies[i];
+            if (f < fMin || f > fMax) continue;
+            if (spectrum.Amplitudes[i] > bestA) { bestA = spectrum.Amplitudes[i]; bestF = f; }
+        }
+        return (bestF, bestA);
+    }
+
+    public BalanceMetrics CalculateBalanceMetrics()
+    {
+        double? fSag = null, rSag = null, sagDiff = null;
+        double? fP95Pct = null, rP95Pct = null;
+        int? fBO = null, rBO = null;
+        double? compRatio = null, rebRatio = null;
+        double? compMsd = null, rebMsd = null;
+        double? fPeak = null, rPeak = null, fAmp = null, rAmp = null;
+        double? freqDiff = null, ampRatio = null;
+
+        var maxF = Linkage?.MaxFrontTravel ?? 0;
+        var maxR = Linkage?.MaxRearTravel ?? 0;
+
+        if (Front.Present)
+        {
+            var ts = CalculateDetailedTravelStatistics(SuspensionType.Front);
+            if (maxF > 0)
+            {
+                fSag = ts.Average / maxF * 100.0;
+                fP95Pct = ts.P95 / maxF * 100.0;
+            }
+            fBO = ts.Bottomouts;
+        }
+        if (Rear.Present)
+        {
+            var ts = CalculateDetailedTravelStatistics(SuspensionType.Rear);
+            if (maxR > 0)
+            {
+                rSag = ts.Average / maxR * 100.0;
+                rP95Pct = ts.P95 / maxR * 100.0;
+            }
+            rBO = ts.Bottomouts;
+        }
+        if (fSag.HasValue && rSag.HasValue)
+            sagDiff = Math.Abs(fSag.Value - rSag.Value);
+
+        if (Front.Present && Rear.Present)
+        {
+            var fv = CalculateVelocityStatistics(SuspensionType.Front);
+            var rv = CalculateVelocityStatistics(SuspensionType.Rear);
+            if (rv.AverageCompression > 1e-6)
+                compRatio = fv.AverageCompression / rv.AverageCompression;
+            if (Math.Abs(rv.AverageRebound) > 1e-6)
+                rebRatio = Math.Abs(fv.AverageRebound) / Math.Abs(rv.AverageRebound);
+
+            // Normalize MSD by the larger of front/rear peak velocity (matches BalancePlot's
+            // on-plot label, which is in % of full-scale velocity, not raw mm/s).
+            try
+            {
+                var b = CalculateBalance(BalanceType.Compression);
+                var mv = Math.Max(
+                    b.FrontVelocity.Select(Math.Abs).DefaultIfEmpty(0).Max(),
+                    b.RearVelocity.Select(Math.Abs).DefaultIfEmpty(0).Max());
+                if (mv > 1e-6) compMsd = b.MeanSignedDeviation / mv * 100.0;
+            }
+            catch { /* not enough strokes for polynomial fit */ }
+            try
+            {
+                var b = CalculateBalance(BalanceType.Rebound);
+                var mv = Math.Max(
+                    b.FrontVelocity.Select(Math.Abs).DefaultIfEmpty(0).Max(),
+                    b.RearVelocity.Select(Math.Abs).DefaultIfEmpty(0).Max());
+                if (mv > 1e-6) rebMsd = b.MeanSignedDeviation / mv * 100.0;
+            }
+            catch { /* not enough strokes for polynomial fit */ }
+        }
+
+        if (Front.Present && Front.Travel != null && Front.Travel.Length >= 4096)
+        {
+            var spec = ComputeWelchSpectrum(Front.Travel, SampleRate);
+            if (spec.Amplitudes.Length > 0)
+            {
+                var (f, a) = FindDominantPeak(spec, 1.0, 5.0);
+                if (!double.IsNaN(f)) { fPeak = f; fAmp = a; }
+            }
+        }
+        if (Rear.Present && Rear.Travel != null && Rear.Travel.Length >= 4096)
+        {
+            var spec = ComputeWelchSpectrum(Rear.Travel, SampleRate);
+            if (spec.Amplitudes.Length > 0)
+            {
+                var (f, a) = FindDominantPeak(spec, 1.0, 5.0);
+                if (!double.IsNaN(f)) { rPeak = f; rAmp = a; }
+            }
+        }
+        if (fPeak.HasValue && rPeak.HasValue)
+            freqDiff = Math.Abs(fPeak.Value - rPeak.Value);
+        if (fAmp.HasValue && rAmp.HasValue && rAmp.Value > 1e-9)
+            ampRatio = fAmp.Value / rAmp.Value;
+
+        return new BalanceMetrics(
+            fSag, rSag, sagDiff,
+            fP95Pct, rP95Pct,
+            fBO, rBO,
+            compRatio, rebRatio,
+            compMsd, rebMsd,
+            fPeak, rPeak,
+            freqDiff, ampRatio);
     }
 
     #endregion
