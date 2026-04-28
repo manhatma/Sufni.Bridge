@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 90;
+    private const int CurrentPlotVersion = 93;
 
     // Limits concurrent plot generation tasks to reduce peak memory on iOS.
     private static readonly SemaphoreSlim s_plotSemaphore = new(3, 3);
@@ -40,6 +40,7 @@ public partial class SessionViewModel : ItemViewModelBase
     private SpringPageViewModel SpringPage { get; } = new();
     private DamperPageViewModel DamperPage { get; } = new();
     private BalancePageViewModel BalancePage { get; } = new();
+    private TuningPageViewModel TuningPage { get; } = new();
     private MiscPageViewModel MiscPage { get; } = new();
     private SummaryPageViewModel SummaryPage { get; } = new();
     public CropPageViewModel CropPage { get; } = new();
@@ -479,7 +480,11 @@ public partial class SessionViewModel : ItemViewModelBase
         }
         else
         {
-            Dispatcher.UIThread.Post(() => { Pages.Remove(BalancePage); });
+            Dispatcher.UIThread.Post(() =>
+            {
+                Pages.Remove(BalancePage);
+                Pages.Remove(TuningPage);
+            });
         }
 
         if (telemetryData.Front.Present)
@@ -538,11 +543,29 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { BalancePage.CombinedTravelFft = SourceToImage(src); });
             }));
 
-            tasks.Add(Task.Run(() =>
+            tasks.Add(Task.Run(async () =>
             {
                 var metrics = telemetryData.CalculateBalanceMetrics();
                 sessionCache.BalanceMetricsJson = JsonSerializer.Serialize(metrics);
                 Dispatcher.UIThread.Post(() => BalancePage.Metrics.Apply(metrics));
+
+                // Tuning suggestions — reuse already-computed bands + lightweight peak/stroke stats.
+                var fb = await frontBandsTask;
+                var rb = await rearBandsTask;
+                var fv = telemetryData.CalculateVelocityStatistics(SuspensionType.Front);
+                var rv = telemetryData.CalculateVelocityStatistics(SuspensionType.Rear);
+                var inputs = new TuningInputs(
+                    metrics,
+                    fb,
+                    rb,
+                    FrontPeakCompressionMmS:        fv.MaxCompression > 0 ? fv.MaxCompression : (double?)null,
+                    RearPeakCompressionMmS:         rv.MaxCompression > 0 ? rv.MaxCompression : (double?)null,
+                    FrontPeakReboundMmS:            fv.MaxRebound < 0 ? Math.Abs(fv.MaxRebound) : (double?)null,
+                    RearPeakReboundMmS:             rv.MaxRebound < 0 ? Math.Abs(rv.MaxRebound) : (double?)null,
+                    FrontCompressionStrokeCount:    telemetryData.Front.Strokes.Compressions.Length,
+                    RearCompressionStrokeCount:     telemetryData.Rear.Strokes.Compressions.Length);
+                var suggestions = TuningEngine.Evaluate(inputs);
+                Dispatcher.UIThread.Post(() => TuningPage.Apply(suggestions));
             }));
         }
 
@@ -1121,7 +1144,7 @@ public partial class SessionViewModel : ItemViewModelBase
     {
         session = new Session();
         IsInDatabase = false;
-        Pages = [SummaryPage, SpringPage, DamperPage, BalancePage, MiscPage, NotesPage];
+        Pages = [SummaryPage, SpringPage, DamperPage, BalancePage, TuningPage, MiscPage, NotesPage];
         SummaryPage.ChangeSetupCommand = new AsyncRelayCommand(HandleSetupReassign);
         CropPage.ApplyCropCommand = new AsyncRelayCommand(HandleApplyCrop);
         CropPage.ResetCropCommand = new AsyncRelayCommand(HandleResetCrop);
@@ -1131,7 +1154,7 @@ public partial class SessionViewModel : ItemViewModelBase
     {
         this.session = session;
         IsInDatabase = fromDatabase;
-        Pages = [SummaryPage, SpringPage, DamperPage, BalancePage, MiscPage, NotesPage];
+        Pages = [SummaryPage, SpringPage, DamperPage, BalancePage, TuningPage, MiscPage, NotesPage];
         SummaryPage.ChangeSetupCommand = new AsyncRelayCommand(HandleSetupReassign);
         CropPage.ApplyCropCommand = new AsyncRelayCommand(HandleApplyCrop);
         CropPage.ResetCropCommand = new AsyncRelayCommand(HandleResetCrop);
