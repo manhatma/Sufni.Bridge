@@ -53,10 +53,11 @@ public class PositionVelocityComparisonPlot(Plot plot) : TelemetryPlot(plot)
             }
         }
 
-        if (telemetryData.Front.Present)
-            AddSuspension(SuspensionType.Front);
+        // Rear first, so Front is drawn on top.
         if (telemetryData.Rear.Present)
             AddSuspension(SuspensionType.Rear);
+        if (telemetryData.Front.Present)
+            AddSuspension(SuspensionType.Front);
 
         // Add 10% padding and round up to nearest 500 independently
         var topLimit = Math.Ceiling(velocityMaxPositive * 1.1 / 500.0) * 500.0;

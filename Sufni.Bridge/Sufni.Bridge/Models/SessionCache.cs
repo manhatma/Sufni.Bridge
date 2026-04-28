@@ -35,7 +35,11 @@ public class SessionCache
     [Column("crop_start_sample")] public int? CropStartSample { get; set; }
     [Column("crop_end_sample")] public int? CropEndSample { get; set; }
     [Column("travel_time_history")] public string? TravelTimeHistory { get; set; }
-    [Column("travel_time_cropped")] public string? TravelTimeCropped { get; set; }
-    [Column("velocity_time_cropped")] public string? VelocityTimeCropped { get; set; }
+    [Column("front_travel_time_cropped")] public string? FrontTravelTimeCropped { get; set; }
+    [Column("rear_travel_time_cropped")] public string? RearTravelTimeCropped { get; set; }
+    [Column("front_velocity_time_cropped")] public string? FrontVelocityTimeCropped { get; set; }
+    [Column("rear_velocity_time_cropped")] public string? RearVelocityTimeCropped { get; set; }
     [Column("acceleration_time_cropped")] public string? AccelerationTimeCropped { get; set; }
+    [Column("front_travel_fft")] public string? FrontTravelFft { get; set; }
+    [Column("rear_travel_fft")] public string? RearTravelFft { get; set; }
 }

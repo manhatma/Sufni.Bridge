@@ -4,82 +4,74 @@ using Sufni.Bridge.Models.Telemetry;
 
 namespace Sufni.Bridge.Plots;
 
-/// <summary>
-/// Time-history line chart of front and rear velocity for the cropped session slice,
-/// with a Front/Rear legend anchored in the lower-right corner.
-/// </summary>
-public class VelocityTimeCroppedPlot(Plot plot) : TelemetryPlot(plot)
+public class VelocityTimeCroppedPlot(Plot plot, SuspensionType type) : TelemetryPlot(plot)
 {
+    private static readonly Color StatColor = Color.FromHex("#FFD700");
+
     public override void LoadTelemetryData(TelemetryData telemetryData)
     {
         base.LoadTelemetryData(telemetryData);
 
-        SetTitle("Velocity over time");
-        // Wider left padding — velocity tick labels are ~5 chars (e.g. "4.000"/"-4.000")
-        // vs ~3 for travel, so the Y axis label ("Velocity (mm/s)") would otherwise be clipped.
-        Plot.Layout.Fixed(new PixelPadding(72, 14, 50, 40));
+        var side = type == SuspensionType.Front ? telemetryData.Front : telemetryData.Rear;
+        SetTitle(type == SuspensionType.Front
+            ? "Front velocity over time"
+            : "Rear velocity over time");
+        Plot.Layout.Fixed(new PixelPadding(55, 14, 50, 40));
         Plot.Axes.Bottom.Label.Text = "Time (s)";
-        Plot.Axes.Left.Label.Text = "Velocity (mm/s)";
+        Plot.Axes.Left.Label.Text = "Velocity (m/s)";
+
+        if (!side.Present || side.Velocity is not { Length: > 0 })
+            return;
 
         var sampleRate = telemetryData.SampleRate;
         var period = 1.0 / sampleRate;
+        var color = type == SuspensionType.Front ? FrontColor : RearColor;
 
-        double maxDuration = 0;
+        var v = new double[side.Velocity.Length];
         double vMax = double.NegativeInfinity;
         double vMin = double.PositiveInfinity;
-
-        void Track(double[] v)
+        double sumSq = 0;
+        for (int i = 0; i < v.Length; i++)
         {
-            for (int i = 0; i < v.Length; i++)
-            {
-                if (v[i] > vMax) vMax = v[i];
-                if (v[i] < vMin) vMin = v[i];
-            }
+            v[i] = side.Velocity[i] / 1000.0;
+            if (v[i] > vMax) vMax = v[i];
+            if (v[i] < vMin) vMin = v[i];
+            sumSq += v[i] * v[i];
         }
+        var rms = Math.Sqrt(sumSq / v.Length);
 
-        if (telemetryData.Front.Present && telemetryData.Front.Velocity is { Length: > 0 })
-        {
-            var sig = Plot.Add.Signal(telemetryData.Front.Velocity, period);
-            sig.Color = FrontColor;
-            sig.LineWidth = 1;
-            maxDuration = Math.Max(maxDuration, telemetryData.Front.Velocity.Length * period);
-            Track(telemetryData.Front.Velocity);
-        }
+        var sig = Plot.Add.Signal(v, period);
+        sig.Color = color;
+        sig.LineWidth = 1;
+        var maxDuration = v.Length * period;
 
-        if (telemetryData.Rear.Present && telemetryData.Rear.Velocity is { Length: > 0 })
-        {
-            var sig = Plot.Add.Signal(telemetryData.Rear.Velocity, period);
-            sig.Color = RearColor;
-            sig.LineWidth = 1;
-            maxDuration = Math.Max(maxDuration, telemetryData.Rear.Velocity.Length * period);
-            Track(telemetryData.Rear.Velocity);
-        }
-
-        if (double.IsInfinity(vMax)) { vMax = 1; vMin = -1; }
         var span = Math.Max(vMax - vMin, 1e-9);
         var top    = vMax + span * 0.05;
         var bottom = vMin - span * 0.05;
         Plot.Axes.SetLimitsY(bottom: bottom, top: top);
-
-        if (maxDuration > 0)
-            Plot.Axes.SetLimitsX(left: 0, right: maxDuration);
+        Plot.Axes.SetLimitsX(left: 0, right: maxDuration);
 
         Plot.Add.HorizontalLine(0, 1f, Color.FromHex("#dddddd"), LinePattern.Dotted);
 
-        // Legend — upper-left corner, stacked vertically
-        var range = top - bottom;
-        var frontLegend = Plot.Add.Text("Front", 0, top);
-        frontLegend.LabelFontColor = FrontColor;
-        frontLegend.LabelFontSize = 12;
-        frontLegend.LabelAlignment = Alignment.UpperLeft;
-        frontLegend.LabelOffsetX = 6;
-        frontLegend.LabelOffsetY = 6;
+        static string N(double val) =>
+            val.ToString("F2").PadLeft(6).Replace(' ', ' ');
 
-        var rearLegend = Plot.Add.Text("Rear", 0, top - range * 0.08);
-        rearLegend.LabelFontColor = RearColor;
-        rearLegend.LabelFontSize = 12;
-        rearLegend.LabelAlignment = Alignment.UpperLeft;
-        rearLegend.LabelOffsetX = 6;
-        rearLegend.LabelOffsetY = 6;
+        var statsText =
+            $"max: {N(vMax)}\n" +
+            $"min: {N(vMin)}\n" +
+            $"rms: {N(rms)}";
+
+        var statsLabel = Plot.Add.Text(statsText, maxDuration, top);
+        statsLabel.LabelFontColor = StatColor;
+        statsLabel.LabelFontSize = 9;
+        statsLabel.LabelFontName = "Menlo";
+        statsLabel.LabelAlignment = Alignment.UpperRight;
+        statsLabel.LabelOffsetX = -10;
+        statsLabel.LabelOffsetY = 6;
+        statsLabel.LabelBold = true;
+        statsLabel.LabelBackgroundColor = Color.FromHex("#15191C").WithAlpha(220);
+        statsLabel.LabelBorderColor = StatColor.WithAlpha(80);
+        statsLabel.LabelBorderWidth = 1;
+        statsLabel.LabelPadding = 5;
     }
 }

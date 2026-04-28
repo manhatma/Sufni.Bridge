@@ -9,4 +9,8 @@ public partial class SpringPageViewModel() : PageViewModelBase("Spring")
     [ObservableProperty] private SvgImage? frontRearTravelScatter;
     [ObservableProperty] private SvgImage? frontTravelHistogram;
     [ObservableProperty] private SvgImage? rearTravelHistogram;
+    [ObservableProperty] private SvgImage? frontTravelTimeCropped;
+    [ObservableProperty] private SvgImage? rearTravelTimeCropped;
+    [ObservableProperty] private SvgImage? frontTravelFft;
+    [ObservableProperty] private SvgImage? rearTravelFft;
 }

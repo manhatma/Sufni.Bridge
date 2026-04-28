@@ -4,10 +4,6 @@ using Sufni.Bridge.Models.Telemetry;
 
 namespace Sufni.Bridge.Plots;
 
-/// <summary>
-/// Time-history line chart of front and rear acceleration (in g) for the cropped session slice.
-/// Acceleration is the numerical derivative of the stored velocity array, converted from mm/s² to g.
-/// </summary>
 public class AccelerationTimeCroppedPlot(Plot plot) : TelemetryPlot(plot)
 {
     private const double GravityMmPerS2 = 9806.65;
@@ -27,16 +23,6 @@ public class AccelerationTimeCroppedPlot(Plot plot) : TelemetryPlot(plot)
         double maxDuration = 0;
         double aMax = double.NegativeInfinity;
         double aMin = double.PositiveInfinity;
-        double? frontRms = null;
-        double? rearRms = null;
-
-        static double Rms(double[] a)
-        {
-            if (a.Length == 0) return 0;
-            double sum = 0;
-            for (int i = 0; i < a.Length; i++) sum += a[i] * a[i];
-            return Math.Sqrt(sum / a.Length);
-        }
 
         double[] ToAcceleration(double[] v)
         {
@@ -50,6 +36,19 @@ public class AccelerationTimeCroppedPlot(Plot plot) : TelemetryPlot(plot)
             return a;
         }
 
+        static (double Max, double Min, double Rms) Stats(double[] a)
+        {
+            if (a.Length == 0) return (0, 0, 0);
+            double mx = double.NegativeInfinity, mn = double.PositiveInfinity, sumSq = 0;
+            for (int i = 0; i < a.Length; i++)
+            {
+                if (a[i] > mx) mx = a[i];
+                if (a[i] < mn) mn = a[i];
+                sumSq += a[i] * a[i];
+            }
+            return (mx, mn, Math.Sqrt(sumSq / a.Length));
+        }
+
         void Track(double[] a)
         {
             for (int i = 0; i < a.Length; i++)
@@ -57,6 +56,21 @@ public class AccelerationTimeCroppedPlot(Plot plot) : TelemetryPlot(plot)
                 if (a[i] > aMax) aMax = a[i];
                 if (a[i] < aMin) aMin = a[i];
             }
+        }
+
+        (double Max, double Min, double Rms)? frontStats = null;
+        (double Max, double Min, double Rms)? rearStats = null;
+
+        // Rear first, so Front is drawn on top.
+        if (telemetryData.Rear.Present && telemetryData.Rear.Velocity is { Length: > 0 })
+        {
+            var accRear = ToAcceleration(telemetryData.Rear.Velocity);
+            var sig = Plot.Add.Signal(accRear, period);
+            sig.Color = RearColor;
+            sig.LineWidth = 1;
+            maxDuration = Math.Max(maxDuration, accRear.Length * period);
+            Track(accRear);
+            rearStats = Stats(accRear);
         }
 
         if (telemetryData.Front.Present && telemetryData.Front.Velocity is { Length: > 0 })
@@ -67,18 +81,7 @@ public class AccelerationTimeCroppedPlot(Plot plot) : TelemetryPlot(plot)
             sig.LineWidth = 1;
             maxDuration = Math.Max(maxDuration, accFront.Length * period);
             Track(accFront);
-            frontRms = Rms(accFront);
-        }
-
-        if (telemetryData.Rear.Present && telemetryData.Rear.Velocity is { Length: > 0 })
-        {
-            var accRear = ToAcceleration(telemetryData.Rear.Velocity);
-            var sig = Plot.Add.Signal(accRear, period);
-            sig.Color = RearColor;
-            sig.LineWidth = 1;
-            maxDuration = Math.Max(maxDuration, accRear.Length * period);
-            Track(accRear);
-            rearRms = Rms(accRear);
+            frontStats = Stats(accFront);
         }
 
         if (double.IsInfinity(aMax)) { aMax = 1; aMin = -1; }
@@ -108,27 +111,34 @@ public class AccelerationTimeCroppedPlot(Plot plot) : TelemetryPlot(plot)
         rearLegend.LabelOffsetX = 6;
         rearLegend.LabelOffsetY = 6;
 
-        // RMS readout — upper-right corner, same stacking/formatting style as the legend
+        // Stats readouts (max/min/rms) — upper-right per side, stacked
         var rightX = maxDuration > 0 ? maxDuration : 1.0;
-        var culture = System.Globalization.CultureInfo.InvariantCulture;
-        if (frontRms is not null)
+
+        static string N(double val) => val.ToString("F2").PadLeft(6).Replace(' ', ' ');
+
+        void AddStats((double Max, double Min, double Rms) s, Color color, double anchorY, Alignment alignment, int offsetY)
         {
-            var rmsFront = Plot.Add.Text(string.Format(culture, "rms = {0:0.0}", frontRms.Value), rightX, top);
-            rmsFront.LabelFontColor = FrontColor;
-            rmsFront.LabelFontSize = 12;
-            rmsFront.LabelAlignment = Alignment.UpperRight;
-            rmsFront.LabelOffsetX = -6;
-            rmsFront.LabelOffsetY = 6;
+            var text =
+                $"max: {N(s.Max)}\n" +
+                $"min: {N(s.Min)}\n" +
+                $"rms: {N(s.Rms)}";
+            var label = Plot.Add.Text(text, rightX, anchorY);
+            label.LabelFontColor = color;
+            label.LabelFontSize = 9;
+            label.LabelFontName = "Menlo";
+            label.LabelAlignment = alignment;
+            label.LabelOffsetX = -10;
+            label.LabelOffsetY = offsetY;
+            label.LabelBold = true;
+            label.LabelBackgroundColor = Color.FromHex("#15191C").WithAlpha(220);
+            label.LabelBorderColor = color.WithAlpha(80);
+            label.LabelBorderWidth = 1;
+            label.LabelPadding = 5;
         }
-        if (rearRms is not null)
-        {
-            var rearY = frontRms is not null ? top - range * 0.08 : top;
-            var rmsRear = Plot.Add.Text(string.Format(culture, "rms = {0:0.0}", rearRms.Value), rightX, rearY);
-            rmsRear.LabelFontColor = RearColor;
-            rmsRear.LabelFontSize = 12;
-            rmsRear.LabelAlignment = Alignment.UpperRight;
-            rmsRear.LabelOffsetX = -6;
-            rmsRear.LabelOffsetY = 6;
-        }
+
+        if (frontStats is not null)
+            AddStats(frontStats.Value, FrontColor, top, Alignment.UpperRight, 6);
+        if (rearStats is not null)
+            AddStats(rearStats.Value, RearColor, bottom, Alignment.LowerRight, -6);
     }
 }

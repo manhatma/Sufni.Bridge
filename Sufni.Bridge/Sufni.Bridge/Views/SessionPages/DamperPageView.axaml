@@ -46,6 +46,9 @@
                     LsrPercentage="{Binding RearLsrPercentage}" />
             </StackPanel>
 
+            <Image IsVisible="{Binding FrontVelocityTimeCropped, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontVelocityTimeCropped}" />
+            <Image IsVisible="{Binding RearVelocityTimeCropped, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearVelocityTimeCropped}" />
+
         </StackPanel>
     </ScrollViewer>
 </UserControl>

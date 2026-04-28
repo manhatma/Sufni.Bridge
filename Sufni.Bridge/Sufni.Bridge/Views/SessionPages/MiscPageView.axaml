@@ -16,8 +16,6 @@
 
     <ScrollViewer Width="{Binding $parent[ScrollViewer].Bounds.Width}" Height="{Binding $parent[ScrollViewer].Bounds.Height}" IsScrollChainingEnabled="False">
         <StackPanel Orientation="Vertical">
-            <Image IsVisible="{Binding TravelTimeCropped, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding TravelTimeCropped}" />
-            <Image IsVisible="{Binding VelocityTimeCropped, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding VelocityTimeCropped}" />
             <Image IsVisible="{Binding AccelerationTimeCropped, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding AccelerationTimeCropped}" />
             <Image IsVisible="{Binding PositionVelocityComparison, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding PositionVelocityComparison}" />
             <Image IsVisible="{Binding FrontPositionVelocity, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontPositionVelocity}" />

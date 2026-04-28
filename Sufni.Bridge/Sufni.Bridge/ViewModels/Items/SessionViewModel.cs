@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 72;
+    private const int CurrentPlotVersion = 88;
 
     // Limits concurrent plot generation tasks to reduce peak memory on iOS.
     private static readonly SemaphoreSlim s_plotSemaphore = new(3, 3);
@@ -181,14 +181,19 @@ public partial class SessionViewModel : ItemViewModelBase
                 var posVelCompTask   = Task.Run(() => SvgToSource(cache.PositionVelocityComparison));
                 var frontPosVelTask  = Task.Run(() => SvgToSource(cache.FrontPositionVelocity));
                 var rearPosVelTask   = Task.Run(() => SvgToSource(cache.RearPositionVelocity));
-                var travelCropTask   = Task.Run(() => SvgToSource(cache.TravelTimeCropped));
-                var velocityCropTask = Task.Run(() => SvgToSource(cache.VelocityTimeCropped));
-                var accelCropTask    = Task.Run(() => SvgToSource(cache.AccelerationTimeCropped));
+                var frontTravelCropTask = Task.Run(() => SvgToSource(cache.FrontTravelTimeCropped));
+                var rearTravelCropTask  = Task.Run(() => SvgToSource(cache.RearTravelTimeCropped));
+                var frontVelCropTask    = Task.Run(() => SvgToSource(cache.FrontVelocityTimeCropped));
+                var rearVelCropTask     = Task.Run(() => SvgToSource(cache.RearVelocityTimeCropped));
+                var accelCropTask       = Task.Run(() => SvgToSource(cache.AccelerationTimeCropped));
+                var frontFftTask        = Task.Run(() => SvgToSource(cache.FrontTravelFft));
+                var rearFftTask         = Task.Run(() => SvgToSource(cache.RearTravelFft));
 
                 await Task.WhenAll(frontVelHistTask, frontLsVelHistTask, rearVelHistTask, rearLsVelHistTask,
                     combBalTask, compBalTask, rebBalTask,
                     velDistCompTask, posVelCompTask, frontPosVelTask, rearPosVelTask,
-                    travelCropTask, velocityCropTask, accelCropTask);
+                    frontTravelCropTask, rearTravelCropTask, frontVelCropTask, rearVelCropTask, accelCropTask,
+                    frontFftTask, rearFftTask);
 
                 var frontVelHistSrc   = frontVelHistTask.Result;
                 var frontLsVelHistSrc = frontLsVelHistTask.Result;
@@ -229,8 +234,12 @@ public partial class SessionViewModel : ItemViewModelBase
                     }
 
                     DamperPage.VelocityDistributionComparison = SourceToImage(velDistCompSrc);
-                    MiscPage.TravelTimeCropped                = SourceToImage(travelCropTask.Result);
-                    MiscPage.VelocityTimeCropped              = SourceToImage(velocityCropTask.Result);
+                    SpringPage.FrontTravelTimeCropped         = SourceToImage(frontTravelCropTask.Result);
+                    SpringPage.RearTravelTimeCropped          = SourceToImage(rearTravelCropTask.Result);
+                    DamperPage.FrontVelocityTimeCropped       = SourceToImage(frontVelCropTask.Result);
+                    DamperPage.RearVelocityTimeCropped        = SourceToImage(rearVelCropTask.Result);
+                    SpringPage.FrontTravelFft                 = SourceToImage(frontFftTask.Result);
+                    SpringPage.RearTravelFft                  = SourceToImage(rearFftTask.Result);
                     MiscPage.AccelerationTimeCropped          = SourceToImage(accelCropTask.Result);
                     MiscPage.PositionVelocityComparison       = SourceToImage(posVelCompSrc);
                     MiscPage.FrontPositionVelocity            = SourceToImage(frontPosVelSrc);
@@ -466,30 +475,71 @@ public partial class SessionViewModel : ItemViewModelBase
             Dispatcher.UIThread.Post(() => { Pages.Remove(BalancePage); });
         }
 
-        // Misc plots — each in its own task
-        tasks.Add(ThrottledPlotTask(() =>
+        if (telemetryData.Front.Present)
         {
-            var ttc = new TravelTimeCroppedPlot(new Plot());
-            ttc.LoadTelemetryData(telemetryData);
-            sessionCache.TravelTimeCropped = ttc.Plot.GetSvgXml(width, tthHeight);
-            var travelCropSrc = SvgToSource(sessionCache.TravelTimeCropped);
-            Dispatcher.UIThread.Post(() => { MiscPage.TravelTimeCropped = SourceToImage(travelCropSrc); });
-        }));
+            tasks.Add(ThrottledPlotTask(() =>
+            {
+                var ttc = new TravelTimeCroppedPlot(new Plot(), SuspensionType.Front, session.CropStartSample.HasValue && session.CropEndSample.HasValue);
+                ttc.LoadTelemetryData(telemetryData);
+                sessionCache.FrontTravelTimeCropped = ttc.Plot.GetSvgXml(width, height);
+                var src = SvgToSource(sessionCache.FrontTravelTimeCropped);
+                Dispatcher.UIThread.Post(() => { SpringPage.FrontTravelTimeCropped = SourceToImage(src); });
+            }));
 
-        tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask(() =>
+            {
+                var vtc = new VelocityTimeCroppedPlot(new Plot(), SuspensionType.Front);
+                vtc.LoadTelemetryData(telemetryData);
+                sessionCache.FrontVelocityTimeCropped = vtc.Plot.GetSvgXml(width, height);
+                var src = SvgToSource(sessionCache.FrontVelocityTimeCropped);
+                Dispatcher.UIThread.Post(() => { DamperPage.FrontVelocityTimeCropped = SourceToImage(src); });
+            }));
+
+            tasks.Add(ThrottledPlotTask(() =>
+            {
+                var fft = new TravelFftPlot(new Plot(), SuspensionType.Front);
+                fft.LoadTelemetryData(telemetryData);
+                sessionCache.FrontTravelFft = fft.Plot.GetSvgXml(width, height);
+                var src = SvgToSource(sessionCache.FrontTravelFft);
+                Dispatcher.UIThread.Post(() => { SpringPage.FrontTravelFft = SourceToImage(src); });
+            }));
+        }
+
+        if (telemetryData.Rear.Present)
         {
-            var vtc = new VelocityTimeCroppedPlot(new Plot());
-            vtc.LoadTelemetryData(telemetryData);
-            sessionCache.VelocityTimeCropped = vtc.Plot.GetSvgXml(width, tthHeight);
-            var velocityCropSrc = SvgToSource(sessionCache.VelocityTimeCropped);
-            Dispatcher.UIThread.Post(() => { MiscPage.VelocityTimeCropped = SourceToImage(velocityCropSrc); });
-        }));
+            tasks.Add(ThrottledPlotTask(() =>
+            {
+                var ttc = new TravelTimeCroppedPlot(new Plot(), SuspensionType.Rear, session.CropStartSample.HasValue && session.CropEndSample.HasValue);
+                ttc.LoadTelemetryData(telemetryData);
+                sessionCache.RearTravelTimeCropped = ttc.Plot.GetSvgXml(width, height);
+                var src = SvgToSource(sessionCache.RearTravelTimeCropped);
+                Dispatcher.UIThread.Post(() => { SpringPage.RearTravelTimeCropped = SourceToImage(src); });
+            }));
+
+            tasks.Add(ThrottledPlotTask(() =>
+            {
+                var vtc = new VelocityTimeCroppedPlot(new Plot(), SuspensionType.Rear);
+                vtc.LoadTelemetryData(telemetryData);
+                sessionCache.RearVelocityTimeCropped = vtc.Plot.GetSvgXml(width, height);
+                var src = SvgToSource(sessionCache.RearVelocityTimeCropped);
+                Dispatcher.UIThread.Post(() => { DamperPage.RearVelocityTimeCropped = SourceToImage(src); });
+            }));
+
+            tasks.Add(ThrottledPlotTask(() =>
+            {
+                var fft = new TravelFftPlot(new Plot(), SuspensionType.Rear);
+                fft.LoadTelemetryData(telemetryData);
+                sessionCache.RearTravelFft = fft.Plot.GetSvgXml(width, height);
+                var src = SvgToSource(sessionCache.RearTravelFft);
+                Dispatcher.UIThread.Post(() => { SpringPage.RearTravelFft = SourceToImage(src); });
+            }));
+        }
 
         tasks.Add(ThrottledPlotTask(() =>
         {
             var atc = new AccelerationTimeCroppedPlot(new Plot());
             atc.LoadTelemetryData(telemetryData);
-            sessionCache.AccelerationTimeCropped = atc.Plot.GetSvgXml(width, tthHeight);
+            sessionCache.AccelerationTimeCropped = atc.Plot.GetSvgXml(width, height);
             var accelCropSrc = SvgToSource(sessionCache.AccelerationTimeCropped);
             Dispatcher.UIThread.Post(() => { MiscPage.AccelerationTimeCropped = SourceToImage(accelCropSrc); });
         }));
@@ -1509,6 +1559,8 @@ public partial class SessionViewModel : ItemViewModelBase
             svgEntries.Add(cache.FrontRearTravelScatter);
             svgEntries.Add(cache.FrontTravelHistogram);
             svgEntries.Add(cache.RearTravelHistogram);
+            svgEntries.Add(cache.FrontTravelFft);
+            svgEntries.Add(cache.RearTravelFft);
 
             // Damper tab
             svgEntries.Add(cache.VelocityDistributionComparison);
@@ -1523,8 +1575,10 @@ public partial class SessionViewModel : ItemViewModelBase
             svgEntries.Add(cache.ReboundBalance);
 
             // Misc tab
-            svgEntries.Add(cache.TravelTimeCropped);
-            svgEntries.Add(cache.VelocityTimeCropped);
+            svgEntries.Add(cache.FrontTravelTimeCropped);
+            svgEntries.Add(cache.RearTravelTimeCropped);
+            svgEntries.Add(cache.FrontVelocityTimeCropped);
+            svgEntries.Add(cache.RearVelocityTimeCropped);
             svgEntries.Add(cache.AccelerationTimeCropped);
             svgEntries.Add(cache.PositionVelocityComparison);
             svgEntries.Add(cache.FrontPositionVelocity);

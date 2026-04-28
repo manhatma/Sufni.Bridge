@@ -10,6 +10,8 @@ public partial class DamperPageViewModel() : PageViewModelBase("Damper")
     [ObservableProperty] private SvgImage? frontLowSpeedVelocityHistogram;
     [ObservableProperty] private SvgImage? rearVelocityHistogram;
     [ObservableProperty] private SvgImage? rearLowSpeedVelocityHistogram;
+    [ObservableProperty] private SvgImage? frontVelocityTimeCropped;
+    [ObservableProperty] private SvgImage? rearVelocityTimeCropped;
     [ObservableProperty] private double? frontHscPercentage;
     [ObservableProperty] private double? rearHscPercentage;
     [ObservableProperty] private double? frontLscPercentage;
