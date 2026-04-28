@@ -1,0 +1,72 @@
+<UserControl
+    x:Class="Sufni.Bridge.Views.SessionPages.TuningPageView"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="clr-namespace:Sufni.Bridge.ViewModels.SessionPages"
+    d:DesignHeight="600"
+    d:DesignWidth="500"
+    x:DataType="vm:TuningPageViewModel"
+    mc:Ignorable="d">
+
+    <Design.DataContext>
+        <vm:TuningPageViewModel />
+    </Design.DataContext>
+
+    <UserControl.Styles>
+        <Style Selector="TextBlock.suggestionTitle">
+            <Setter Property="Foreground" Value="#D0D0D0" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="TextBlock.suggestionReason">
+            <Setter Property="Foreground" Value="#909090" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+            <Setter Property="Margin" Value="0,2,0,0" />
+        </Style>
+        <Style Selector="TextBlock.suggestionComponent">
+            <Setter Property="Foreground" Value="#808890" />
+            <Setter Property="FontSize" Value="10" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+            <Setter Property="VerticalAlignment" Value="Top" />
+            <Setter Property="MinWidth" Value="50" />
+        </Style>
+    </UserControl.Styles>
+
+    <ScrollViewer Width="{Binding $parent[ScrollViewer].Bounds.Width}"
+                  Height="{Binding $parent[ScrollViewer].Bounds.Height}"
+                  IsScrollChainingEnabled="False">
+        <StackPanel Orientation="Vertical">
+            <Border Background="#20262B" BorderBrush="#505558" BorderThickness="1"
+                    CornerRadius="4" Padding="10" Margin="6">
+                <StackPanel Orientation="Vertical">
+                    <TextBlock Text="Tuning suggestions" Foreground="#D0D0D0" FontSize="14"
+                               FontWeight="SemiBold" Margin="0,0,0,8" />
+
+                    <ItemsControl ItemsSource="{Binding Suggestions}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="vm:TuningSuggestionRow">
+                                <Grid Margin="0,4" ColumnDefinitions="Auto * Auto">
+                                    <Ellipse Grid.Column="0"
+                                             Width="10" Height="10"
+                                             Margin="0,5,8,0"
+                                             VerticalAlignment="Top"
+                                             Fill="{Binding SeverityBrush}" />
+                                    <StackPanel Grid.Column="1" Orientation="Vertical">
+                                        <TextBlock Classes="suggestionTitle"  Text="{Binding Title}" />
+                                        <TextBlock Classes="suggestionReason" Text="{Binding Reason}" />
+                                    </StackPanel>
+                                    <TextBlock Grid.Column="2" Classes="suggestionComponent"
+                                               Text="{Binding Component}" />
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                </StackPanel>
+            </Border>
+        </StackPanel>
+    </ScrollViewer>
+</UserControl>
