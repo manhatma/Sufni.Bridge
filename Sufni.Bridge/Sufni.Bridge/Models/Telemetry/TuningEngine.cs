@@ -172,16 +172,16 @@ public static class TuningEngine
         if (bands.LowSpeedCompression + bands.HighSpeedCompression
           + bands.LowSpeedRebound     + bands.HighSpeedRebound < 50.0) return;
 
-        // Compression: too much in band → open (less damping); too little → close (more damping).
+        // Unified rule (drives band time toward 25 %): closing damping in a high-speed band
+        // truncates the velocity peak (less time above the threshold); opening damping in a
+        // low-speed band lets the suspension transit the band faster (less time inside).
+        // → HS-bands: above target → close. LS-bands: above target → open.
         AddBandRule(list, component, bands.HighSpeedCompression, "HSC", what,
-                    openWhenAbove: true, weight: 6);
+                    openWhenAbove: false, weight: 6);
         AddBandRule(list, component, bands.LowSpeedCompression,  "LSC", what,
-                    openWhenAbove: true, weight: 5);
-
-        // HSR: too much time in fast rebound = kicking/bucking → close (more damping). Too little → open.
+                    openWhenAbove: true,  weight: 5);
         AddBandRule(list, component, bands.HighSpeedRebound,     "HSR", what,
                     openWhenAbove: false, weight: 5);
-        // LSR: too much time in slow rebound = sluggish recovery → open (less damping = faster out). Too little → close.
         AddBandRule(list, component, bands.LowSpeedRebound,      "LSR", what,
                     openWhenAbove: true,  weight: 4);
     }
