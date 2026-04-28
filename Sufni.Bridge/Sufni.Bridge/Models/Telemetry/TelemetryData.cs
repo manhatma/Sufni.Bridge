@@ -102,7 +102,8 @@ public record BalanceMetrics(
     double? FrontPeakFrequencyHz,
     double? RearPeakFrequencyHz,
     double? FrequencyDifferenceHz,
-    double? PeakAmplitudeRatio);
+    double? PeakAmplitudeRatio,
+    double? TravelRatioSlope);
 
 [MessagePackObject(keyAsPropertyName: true)]
 public class TelemetryData
@@ -1432,6 +1433,25 @@ public class TelemetryData
         if (fAmp.HasValue && rAmp.HasValue && rAmp.Value > 1e-9)
             ampRatio = fAmp.Value / rAmp.Value;
 
+        double? travelRatioSlope = null;
+        if (Front.Present && Rear.Present && Front.Travel != null && Rear.Travel != null
+            && maxF > 0 && maxR > 0)
+        {
+            var count = Math.Min(Front.Travel.Length, Rear.Travel.Length);
+            if (count > 0)
+            {
+                double num = 0, den = 0;
+                for (int i = 0; i < count; i++)
+                {
+                    var r = Rear.Travel[i] / maxR * 100.0;
+                    var f = Front.Travel[i] / maxF * 100.0;
+                    num += r * f;
+                    den += r * r;
+                }
+                if (den > 0) travelRatioSlope = num / den;
+            }
+        }
+
         return new BalanceMetrics(
             fSag, rSag, sagDiff,
             fP95Pct, rP95Pct,
@@ -1439,7 +1459,8 @@ public class TelemetryData
             compRatio, rebRatio,
             compMsd, rebMsd,
             fPeak, rPeak,
-            freqDiff, ampRatio);
+            freqDiff, ampRatio,
+            travelRatioSlope);
     }
 
     #endregion

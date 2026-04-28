@@ -233,6 +233,7 @@ public class SqLiteDatabaseService : IDatabaseService
         await AddColumnIfMissing("rear_velocity_time_cropped");
         await AddColumnIfMissing("combined_travel_fft");
         await AddColumnIfMissing("balance_metrics_json");
+        await AddColumnIfMissing("tuning_suggestions_json");
     }
 
     private class TableInfoRecord

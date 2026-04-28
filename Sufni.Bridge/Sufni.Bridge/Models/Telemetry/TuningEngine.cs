@@ -22,7 +22,8 @@ public sealed record TuningInputs(
     double? FrontPeakReboundMmS,   // absolute value
     double? RearPeakReboundMmS,    // absolute value
     int? FrontCompressionStrokeCount,
-    int? RearCompressionStrokeCount);
+    int? RearCompressionStrokeCount,
+    Discipline? RiderDiscipline = null);
 
 public static class TuningEngine
 {
@@ -86,6 +87,8 @@ public static class TuningEngine
 
         AddPeakReboundRule(list, "Fork",  i.FrontPeakReboundMmS, FrontPeakReboundLo, FrontPeakReboundHi, "fork");
         AddPeakReboundRule(list, "Shock", i.RearPeakReboundMmS,  RearPeakReboundLo,  RearPeakReboundHi,  "shock");
+
+        AddTravelRatioRule(list, m.TravelRatioSlope, i.RiderDiscipline);
 
         if (m.ReboundVelocityRatio.HasValue)
         {
@@ -176,8 +179,6 @@ public static class TuningEngine
         // truncates the velocity peak (less time above the threshold); opening damping in a
         // low-speed band lets the suspension transit the band faster (less time inside).
         // → HS-bands: above target → close. LS-bands: above target → open.
-        AddBandRule(list, component, bands.HighSpeedCompression, "HSC", what,
-                    openWhenAbove: false, weight: 6);
         AddBandRule(list, component, bands.LowSpeedCompression,  "LSC", what,
                     openWhenAbove: true,  weight: 5);
         AddBandRule(list, component, bands.HighSpeedRebound,     "HSR", what,
@@ -234,6 +235,37 @@ public static class TuningEngine
             direction,
             Fmt($"Peak rebound speed {v:0} mm/s — target {goodLo:0}–{goodHi:0} mm/s"),
             Score(sev, 5)));
+    }
+
+    // Discipline-based front/rear travel-ratio targets. Slope a = Σ(rear%·front%)/Σ(rear%²) from
+    // the Front-vs-Rear travel scatter; a≈1 means equal % travel use, >1 = front-biased.
+    private static (double Lo, double Hi) DisciplineSlopeTarget(Discipline d) => d switch
+    {
+        Discipline.XC       => (1.00, double.PositiveInfinity),
+        Discipline.Enduro   => (0.95, 1.00),
+        Discipline.Downhill => (0.90, 0.95),
+        _ => (0.95, 1.00),
+    };
+
+    private const double TravelRatioCriticalDelta = 0.08;
+
+    private static void AddTravelRatioRule(List<TuningSuggestion> list, double? slope, Discipline? discipline)
+    {
+        if (!slope.HasValue || !discipline.HasValue) return;
+        var a = slope.Value;
+        var (lo, hi) = DisciplineSlopeTarget(discipline.Value);
+        if (a >= lo && a <= hi) return;
+
+        var distance = a < lo ? lo - a : a - hi;
+        var sev = distance > TravelRatioCriticalDelta ? TuningSeverity.Critical : TuningSeverity.Recommended;
+        var title = a < lo
+            ? "Rear uses too much travel — reduce rear sag or increase front sag"
+            : "Front uses too much travel — reduce front sag or increase rear sag";
+        var hiText = double.IsPositiveInfinity(hi) ? "∞" : hi.ToString("0.00", CultureInfo.InvariantCulture);
+        list.Add(new TuningSuggestion(sev, "Balance",
+            title,
+            Fmt($"Front/Rear travel slope a={a:0.00} — {discipline.Value} target {lo:0.00}–{hiText}"),
+            Score(sev, 6)));
     }
 
     private static int Score(TuningSeverity s, int weight) => weight + (int)s * 3;
