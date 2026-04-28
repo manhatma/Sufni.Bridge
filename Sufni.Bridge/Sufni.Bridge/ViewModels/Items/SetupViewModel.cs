@@ -41,6 +41,13 @@ public partial class SetupViewModel : ItemViewModelBase
     [NotifyCanExecuteChangedFor(nameof(ResetCommand))]
     private CalibrationViewModel? selectedRearCalibration;
 
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ResetCommand))]
+    private Discipline selectedDiscipline;
+
+    public IReadOnlyList<Discipline> Disciplines { get; } = Enum.GetValues<Discipline>();
+
     public ReadOnlyObservableCollection<ItemViewModelBase> Linkages => linkages;
     private readonly ReadOnlyObservableCollection<ItemViewModelBase> linkages;
 
@@ -110,7 +117,8 @@ public partial class SetupViewModel : ItemViewModelBase
             BoardId != originalBoardId ||
             SelectedLinkage == null || SelectedLinkage.Id != setup.LinkageId ||
             SelectedFrontCalibration?.Id != setup.FrontCalibrationId ||
-            SelectedRearCalibration?.Id != setup.RearCalibrationId;
+            SelectedRearCalibration?.Id != setup.RearCalibrationId ||
+            SelectedDiscipline != setup.Discipline;
     }
 
     protected override bool CanSave()
@@ -135,7 +143,10 @@ public partial class SetupViewModel : ItemViewModelBase
                 Name ?? $"setup #{Id}",
                 SelectedLinkage.Id,
                 SelectedFrontCalibration?.Id,
-                SelectedRearCalibration?.Id);
+                SelectedRearCalibration?.Id)
+            {
+                Discipline = SelectedDiscipline,
+            };
             Id = await databaseService.PutSetupAsync(newSetup);
 
             // If this setup was already associated with another board, clear that association.
@@ -183,6 +194,7 @@ public partial class SetupViewModel : ItemViewModelBase
             SelectedLinkage = Linkages.First(l => l.Id == setup.LinkageId) as LinkageViewModel;
             SelectedFrontCalibration = Calibrations.FirstOrDefault(c => c?.Id == setup.FrontCalibrationId, null) as CalibrationViewModel;
             SelectedRearCalibration = Calibrations.FirstOrDefault(c => c?.Id == setup.RearCalibrationId, null) as CalibrationViewModel;
+            SelectedDiscipline = setup.Discipline;
         }
         catch (Exception e)
         {

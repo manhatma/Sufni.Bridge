@@ -140,6 +140,7 @@ public class SqLiteDatabaseService : IDatabaseService
 
         await EnsureSessionColumns();
         await EnsureSessionCacheColumns();
+        await EnsureSetupColumns();
         await EnsureDefaultCalibrationMethods();
     }
 
@@ -211,6 +212,25 @@ public class SqLiteDatabaseService : IDatabaseService
         await AddColumnIfMissing("rear_velocity_time_cropped");
         await AddColumnIfMissing("combined_travel_fft");
         await AddColumnIfMissing("balance_metrics_json");
+        await AddColumnIfMissing("tuning_suggestions_json");
+    }
+
+    private async Task EnsureSetupColumns()
+    {
+        var tableInfo = await connection.QueryAsync<TableInfoRecord>("PRAGMA table_info(setup)");
+        var columnNames = tableInfo.Select(column => column.Name).ToHashSet();
+        if (!columnNames.Contains("discipline"))
+            await connection.ExecuteAsync("ALTER TABLE setup ADD COLUMN discipline INTEGER DEFAULT 1");
+
+        var userVersion = await connection.ExecuteScalarAsync<int>("PRAGMA user_version");
+        if (userVersion < 1)
+        {
+            await connection.ExecuteAsync(
+                "UPDATE setup SET discipline = 2 WHERE LOWER(name) LIKE '%exc%'");
+            await connection.ExecuteAsync(
+                "UPDATE setup SET discipline = 1 WHERE LOWER(name) NOT LIKE '%exc%'");
+            await connection.ExecuteAsync("PRAGMA user_version = 1");
+        }
     }
 
     private class TableInfoRecord

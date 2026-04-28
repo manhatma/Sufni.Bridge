@@ -22,7 +22,7 @@
         Margin="20,0,20,10"
         HorizontalAlignment="Stretch"
         ColumnDefinitions="auto *"
-        RowDefinitions="auto auto auto auto auto auto auto * auto">
+        RowDefinitions="auto auto auto auto auto auto auto auto * auto">
 
         <!--  Name  -->
         <v:EditableTitle
@@ -132,14 +132,28 @@
             <Image Width="16" Source="{SvgImage /Assets/fa-circle-plus.svg}" />
         </Button>
 
-        <!--  Reassign all sessions of this setup to a different setup  -->
+        <!--  Discipline  -->
         <Label
             Grid.Row="5"
             Grid.Column="0"
             VerticalAlignment="Center"
-            Content="Reassign to:" />
+            Content="Discipline: " />
         <ComboBox
             Grid.Row="5"
+            Grid.Column="1"
+            Margin="2,2,40,2"
+            HorizontalAlignment="Stretch"
+            ItemsSource="{Binding Disciplines}"
+            SelectedItem="{Binding SelectedDiscipline}" />
+
+        <!--  Reassign all sessions of this setup to a different setup  -->
+        <Label
+            Grid.Row="6"
+            Grid.Column="0"
+            VerticalAlignment="Center"
+            Content="Reassign to:" />
+        <ComboBox
+            Grid.Row="6"
             Grid.Column="1"
             Margin="2,2,40,2"
             HorizontalAlignment="Stretch"
@@ -152,7 +166,7 @@
             </ComboBox.ItemTemplate>
         </ComboBox>
         <Button
-            Grid.Row="5"
+            Grid.Row="6"
             Grid.Column="1"
             Margin="0,0,2,0"
             HorizontalAlignment="Right"
@@ -163,14 +177,14 @@
 
         <!--  Error messages for Setup instance  -->
         <v:ErrorMessagesBar
-            Grid.Row="6"
+            Grid.Row="7"
             Grid.Column="0"
             Grid.ColumnSpan="2"
             Margin="0,5,0,0" />
 
         <!--  Back, Save, Reset and Delete buttons  -->
         <v:CommonButtonLine
-            Grid.Row="8"
+            Grid.Row="9"
             Grid.Column="0"
             Grid.ColumnSpan="2" />
     </Grid>

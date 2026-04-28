@@ -42,4 +42,8 @@ public class Setup : Synchronizable
     [JsonPropertyName("rear_calibration_id")]
     [Column("rear_calibration_id")]
     public Guid? RearCalibrationId { get; set; }
+
+    [JsonPropertyName("discipline")]
+    [Column("discipline")]
+    public Discipline Discipline { get; set; } = Discipline.Enduro;
 }

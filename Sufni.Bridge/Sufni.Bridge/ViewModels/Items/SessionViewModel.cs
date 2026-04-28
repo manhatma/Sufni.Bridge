@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 94;
+    private const int CurrentPlotVersion = 95;
 
     // Limits concurrent plot generation tasks to reduce peak memory on iOS.
     private static readonly SemaphoreSlim s_plotSemaphore = new(3, 3);
@@ -236,6 +236,15 @@ public partial class SessionViewModel : ItemViewModelBase
                                 if (m is not null) BalancePage.Metrics.Apply(m);
                             }
                             catch { /* corrupt metrics cache; will be rebuilt */ }
+                        }
+                        if (cache.TuningSuggestionsJson is not null)
+                        {
+                            try
+                            {
+                                var s = JsonSerializer.Deserialize<List<TuningSuggestion>>(cache.TuningSuggestionsJson);
+                                if (s is not null) TuningPage.Apply(s);
+                            }
+                            catch { /* corrupt tuning cache; will be rebuilt */ }
                         }
                     }
                     else
@@ -554,6 +563,19 @@ public partial class SessionViewModel : ItemViewModelBase
                 var rb = await rearBandsTask;
                 var fv = telemetryData.CalculateVelocityStatistics(SuspensionType.Front);
                 var rv = telemetryData.CalculateVelocityStatistics(SuspensionType.Rear);
+
+                Discipline? discipline = null;
+                var dbSvc = App.Current?.Services?.GetService<IDatabaseService>();
+                if (dbSvc != null && session.Setup.HasValue)
+                {
+                    try
+                    {
+                        var setup = await dbSvc.GetSetupAsync(session.Setup.Value);
+                        if (setup != null) discipline = setup.Discipline;
+                    }
+                    catch { /* setup unavailable — skip discipline rule */ }
+                }
+
                 var inputs = new TuningInputs(
                     metrics,
                     fb,
@@ -563,8 +585,10 @@ public partial class SessionViewModel : ItemViewModelBase
                     FrontPeakReboundMmS:            fv.MaxRebound < 0 ? Math.Abs(fv.MaxRebound) : (double?)null,
                     RearPeakReboundMmS:             rv.MaxRebound < 0 ? Math.Abs(rv.MaxRebound) : (double?)null,
                     FrontCompressionStrokeCount:    telemetryData.Front.Strokes.Compressions.Length,
-                    RearCompressionStrokeCount:     telemetryData.Rear.Strokes.Compressions.Length);
+                    RearCompressionStrokeCount:     telemetryData.Rear.Strokes.Compressions.Length,
+                    RiderDiscipline:                discipline);
                 var suggestions = TuningEngine.Evaluate(inputs);
+                sessionCache.TuningSuggestionsJson = JsonSerializer.Serialize(suggestions.ToList());
                 Dispatcher.UIThread.Post(() => TuningPage.Apply(suggestions));
             }));
         }
