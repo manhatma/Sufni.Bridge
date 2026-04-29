@@ -106,9 +106,11 @@ public record BalanceMetrics(
     double? PeakAmplitudeRatio,
     double? LowEnergyRatioDb,
     double? MidEnergyRatioDb,
+    double? WheelEnergyRatioDb,
     double? HighEnergyRatioDb,
     double? LowCoherence,
     double? MidCoherence,
+    double? WheelCoherence,
     double? HighCoherence,
     double? FrequencySplitHz);
 
@@ -1497,8 +1499,8 @@ public class TelemetryData
         double? compMsd = null, rebMsd = null;
         double? fPeak = null, rPeak = null, fAmp = null, rAmp = null;
         double? freqDiff = null, ampRatio = null;
-        double? lowEnergyDb = null, midEnergyDb = null, highEnergyDb = null;
-        double? lowCoh = null, midCoh = null, highCoh = null;
+        double? lowEnergyDb = null, midEnergyDb = null, wheelEnergyDb = null, highEnergyDb = null;
+        double? lowCoh = null, midCoh = null, wheelCoh = null, highCoh = null;
         double fSplit = FrequencySplitFor(discipline);
 
         var maxF = Linkage?.MaxFrontTravel ?? 0;
@@ -1582,7 +1584,11 @@ public class TelemetryData
             ampRatio = fAmp.Value / rAmp.Value;
 
         // Front/Rear frequency-balance: per-band energy ratio (dB) + magnitude-squared
-        // coherence γ²(f). Bands: Low [1.0, fSplit], Mid [fSplit, 8], High [8, 50].
+        // coherence γ²(f). Four bands isolating distinct physical regimes:
+        //   Low   [1.0, fSplit]  body / sprung-mass resonance
+        //   Mid   [fSplit, 10]   transition / frame transmission
+        //   Wheel [10, 25]       unsprung-mass / tire-stiffness resonance
+        //   High  [25, 50]       above-resonance noise (spoke modes, drivetrain, frame chatter)
         if (Front.Present && Rear.Present
             && Front.Travel != null && Rear.Travel != null
             && Front.Travel.Length >= 8192 && Rear.Travel.Length >= 8192
@@ -1598,13 +1604,15 @@ public class TelemetryData
                     if (ef <= 0 || er <= 0) return null;
                     return 10.0 * Math.Log10(ef / er);
                 }
-                lowEnergyDb  = RatioDb(cf, pxx, pyy, 1.0,    fSplit);
-                midEnergyDb  = RatioDb(cf, pxx, pyy, fSplit, 8.0);
-                highEnergyDb = RatioDb(cf, pxx, pyy, 8.0,    50.0);
+                lowEnergyDb   = RatioDb(cf, pxx, pyy, 1.0,    fSplit);
+                midEnergyDb   = RatioDb(cf, pxx, pyy, fSplit, 10.0);
+                wheelEnergyDb = RatioDb(cf, pxx, pyy, 10.0,   25.0);
+                highEnergyDb  = RatioDb(cf, pxx, pyy, 25.0,   50.0);
 
-                lowCoh  = MeanCoherence(cf, pxx, pyy, pxy, 1.0,    fSplit);
-                midCoh  = MeanCoherence(cf, pxx, pyy, pxy, fSplit, 8.0);
-                highCoh = MeanCoherence(cf, pxx, pyy, pxy, 8.0,    50.0);
+                lowCoh   = MeanCoherence(cf, pxx, pyy, pxy, 1.0,    fSplit);
+                midCoh   = MeanCoherence(cf, pxx, pyy, pxy, fSplit, 10.0);
+                wheelCoh = MeanCoherence(cf, pxx, pyy, pxy, 10.0,   25.0);
+                highCoh  = MeanCoherence(cf, pxx, pyy, pxy, 25.0,   50.0);
             }
         }
 
@@ -1616,8 +1624,8 @@ public class TelemetryData
             compMsd, rebMsd,
             fPeak, rPeak,
             freqDiff, ampRatio,
-            lowEnergyDb, midEnergyDb, highEnergyDb,
-            lowCoh, midCoh, highCoh,
+            lowEnergyDb, midEnergyDb, wheelEnergyDb, highEnergyDb,
+            lowCoh, midCoh, wheelCoh, highCoh,
             fSplit);
     }
 

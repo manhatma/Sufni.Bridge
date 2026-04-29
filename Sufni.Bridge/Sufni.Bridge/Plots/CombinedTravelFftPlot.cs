@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using ScottPlot;
 using ScottPlot.TickGenerators;
 using Sufni.Bridge.Models.Telemetry;
@@ -37,10 +38,21 @@ public class CombinedTravelFftPlot(
     : TelemetryPlot(plot)
 {
     private const double TravelReferenceMm = 0.01;
-    private const double VelocityReferenceMmPerSec = 0.1;
+    // STROKE_LENGTH_THRESHOLD from gosst/formats/psst/psst.go — the minimum
+    // stroke length (mm) counted as a real compression/rebound by the import
+    // pipeline. Used as the displacement anchor for the velocity reference.
+    private const double StrokeLengthThresholdMm = 0.5;
     private const double FloorDb = -40.0;
     private const double AxisBottomDb = 0.0;
     private const double MinTopDb = 60.0;
+
+    // Velocity reference: the velocity amplitude of a sinusoidal stroke at the
+    // geometric center of the analysis band whose displacement amplitude equals
+    // STROKE_LENGTH_THRESHOLD. So 0 dB corresponds to "spectral component
+    // equivalent to a just-detectable stroke at the band's log-midpoint" —
+    // band-aware and tied to the data-processing detection threshold.
+    private double VelocityReferenceMmPerSec =>
+        StrokeLengthThresholdMm * 2.0 * Math.PI * Math.Sqrt(minHz * maxHz);
 
     // Peak markers, vertical guidelines and rotated labels are part of the
     // velocity-spectrum interpretation (peak detection runs in the velocity
@@ -62,7 +74,7 @@ public class CombinedTravelFftPlot(
         Plot.Layout.Fixed(new PixelPadding(55, 14, 50, 40));
         Plot.Axes.Bottom.Label.Text = "Frequency (Hz)";
         Plot.Axes.Left.Label.Text = mode == WheelSpectrumMode.Velocity
-            ? "Velocity (dB re 0.1 mm/s)"
+            ? string.Format(CultureInfo.InvariantCulture, "Velocity (dB re {0:0} mm/s)", VelocityReferenceMmPerSec)
             : "Amplitude (dB re 0.01 mm)";
 
         // SufniPlot hides minor ticks globally; for log X they're the visual cue
@@ -71,6 +83,13 @@ public class CombinedTravelFftPlot(
         Plot.Axes.Bottom.MinorTickStyle.Length = 4;
         Plot.Axes.Bottom.MinorTickStyle.Width = 1;
         Plot.Axes.Bottom.MinorTickStyle.Color = Color.FromHex("#505558");
+
+        // Show minor grid lines at log-decade subdivisions (the X axis covers
+        // a full decade, so the 2..9 minor ticks are useful visual references).
+        // The Y-axis tick generator (NumericFixedInterval) emits only majors,
+        // so this affects only the X axis in practice.
+        Plot.Grid.MinorLineColor = Color.FromHex("#2E3438");
+        Plot.Grid.MinorLineWidth = 1;
 
         var sampleRate = telemetryData.SampleRate;
         double yMaxDb = FloorDb, yMinDb = double.PositiveInfinity;
@@ -95,12 +114,14 @@ public class CombinedTravelFftPlot(
         var xRight = Math.Log10(maxHz);
 
         double yBottom, yTop;
+        // Velocity plots use 5-dB ticks (range is naturally compressed once the
+        // reference is in mm/s rather than 0.1 mm/s); travel plots use 10-dB.
+        double tickStep = mode == WheelSpectrumMode.Velocity ? 5.0 : 10.0;
         if (fitYAxisToData)
         {
-            // Snap to nearest 5-dB grid so ticks line up with the data range.
-            yBottom = Math.Floor(yMinDb / 5.0) * 5.0;
+            yBottom = Math.Floor(yMinDb / tickStep) * tickStep;
             yTop = yMaxDb + topHeadroomDb;
-            if (yTop - yBottom < 20) yTop = yBottom + 20;
+            if (yTop - yBottom < 2 * tickStep) yTop = yBottom + 2 * tickStep;
         }
         else
         {
@@ -114,7 +135,7 @@ public class CombinedTravelFftPlot(
         Plot.Axes.Left.Max = yTop;
 
         Plot.Axes.Bottom.TickGenerator = BuildLogTickGenerator(minHz, maxHz);
-        Plot.Axes.Left.TickGenerator = new NumericFixedInterval(10);
+        Plot.Axes.Left.TickGenerator = new NumericFixedInterval(tickStep);
 
         // Legend in the upper-right corner — same pattern as BalancePlot.
         AddCornerLegend(xRight, yTop);
@@ -141,7 +162,7 @@ public class CombinedTravelFftPlot(
 
             double y = yBottom + span * (stack ? 0.20 : 0.04);
 
-            var label = Plot.Add.Text($"{p.F:0.00} Hz", p.LogX, y);
+            var label = Plot.Add.Text(string.Format(CultureInfo.InvariantCulture, "{0:0.00} Hz", p.F), p.LogX, y);
             label.LabelFontColor = p.Color;
             label.LabelFontSize = 11;
             label.LabelRotation = -90;
@@ -245,21 +266,21 @@ public class CombinedTravelFftPlot(
 
     private void AddCornerLegend(double xRight, double yTop)
     {
-        var span = yTop - Plot.Axes.GetLimits().Bottom;
-        var y1 = yTop - span * 0.05;
-        var y2 = yTop - span * 0.13;
-
-        var frontLegend = Plot.Add.Text("Front", xRight, y1);
+        // Pixel-based vertical offsets so legend position is independent of
+        // the Y data range (otherwise tight ranges push legends onto curves).
+        var frontLegend = Plot.Add.Text("Front", xRight, yTop);
         frontLegend.LabelFontColor = FrontColor;
         frontLegend.LabelFontSize = 12;
         frontLegend.LabelAlignment = Alignment.UpperRight;
         frontLegend.LabelOffsetX = -6;
+        frontLegend.LabelOffsetY = 4;
 
-        var rearLegend = Plot.Add.Text("Rear", xRight, y2);
+        var rearLegend = Plot.Add.Text("Rear", xRight, yTop);
         rearLegend.LabelFontColor = RearColor;
         rearLegend.LabelFontSize = 12;
         rearLegend.LabelAlignment = Alignment.UpperRight;
         rearLegend.LabelOffsetX = -6;
+        rearLegend.LabelOffsetY = 22;
     }
 
     private static NumericManual BuildLogTickGenerator(double minHz, double maxHz)
@@ -273,8 +294,8 @@ public class CombinedTravelFftPlot(
         var minIsDecade = Math.Abs(Math.Log10(minHz) - Math.Round(Math.Log10(minHz))) < 1e-9;
         if (!minIsDecade)
         {
-            var label = minHz >= 1 ? $"{minHz:0.##}" : $"{minHz:0.#}";
-            gen.AddMajor(Math.Log10(minHz), label);
+            var fmt = minHz >= 1 ? "0.##" : "0.#";
+            gen.AddMajor(Math.Log10(minHz), minHz.ToString(fmt, CultureInfo.InvariantCulture));
         }
 
         for (var d = minDecade; d <= maxDecade; d++)
@@ -282,8 +303,8 @@ public class CombinedTravelFftPlot(
             var f = Math.Pow(10, d);
             if (f >= minHz && f <= maxHz)
             {
-                var label = f >= 1 ? $"{f:0}" : $"{f:0.#}";
-                gen.AddMajor(Math.Log10(f), label);
+                var fmt = f >= 1 ? "0" : "0.#";
+                gen.AddMajor(Math.Log10(f), f.ToString(fmt, CultureInfo.InvariantCulture));
             }
         }
         for (var d = minDecade; d <= maxDecade; d++)

@@ -138,6 +138,11 @@
                         <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.MidEnergyRatio.Target}" />
                     </Grid>
                     <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.WheelEnergyRatio.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.WheelEnergyRatio.Value}"  Foreground="{Binding Metrics.WheelEnergyRatio.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.WheelEnergyRatio.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
                         <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.HighEnergyRatio.Label}" />
                         <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.HighEnergyRatio.Value}"  Foreground="{Binding Metrics.HighEnergyRatio.ValueBrush}" />
                         <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.HighEnergyRatio.Target}" />
@@ -151,6 +156,11 @@
                         <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.MidCoherence.Label}" />
                         <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.MidCoherence.Value}"  Foreground="{Binding Metrics.MidCoherence.ValueBrush}" />
                         <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.MidCoherence.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.WheelCoherence.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.WheelCoherence.Value}"  Foreground="{Binding Metrics.WheelCoherence.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.WheelCoherence.Target}" />
                     </Grid>
                     <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
                         <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.HighCoherence.Label}" />

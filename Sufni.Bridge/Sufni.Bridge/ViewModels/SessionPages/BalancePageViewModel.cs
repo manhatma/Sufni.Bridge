@@ -41,7 +41,7 @@ public partial class BalanceMetricsViewModel : ObservableObject
     public BalanceMetricRow CompVelRatio  { get; } = new() { Label = "Comp Vel F/R",     Target = "0.85–1.15" };
     public BalanceMetricRow RebVelRatio   { get; } = new() { Label = "Reb Vel F/R",      Target = "1.00–1.15" };
     public BalanceMetricRow CompMsd       { get; } = new() { Label = "MSD Compression",  Target = "≈ 0" };
-    public BalanceMetricRow RebMsd        { get; } = new() { Label = "MSD Rebound",      Target = "≈ 0" };
+    public BalanceMetricRow RebMsd        { get; } = new() { Label = "MSD Rebound",      Target = "−10 to 0 %" };
     // Discipline-dependent eigenfrequency targets — see GetFreqBands below.
     // Following Vorsprung's recommendation, the band starts equal front/rear
     // (lower bound matches Rear); the upper bound runs ~0.3 Hz higher to allow
@@ -53,19 +53,22 @@ public partial class BalanceMetricsViewModel : ObservableObject
     public BalanceMetricRow PeakAmpRatio  { get; } = new() { Label = "Peak Amp F/R",     Target = "0.9–1.1" };
 
     // Front/Rear travel-energy distribution per band (10·log10(F/R)).
-    // Low/Mid split is discipline-aware (see TelemetryData.FrequencySplitFor); High band fix 8–40 Hz.
-    public BalanceMetricRow LowEnergyRatio  { get; } = new() { Label = "Energy F/R Low",  Target = "0 dB ±2" };
-    public BalanceMetricRow MidEnergyRatio  { get; } = new() { Label = "Energy F/R Mid",  Target = "0 dB ±2" };
-    public BalanceMetricRow HighEnergyRatio { get; } = new() { Label = "Energy F/R (8.0–50.0 Hz)", Target = "0 dB ±2" };
+    // Low/Mid split is discipline-aware (see TelemetryData.FrequencySplitFor);
+    // Wheel band fix 10–25 Hz (unsprung resonance), High fix 25–50 Hz (above-resonance noise).
+    public BalanceMetricRow LowEnergyRatio   { get; } = new() { Label = "Energy F/R Low",   Target = "0 dB ±2" };
+    public BalanceMetricRow MidEnergyRatio   { get; } = new() { Label = "Energy F/R Mid",   Target = "0 dB ±2" };
+    public BalanceMetricRow WheelEnergyRatio { get; } = new() { Label = "Energy F/R (10.0–25.0 Hz)", Target = "0 dB ±2" };
+    public BalanceMetricRow HighEnergyRatio  { get; } = new() { Label = "Energy F/R (25.0–50.0 Hz)", Target = "0 dB ±2" };
 
     // Front/Rear coupling per band (mean magnitude-squared coherence γ²).
     // Low band: high coherence is desirable (frame couples both axes during pitch/heave).
-    // Mid/High bands: low coherence is desirable — those are surface- and tire-driven and
-    // should excite the axes independently. High γ² there implies shared excitation
-    // (e.g. drivetrain bob, frame resonance) which is generally not what you want.
-    public BalanceMetricRow LowCoherence  { get; } = new() { Label = "Coherence Low",  Target = "≥ 0.7" };
-    public BalanceMetricRow MidCoherence  { get; } = new() { Label = "Coherence Mid",  Target = "≤ 0.4" };
-    public BalanceMetricRow HighCoherence { get; } = new() { Label = "Coherence (8.0–50.0 Hz)", Target = "≤ 0.4" };
+    // Mid/Wheel/High: low coherence is desirable — surface- and tire-driven, axes
+    // should be excited independently. High γ² there implies shared excitation
+    // (drivetrain bob, frame resonance), which is generally not what you want.
+    public BalanceMetricRow LowCoherence   { get; } = new() { Label = "Coherence Low",   Target = "≥ 0.7" };
+    public BalanceMetricRow MidCoherence   { get; } = new() { Label = "Coherence Mid",   Target = "≤ 0.4" };
+    public BalanceMetricRow WheelCoherence { get; } = new() { Label = "Coherence (10.0–25.0 Hz)", Target = "≤ 0.4" };
+    public BalanceMetricRow HighCoherence  { get; } = new() { Label = "Coherence (25.0–50.0 Hz)", Target = "≤ 0.1" };
 
     public void Apply(BalanceMetrics m, Discipline? discipline = null)
     {
@@ -85,7 +88,7 @@ public partial class BalanceMetricsViewModel : ObservableObject
         // F/R < 1 means rear is faster → push the band upward.
         SetRatioBand(RebVelRatio,  m.ReboundVelocityRatio,     1.00, 1.15, 0.90, 1.20);
         SetMsd(CompMsd, m.CompressionMsd);
-        SetMsd(RebMsd,  m.ReboundMsd);
+        SetMsdRebound(RebMsd, m.ReboundMsd);
         var (frontLo, frontHi, rearLo, rearHi) = GetFreqBands(discipline ?? Discipline.Enduro);
         FrontFreq.Target = string.Format(CultureInfo.InvariantCulture, "{0:0.0}–{1:0.0} Hz", frontLo, frontHi);
         RearFreq.Target  = string.Format(CultureInfo.InvariantCulture, "{0:0.0}–{1:0.0} Hz", rearLo,  rearHi);
@@ -96,19 +99,23 @@ public partial class BalanceMetricsViewModel : ObservableObject
 
         var fSplit = m.FrequencySplitHz ?? 2.0;
         var fSplitStr = fSplit.ToString("0.0", CultureInfo.InvariantCulture);
-        LowEnergyRatio.Label  = $"Energy F/R (1.0–{fSplitStr} Hz)";
-        MidEnergyRatio.Label  = $"Energy F/R ({fSplitStr}–8.0 Hz)";
-        HighEnergyRatio.Label = "Energy F/R (8.0–50.0 Hz)";
-        SetEnergyRatioDb(LowEnergyRatio,  m.LowEnergyRatioDb);
-        SetEnergyRatioDb(MidEnergyRatio,  m.MidEnergyRatioDb);
-        SetEnergyRatioDb(HighEnergyRatio, m.HighEnergyRatioDb);
+        LowEnergyRatio.Label   = $"Energy F/R (1.0–{fSplitStr} Hz)";
+        MidEnergyRatio.Label   = $"Energy F/R ({fSplitStr}–10.0 Hz)";
+        WheelEnergyRatio.Label = "Energy F/R (10.0–25.0 Hz)";
+        HighEnergyRatio.Label  = "Energy F/R (25.0–50.0 Hz)";
+        SetEnergyRatioDb(LowEnergyRatio,   m.LowEnergyRatioDb);
+        SetEnergyRatioDb(MidEnergyRatio,   m.MidEnergyRatioDb);
+        SetEnergyRatioDb(WheelEnergyRatio, m.WheelEnergyRatioDb);
+        SetEnergyRatioDb(HighEnergyRatio,  m.HighEnergyRatioDb);
 
-        LowCoherence.Label  = $"Coherence (1.0–{fSplitStr} Hz)";
-        MidCoherence.Label  = $"Coherence ({fSplitStr}–8.0 Hz)";
-        HighCoherence.Label = "Coherence (8.0–50.0 Hz)";
-        SetCoherence(LowCoherence,  m.LowCoherence,  higherIsBetter: true);
-        SetCoherence(MidCoherence,  m.MidCoherence,  higherIsBetter: false);
-        SetCoherence(HighCoherence, m.HighCoherence, higherIsBetter: false);
+        LowCoherence.Label   = $"Coherence (1.0–{fSplitStr} Hz)";
+        MidCoherence.Label   = $"Coherence ({fSplitStr}–10.0 Hz)";
+        WheelCoherence.Label = "Coherence (10.0–25.0 Hz)";
+        HighCoherence.Label  = "Coherence (25.0–50.0 Hz)";
+        SetCoherence(LowCoherence,   m.LowCoherence,   higherIsBetter: true);
+        SetCoherence(MidCoherence,   m.MidCoherence,   higherIsBetter: false);
+        SetCoherence(WheelCoherence, m.WheelCoherence, higherIsBetter: false);
+        SetCoherence(HighCoherence,  m.HighCoherence,  higherIsBetter: false, goodCutoff: 0.1);
     }
 
     private static void SetEnergyRatioDb(BalanceMetricRow row, double? value)
@@ -121,21 +128,25 @@ public partial class BalanceMetricsViewModel : ObservableObject
             :                     BalanceStatus.Critical;
     }
 
-    private static void SetCoherence(BalanceMetricRow row, double? value, bool higherIsBetter)
+    private static void SetCoherence(BalanceMetricRow row, double? value, bool higherIsBetter, double? goodCutoff = null)
     {
         if (!value.HasValue) { row.Value = "—"; row.Status = BalanceStatus.Unknown; return; }
         row.Value = string.Format(CultureInfo.InvariantCulture, "{0:0.00}", value.Value);
+        // Acceptable extends ±0.2 from the "good" cutoff.
+        const double buffer = 0.2;
         if (higherIsBetter)
         {
-            row.Status = value.Value >= 0.7 ? BalanceStatus.Good
-                : value.Value >= 0.5        ? BalanceStatus.Acceptable
-                :                             BalanceStatus.Critical;
+            double cutoff = goodCutoff ?? 0.7;
+            row.Status = value.Value >= cutoff          ? BalanceStatus.Good
+                : value.Value >= cutoff - buffer        ? BalanceStatus.Acceptable
+                :                                         BalanceStatus.Critical;
         }
         else
         {
-            row.Status = value.Value <= 0.4 ? BalanceStatus.Good
-                : value.Value <= 0.6        ? BalanceStatus.Acceptable
-                :                             BalanceStatus.Critical;
+            double cutoff = goodCutoff ?? 0.4;
+            row.Status = value.Value <= cutoff          ? BalanceStatus.Good
+                : value.Value <= cutoff + buffer        ? BalanceStatus.Acceptable
+                :                                         BalanceStatus.Critical;
         }
     }
 
@@ -198,6 +209,20 @@ public partial class BalanceMetricsViewModel : ObservableObject
         row.Status = abs <= 5  ? BalanceStatus.Good
             : abs <= 15        ? BalanceStatus.Acceptable
             :                    BalanceStatus.Critical;
+    }
+
+    // Rebound MSD: asymmetric — rear should NOT rebound faster than front
+    // (positive MSD = kick on rebound). Negative values up to −10% are still
+    // good (rear slightly slower is acceptable / preferred). Critical at
+    // |value| ≥ 15%.
+    private static void SetMsdRebound(BalanceMetricRow row, double? value)
+    {
+        if (!value.HasValue) { row.Value = "—"; row.Status = BalanceStatus.Unknown; return; }
+        row.Value = string.Format(CultureInfo.InvariantCulture, "{0:+0.00;-0.00;0.00} %", value.Value);
+        var v = value.Value;
+        row.Status = (v >= -10 && v <= 0) ? BalanceStatus.Good
+            : Math.Abs(v) >= 15            ? BalanceStatus.Critical
+            :                                BalanceStatus.Acceptable;
     }
 
     /// <summary>

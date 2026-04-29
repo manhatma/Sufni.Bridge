@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 125;
+    private const int CurrentPlotVersion = 131;
 
     // Limits concurrent plot generation tasks to reduce peak memory on iOS.
     private static readonly SemaphoreSlim s_plotSemaphore = new(3, 3);
@@ -561,7 +561,7 @@ public partial class SessionViewModel : ItemViewModelBase
             {
                 var velFft = new CombinedTravelFftPlot(new Plot(), minHz: 1.0, maxHz: 10.0,
                     peakMinHz: 1.3, peakMaxHz: 4.5,
-                    fitYAxisToData: true, topHeadroomDb: 3.0,
+                    fitYAxisToData: true, topHeadroomDb: 2.0,
                     mode: WheelSpectrumMode.Velocity);
                 velFft.LoadTelemetryData(telemetryData);
                 sessionCache.CombinedVelocityFft = velFft.Plot.GetSvgXml(width, height);
