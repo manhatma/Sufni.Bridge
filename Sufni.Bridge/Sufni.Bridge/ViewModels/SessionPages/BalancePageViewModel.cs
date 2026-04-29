@@ -51,6 +51,17 @@ public partial class BalanceMetricsViewModel : ObservableObject
     public BalanceMetricRow FreqDiff      { get; } = new() { Label = "Frequency-Diff",   Target = "≤ 0.4 Hz" };
     public BalanceMetricRow PeakAmpRatio  { get; } = new() { Label = "Peak Amp F/R",     Target = "0.9–1.1" };
 
+    // Front/Rear travel-energy distribution per band (10·log10(F/R)).
+    // Low/Mid split is discipline-aware (see TelemetryData.FrequencySplitFor); High band fix 8–40 Hz.
+    public BalanceMetricRow LowEnergyRatio  { get; } = new() { Label = "Energy F/R Low",  Target = "0 dB ±2" };
+    public BalanceMetricRow MidEnergyRatio  { get; } = new() { Label = "Energy F/R Mid",  Target = "0 dB ±2" };
+    public BalanceMetricRow HighEnergyRatio { get; } = new() { Label = "Energy F/R (8–40 Hz)", Target = "0 dB ±2" };
+
+    // Front/Rear coupling per band (mean magnitude-squared coherence γ²).
+    public BalanceMetricRow LowCoherence  { get; } = new() { Label = "Coherence Low",  Target = "≥ 0.7" };
+    public BalanceMetricRow MidCoherence  { get; } = new() { Label = "Coherence Mid",  Target = "≥ 0.7" };
+    public BalanceMetricRow HighCoherence { get; } = new() { Label = "Coherence (8–40 Hz)", Target = "≥ 0.7" };
+
     public void Apply(BalanceMetrics m, Discipline? discipline = null)
     {
         SetSagBand(FrontSag, m.FrontSagPct, 23, 28);
@@ -71,12 +82,47 @@ public partial class BalanceMetricsViewModel : ObservableObject
         SetMsd(CompMsd, m.CompressionMsd);
         SetMsd(RebMsd,  m.ReboundMsd);
         var (frontLo, frontHi, rearLo, rearHi) = GetFreqBands(discipline ?? Discipline.Enduro);
-        FrontFreq.Target = $"{frontLo:0.0}–{frontHi:0.0} Hz";
-        RearFreq.Target  = $"{rearLo:0.0}–{rearHi:0.0} Hz";
+        FrontFreq.Target = string.Format(CultureInfo.InvariantCulture, "{0:0.0}–{1:0.0} Hz", frontLo, frontHi);
+        RearFreq.Target  = string.Format(CultureInfo.InvariantCulture, "{0:0.0}–{1:0.0} Hz", rearLo,  rearHi);
         SetFreqBand(FrontFreq, m.FrontPeakFrequencyHz, frontLo, frontHi);
         SetFreqBand(RearFreq,  m.RearPeakFrequencyHz,  rearLo,  rearHi);
         SetFreqDiff(FreqDiff, m.FrequencyDifferenceHz);
         SetRatioBand(PeakAmpRatio, m.PeakAmplitudeRatio, 0.9, 1.1, 0.8, 1.2);
+
+        var fSplit = m.FrequencySplitHz ?? 2.0;
+        var fSplitStr = fSplit.ToString("0.0", CultureInfo.InvariantCulture);
+        LowEnergyRatio.Label  = $"Energy F/R (0.2–{fSplitStr} Hz)";
+        MidEnergyRatio.Label  = $"Energy F/R ({fSplitStr}–8 Hz)";
+        HighEnergyRatio.Label = "Energy F/R (8–40 Hz)";
+        SetEnergyRatioDb(LowEnergyRatio,  m.LowEnergyRatioDb);
+        SetEnergyRatioDb(MidEnergyRatio,  m.MidEnergyRatioDb);
+        SetEnergyRatioDb(HighEnergyRatio, m.HighEnergyRatioDb);
+
+        LowCoherence.Label  = $"Coherence (0.2–{fSplitStr} Hz)";
+        MidCoherence.Label  = $"Coherence ({fSplitStr}–8 Hz)";
+        HighCoherence.Label = "Coherence (8–40 Hz)";
+        SetCoherence(LowCoherence,  m.LowCoherence);
+        SetCoherence(MidCoherence,  m.MidCoherence);
+        SetCoherence(HighCoherence, m.HighCoherence);
+    }
+
+    private static void SetEnergyRatioDb(BalanceMetricRow row, double? value)
+    {
+        if (!value.HasValue) { row.Value = "—"; row.Status = BalanceStatus.Unknown; return; }
+        row.Value = string.Format(CultureInfo.InvariantCulture, "{0:+0.0;-0.0;0.0} dB", value.Value);
+        var abs = Math.Abs(value.Value);
+        row.Status = abs <= 2.0 ? BalanceStatus.Good
+            : abs <= 4.0        ? BalanceStatus.Acceptable
+            :                     BalanceStatus.Critical;
+    }
+
+    private static void SetCoherence(BalanceMetricRow row, double? value)
+    {
+        if (!value.HasValue) { row.Value = "—"; row.Status = BalanceStatus.Unknown; return; }
+        row.Value = string.Format(CultureInfo.InvariantCulture, "{0:0.00}", value.Value);
+        row.Status = value.Value >= 0.7 ? BalanceStatus.Good
+            : value.Value >= 0.5        ? BalanceStatus.Acceptable
+            :                             BalanceStatus.Critical;
     }
 
     private static void SetSagBand(BalanceMetricRow row, double? value, double goodLo, double goodHi)

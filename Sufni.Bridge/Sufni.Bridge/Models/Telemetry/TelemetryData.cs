@@ -8,6 +8,7 @@ using MathNet.Numerics.IntegralTransforms;
 using MathNet.Numerics.Statistics;
 using MessagePack;
 using Generate = ScottPlot.Generate;
+using Sufni.Bridge.Models;
 
 #pragma warning disable CS8618
 
@@ -102,7 +103,14 @@ public record BalanceMetrics(
     double? FrontPeakFrequencyHz,
     double? RearPeakFrequencyHz,
     double? FrequencyDifferenceHz,
-    double? PeakAmplitudeRatio);
+    double? PeakAmplitudeRatio,
+    double? LowEnergyRatioDb,
+    double? MidEnergyRatioDb,
+    double? HighEnergyRatioDb,
+    double? LowCoherence,
+    double? MidCoherence,
+    double? HighCoherence,
+    double? FrequencySplitHz);
 
 [MessagePackObject(keyAsPropertyName: true)]
 public class TelemetryData
@@ -1329,6 +1337,122 @@ public class TelemetryData
         return new TravelSpectrum(freqs, amps);
     }
 
+    // Welch cross-spectrum + per-axis auto-spectra computed in a single pass with the
+    // same windowing/segmentation as ComputeWelchSpectrum. Returns averaged Pxx, Pyy
+    // (real, single-sided power) and the complex cross spectrum Pxy. Empty arrays if
+    // signals are too short or mismatched.
+    public static (double[] Freqs, double[] Pxx, double[] Pyy, Complex[] Pxy) ComputeWelchCrossSpectrum(
+        double[] x, double[] y, int sampleRate, int segLen = 8192)
+    {
+        if (x == null || y == null || sampleRate <= 0 || x.Length != y.Length)
+            return ([], [], [], []);
+
+        int n = x.Length;
+        if (segLen > n) segLen = n;
+        if ((segLen & 1) != 0) segLen--;
+        if (segLen < 64) return ([], [], [], []);
+
+        var window = Window.Hann(segLen);
+        double winSum = 0;
+        for (int i = 0; i < segLen; i++) winSum += window[i];
+
+        int step = segLen / 2;
+        int bins = segLen / 2;
+        var pxx = new double[bins];
+        var pyy = new double[bins];
+        var pxy = new Complex[bins];
+        int segCount = 0;
+        var bx = new Complex[segLen];
+        var by = new Complex[segLen];
+
+        for (int start = 0; start + segLen <= n; start += step)
+        {
+            double mx = 0, my = 0;
+            for (int i = 0; i < segLen; i++) { mx += x[start + i]; my += y[start + i]; }
+            mx /= segLen; my /= segLen;
+
+            for (int i = 0; i < segLen; i++)
+            {
+                bx[i] = new Complex((x[start + i] - mx) * window[i], 0);
+                by[i] = new Complex((y[start + i] - my) * window[i], 0);
+            }
+            Fourier.Forward(bx, FourierOptions.NoScaling);
+            Fourier.Forward(by, FourierOptions.NoScaling);
+
+            for (int k = 0; k < bins; k++)
+            {
+                pxx[k] += bx[k].Magnitude * bx[k].Magnitude;
+                pyy[k] += by[k].Magnitude * by[k].Magnitude;
+                pxy[k] += bx[k] * Complex.Conjugate(by[k]);
+            }
+            segCount++;
+        }
+        if (segCount == 0) return ([], [], [], []);
+
+        double powerScale = 2.0 / (winSum * winSum);
+        double dF = (double)sampleRate / segLen;
+        var freqs = new double[bins];
+        for (int k = 0; k < bins; k++)
+        {
+            freqs[k] = k * dF;
+            pxx[k] = pxx[k] / segCount * powerScale;
+            pyy[k] = pyy[k] / segCount * powerScale;
+            pxy[k] = pxy[k] / segCount * powerScale;
+        }
+        return (freqs, pxx, pyy, pxy);
+    }
+
+    // Trapezoidal integration of a single-sided spectrum (e.g. Pxx) over [fLow, fHigh].
+    public static double IntegrateBand(double[] freqs, double[] spectrum, double fLow, double fHigh)
+    {
+        if (freqs.Length < 2 || spectrum.Length != freqs.Length) return 0;
+        double sum = 0;
+        for (int i = 1; i < freqs.Length; i++)
+        {
+            double f0 = freqs[i - 1], f1 = freqs[i];
+            if (f1 < fLow || f0 > fHigh) continue;
+            double a = Math.Max(f0, fLow);
+            double b = Math.Min(f1, fHigh);
+            if (b <= a) continue;
+            // linear interpolation of spectrum at [a, b]
+            double s0 = spectrum[i - 1] + (spectrum[i] - spectrum[i - 1]) * (a - f0) / (f1 - f0);
+            double s1 = spectrum[i - 1] + (spectrum[i] - spectrum[i - 1]) * (b - f0) / (f1 - f0);
+            sum += 0.5 * (s0 + s1) * (b - a);
+        }
+        return sum;
+    }
+
+    // Mean magnitude-squared coherence over [fLow, fHigh].
+    // γ²(f) = |Pxy|² / (Pxx · Pyy). Skips DC and uses bin centers within range.
+    public static double? MeanCoherence(
+        double[] freqs, double[] pxx, double[] pyy, Complex[] pxy, double fLow, double fHigh)
+    {
+        if (freqs.Length == 0 || pxy.Length != freqs.Length) return null;
+        double sum = 0;
+        int n = 0;
+        for (int k = 1; k < freqs.Length; k++)
+        {
+            double f = freqs[k];
+            if (f < fLow || f > fHigh) continue;
+            double denom = pxx[k] * pyy[k];
+            if (denom <= 1e-30) continue;
+            double mag2 = pxy[k].Real * pxy[k].Real + pxy[k].Imaginary * pxy[k].Imaginary;
+            double g2 = mag2 / denom;
+            if (g2 > 1.0) g2 = 1.0;
+            sum += g2;
+            n++;
+        }
+        return n > 0 ? sum / n : (double?)null;
+    }
+
+    // Discipline-aware Low/Mid split frequency. High band starts fix at 8 Hz.
+    public static double FrequencySplitFor(Discipline? d) => d switch
+    {
+        Discipline.XC       => 2.5,
+        Discipline.Downhill => 1.8,
+        _                   => 2.0, // Enduro / default
+    };
+
     public static (double Frequency, double Amplitude) FindDominantPeak(
         TravelSpectrum spectrum, double fMin, double fMax)
     {
@@ -1342,7 +1466,7 @@ public class TelemetryData
         return (bestF, bestA);
     }
 
-    public BalanceMetrics CalculateBalanceMetrics()
+    public BalanceMetrics CalculateBalanceMetrics(Discipline? discipline = null)
     {
         double? fSag = null, rSag = null, sagDiff = null;
         double? fP95Pct = null, rP95Pct = null;
@@ -1351,6 +1475,9 @@ public class TelemetryData
         double? compMsd = null, rebMsd = null;
         double? fPeak = null, rPeak = null, fAmp = null, rAmp = null;
         double? freqDiff = null, ampRatio = null;
+        double? lowEnergyDb = null, midEnergyDb = null, highEnergyDb = null;
+        double? lowCoh = null, midCoh = null, highCoh = null;
+        double fSplit = FrequencySplitFor(discipline);
 
         var maxF = Linkage?.MaxFrontTravel ?? 0;
         var maxR = Linkage?.MaxRearTravel ?? 0;
@@ -1432,6 +1559,33 @@ public class TelemetryData
         if (fAmp.HasValue && rAmp.HasValue && rAmp.Value > 1e-9)
             ampRatio = fAmp.Value / rAmp.Value;
 
+        // Front/Rear frequency-balance: per-band energy ratio (dB) + magnitude-squared
+        // coherence γ²(f). Bands: Low [0.2, fSplit], Mid [fSplit, 8], High [8, 40].
+        if (Front.Present && Rear.Present
+            && Front.Travel != null && Rear.Travel != null
+            && Front.Travel.Length >= 8192 && Rear.Travel.Length >= 8192
+            && Front.Travel.Length == Rear.Travel.Length)
+        {
+            var (cf, pxx, pyy, pxy) = ComputeWelchCrossSpectrum(Front.Travel, Rear.Travel, SampleRate);
+            if (cf.Length > 0)
+            {
+                static double? RatioDb(double[] freqs, double[] f, double[] r, double lo, double hi)
+                {
+                    var ef = IntegrateBand(freqs, f, lo, hi);
+                    var er = IntegrateBand(freqs, r, lo, hi);
+                    if (ef <= 0 || er <= 0) return null;
+                    return 10.0 * Math.Log10(ef / er);
+                }
+                lowEnergyDb  = RatioDb(cf, pxx, pyy, 0.2,    fSplit);
+                midEnergyDb  = RatioDb(cf, pxx, pyy, fSplit, 8.0);
+                highEnergyDb = RatioDb(cf, pxx, pyy, 8.0,    40.0);
+
+                lowCoh  = MeanCoherence(cf, pxx, pyy, pxy, 0.2,    fSplit);
+                midCoh  = MeanCoherence(cf, pxx, pyy, pxy, fSplit, 8.0);
+                highCoh = MeanCoherence(cf, pxx, pyy, pxy, 8.0,    40.0);
+            }
+        }
+
         return new BalanceMetrics(
             fSag, rSag, sagDiff,
             fP95Pct, rP95Pct,
@@ -1439,7 +1593,10 @@ public class TelemetryData
             compRatio, rebRatio,
             compMsd, rebMsd,
             fPeak, rPeak,
-            freqDiff, ampRatio);
+            freqDiff, ampRatio,
+            lowEnergyDb, midEnergyDb, highEnergyDb,
+            lowCoh, midCoh, highCoh,
+            fSplit);
     }
 
     #endregion

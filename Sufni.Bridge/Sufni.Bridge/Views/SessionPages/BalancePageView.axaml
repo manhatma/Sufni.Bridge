@@ -127,6 +127,36 @@
                         <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.PeakAmpRatio.Value}"  Foreground="{Binding Metrics.PeakAmpRatio.ValueBrush}" />
                         <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.PeakAmpRatio.Target}" />
                     </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.LowEnergyRatio.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.LowEnergyRatio.Value}"  Foreground="{Binding Metrics.LowEnergyRatio.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.LowEnergyRatio.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.MidEnergyRatio.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.MidEnergyRatio.Value}"  Foreground="{Binding Metrics.MidEnergyRatio.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.MidEnergyRatio.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.HighEnergyRatio.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.HighEnergyRatio.Value}"  Foreground="{Binding Metrics.HighEnergyRatio.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.HighEnergyRatio.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.LowCoherence.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.LowCoherence.Value}"  Foreground="{Binding Metrics.LowCoherence.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.LowCoherence.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.MidCoherence.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.MidCoherence.Value}"  Foreground="{Binding Metrics.MidCoherence.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.MidCoherence.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.HighCoherence.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.HighCoherence.Value}"  Foreground="{Binding Metrics.HighCoherence.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.HighCoherence.Target}" />
+                    </Grid>
                 </StackPanel>
             </Border>
             <Image IsVisible="{Binding CombinedTravelFft, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CombinedTravelFft}" />
