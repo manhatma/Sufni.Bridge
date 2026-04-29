@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 90;
+    private const int CurrentPlotVersion = 99;
 
     // Limits concurrent plot generation tasks to reduce peak memory on iOS.
     private static readonly SemaphoreSlim s_plotSemaphore = new(3, 3);
@@ -187,12 +187,13 @@ public partial class SessionViewModel : ItemViewModelBase
                 var rearVelCropTask     = Task.Run(() => SvgToSource(cache.RearVelocityTimeCropped));
                 var accelCropTask       = Task.Run(() => SvgToSource(cache.AccelerationTimeCropped));
                 var combinedFftTask     = Task.Run(() => SvgToSource(cache.CombinedTravelFft));
+                var combinedFftHighTask = Task.Run(() => SvgToSource(cache.CombinedTravelFftHigh));
 
                 await Task.WhenAll(frontVelHistTask, frontLsVelHistTask, rearVelHistTask, rearLsVelHistTask,
                     combBalTask, compBalTask, rebBalTask,
                     velDistCompTask, posVelCompTask, frontPosVelTask, rearPosVelTask,
                     frontTravelCropTask, rearTravelCropTask, frontVelCropTask, rearVelCropTask, accelCropTask,
-                    combinedFftTask);
+                    combinedFftTask, combinedFftHighTask);
 
                 var frontVelHistSrc   = frontVelHistTask.Result;
                 var frontLsVelHistSrc = frontLsVelHistTask.Result;
@@ -226,7 +227,8 @@ public partial class SessionViewModel : ItemViewModelBase
                         BalancePage.CombinedBalance    = SourceToImage(combBalSrc);
                         BalancePage.CompressionBalance = SourceToImage(compBalSrc);
                         BalancePage.ReboundBalance     = SourceToImage(rebBalSrc);
-                        BalancePage.CombinedTravelFft  = SourceToImage(combinedFftTask.Result);
+                        BalancePage.CombinedTravelFft     = SourceToImage(combinedFftTask.Result);
+                        BalancePage.CombinedTravelFftHigh = SourceToImage(combinedFftHighTask.Result);
                         if (cache.BalanceMetricsJson is not null)
                         {
                             try
@@ -531,11 +533,25 @@ public partial class SessionViewModel : ItemViewModelBase
         {
             tasks.Add(ThrottledPlotTask(() =>
             {
-                var fft = new CombinedTravelFftPlot(new Plot());
+                var fft = new CombinedTravelFftPlot(new Plot(), minHz: 0.1, maxHz: 10.0,
+                    fitYAxisToData: true, topHeadroomDb: 3.0);
                 fft.LoadTelemetryData(telemetryData);
                 sessionCache.CombinedTravelFft = fft.Plot.GetSvgXml(width, height);
                 var src = SvgToSource(sessionCache.CombinedTravelFft);
                 Dispatcher.UIThread.Post(() => { BalancePage.CombinedTravelFft = SourceToImage(src); });
+            }));
+
+            // Second FFT view zoomed to the higher-frequency range (3–100 Hz). Peak
+            // markers off — body resonance lives below 3 Hz so the search would land
+            // on noise.
+            tasks.Add(ThrottledPlotTask(() =>
+            {
+                var fftHigh = new CombinedTravelFftPlot(new Plot(), minHz: 3.0, maxHz: 100.0,
+                    peakMinHz: 0.0, peakMaxHz: 0.0, segmentLength: 4096, fitYAxisToData: true);
+                fftHigh.LoadTelemetryData(telemetryData);
+                sessionCache.CombinedTravelFftHigh = fftHigh.Plot.GetSvgXml(width, height);
+                var src = SvgToSource(sessionCache.CombinedTravelFftHigh);
+                Dispatcher.UIThread.Post(() => { BalancePage.CombinedTravelFftHigh = SourceToImage(src); });
             }));
 
             tasks.Add(Task.Run(() =>
@@ -1580,6 +1596,7 @@ public partial class SessionViewModel : ItemViewModelBase
 
             // Balance tab
             svgEntries.Add(cache.CombinedTravelFft);
+            svgEntries.Add(cache.CombinedTravelFftHigh);
             svgEntries.Add(cache.CombinedBalance);
             svgEntries.Add(cache.CompressionBalance);
             svgEntries.Add(cache.ReboundBalance);

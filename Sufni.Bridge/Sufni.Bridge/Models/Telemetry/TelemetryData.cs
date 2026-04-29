@@ -1275,7 +1275,7 @@ public class TelemetryData
 
     // Welch's method: Hanning window, 50% overlap, averaged across segments.
     // Returns (frequencies in Hz, single-sided amplitude in mm). Empty arrays if signal is too short.
-    public static TravelSpectrum ComputeWelchSpectrum(double[] signal, int sampleRate, int segLen = 4096)
+    public static TravelSpectrum ComputeWelchSpectrum(double[] signal, int sampleRate, int segLen = 8192)
     {
         if (signal == null || sampleRate <= 0) return new TravelSpectrum([], []);
 
@@ -1409,21 +1409,21 @@ public class TelemetryData
             catch { /* not enough strokes for polynomial fit */ }
         }
 
-        if (Front.Present && Front.Travel != null && Front.Travel.Length >= 4096)
+        if (Front.Present && Front.Travel != null && Front.Travel.Length >= 8192)
         {
             var spec = ComputeWelchSpectrum(Front.Travel, SampleRate);
             if (spec.Amplitudes.Length > 0)
             {
-                var (f, a) = FindDominantPeak(spec, 1.0, 5.0);
+                var (f, a) = FindDominantPeak(spec, 0.5, 5.0);
                 if (!double.IsNaN(f)) { fPeak = f; fAmp = a; }
             }
         }
-        if (Rear.Present && Rear.Travel != null && Rear.Travel.Length >= 4096)
+        if (Rear.Present && Rear.Travel != null && Rear.Travel.Length >= 8192)
         {
             var spec = ComputeWelchSpectrum(Rear.Travel, SampleRate);
             if (spec.Amplitudes.Length > 0)
             {
-                var (f, a) = FindDominantPeak(spec, 1.0, 5.0);
+                var (f, a) = FindDominantPeak(spec, 0.5, 5.0);
                 if (!double.IsNaN(f)) { rPeak = f; rAmp = a; }
             }
         }

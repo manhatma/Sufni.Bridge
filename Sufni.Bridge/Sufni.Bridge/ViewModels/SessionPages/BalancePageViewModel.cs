@@ -41,8 +41,11 @@ public partial class BalanceMetricsViewModel : ObservableObject
     public BalanceMetricRow RebVelRatio   { get; } = new() { Label = "Reb Vel F/R",      Target = "1.00–1.15" };
     public BalanceMetricRow CompMsd       { get; } = new() { Label = "MSD Compression",  Target = "≈ 0" };
     public BalanceMetricRow RebMsd        { get; } = new() { Label = "MSD Rebound",      Target = "≈ 0" };
-    public BalanceMetricRow FrontFreq     { get; } = new() { Label = "Front Eigenfreq.", Target = "1.8–3.5 Hz" };
-    public BalanceMetricRow RearFreq      { get; } = new() { Label = "Rear Eigenfreq.",  Target = "1.8–3.5 Hz" };
+    // Trail/Enduro target ranges. Front sits ~0.2–0.4 Hz higher than Rear so the
+    // rear absorbs the bump first and the bike doesn't pitch forward under
+    // compression (Ortega 2008; NSMB; Vorsprung tuning notes).
+    public BalanceMetricRow FrontFreq     { get; } = new() { Label = "Front Eigenfreq.", Target = "2.2–3.5 Hz" };
+    public BalanceMetricRow RearFreq      { get; } = new() { Label = "Rear Eigenfreq.",  Target = "1.8–3.0 Hz" };
     public BalanceMetricRow FreqDiff      { get; } = new() { Label = "Frequency-Diff",   Target = "≤ 0.4 Hz" };
     public BalanceMetricRow PeakAmpRatio  { get; } = new() { Label = "Peak Amp F/R",     Target = "0.9–1.1" };
 
@@ -65,8 +68,8 @@ public partial class BalanceMetricsViewModel : ObservableObject
         SetRatioBand(RebVelRatio,  m.ReboundVelocityRatio,     1.00, 1.15, 0.90, 1.20);
         SetMsd(CompMsd, m.CompressionMsd);
         SetMsd(RebMsd,  m.ReboundMsd);
-        SetSimple(FrontFreq, m.FrontPeakFrequencyHz, "{0:0.00} Hz");
-        SetSimple(RearFreq,  m.RearPeakFrequencyHz,  "{0:0.00} Hz");
+        SetFreqBand(FrontFreq, m.FrontPeakFrequencyHz, 2.2, 3.5);
+        SetFreqBand(RearFreq,  m.RearPeakFrequencyHz,  1.8, 3.0);
         SetFreqDiff(FreqDiff, m.FrequencyDifferenceHz);
         SetRatioBand(PeakAmpRatio, m.PeakAmplitudeRatio, 0.9, 1.1, 0.8, 1.2);
     }
@@ -132,6 +135,17 @@ public partial class BalanceMetricsViewModel : ObservableObject
             :                    BalanceStatus.Critical;
     }
 
+    private static void SetFreqBand(BalanceMetricRow row, double? value, double goodLo, double goodHi)
+    {
+        if (!value.HasValue) { row.Value = "—"; row.Status = BalanceStatus.Unknown; return; }
+        row.Value = string.Format(CultureInfo.InvariantCulture, "{0:0.00} Hz", value.Value);
+        var v = value.Value;
+        // ±0.5 Hz acceptable margin around the target band.
+        row.Status = (v >= goodLo && v <= goodHi) ? BalanceStatus.Good
+            : (v >= goodLo - 0.5 && v <= goodHi + 0.5) ? BalanceStatus.Acceptable
+            : BalanceStatus.Critical;
+    }
+
     private static void SetFreqDiff(BalanceMetricRow row, double? value)
     {
         if (!value.HasValue) { row.Value = "—"; row.Status = BalanceStatus.Unknown; return; }
@@ -149,6 +163,7 @@ public partial class BalancePageViewModel() : PageViewModelBase("Balance")
     [ObservableProperty] private SvgImage? compressionBalance;
     [ObservableProperty] private SvgImage? reboundBalance;
     [ObservableProperty] private SvgImage? combinedTravelFft;
+    [ObservableProperty] private SvgImage? combinedTravelFftHigh;
 
     public BalanceMetricsViewModel Metrics { get; } = new();
 }

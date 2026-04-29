@@ -130,6 +130,7 @@
                 </StackPanel>
             </Border>
             <Image IsVisible="{Binding CombinedTravelFft, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CombinedTravelFft}" />
+            <Image IsVisible="{Binding CombinedTravelFftHigh, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CombinedTravelFftHigh}" />
             <Image IsVisible="{Binding CombinedBalance, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CombinedBalance}" />
             <Image IsVisible="{Binding ReboundBalance, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding ReboundBalance}" />
             <Image IsVisible="{Binding CompressionBalance, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CompressionBalance}" />

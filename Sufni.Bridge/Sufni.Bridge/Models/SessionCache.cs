@@ -41,5 +41,6 @@ public class SessionCache
     [Column("rear_velocity_time_cropped")] public string? RearVelocityTimeCropped { get; set; }
     [Column("acceleration_time_cropped")] public string? AccelerationTimeCropped { get; set; }
     [Column("combined_travel_fft")] public string? CombinedTravelFft { get; set; }
+    [Column("combined_travel_fft_high")] public string? CombinedTravelFftHigh { get; set; }
     [Column("balance_metrics_json")] public string? BalanceMetricsJson { get; set; }
 }
