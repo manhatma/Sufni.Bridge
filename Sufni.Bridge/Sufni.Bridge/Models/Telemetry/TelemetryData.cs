@@ -1448,20 +1448,42 @@ public class TelemetryData
     // Discipline-aware Low/Mid split frequency. High band starts fix at 8 Hz.
     public static double FrequencySplitFor(Discipline? d) => d switch
     {
-        Discipline.XC       => 2.5,
-        Discipline.Downhill => 1.8,
+        Discipline.XC       => 2.8,
+        Discipline.Downhill => 1.6,
         _                   => 2.0, // Enduro / default
     };
 
+    // Body-resonance peak detection in the velocity domain.
+    //
+    // The travel-amplitude spectrum is dominated by a 1/f-like trend, so finding
+    // the resonance there requires detrending and threshold heuristics that are
+    // fragile across sessions. Multiplying amplitude by 2πf converts to the
+    // velocity-amplitude spectrum, where the trend is removed and the body
+    // resonance is structurally the dominant feature. We pick the absolute max
+    // of the velocity spectrum in [fMin, fMax]; the returned amplitude is the
+    // original travel amplitude at that bin (so plot markers sit on the travel
+    // curve).
     public static (double Frequency, double Amplitude) FindDominantPeak(
         TravelSpectrum spectrum, double fMin, double fMax)
     {
+        var freqs = spectrum.Frequencies;
+        var amps = spectrum.Amplitudes;
+        int n = amps.Length;
+        if (n < 2) return (double.NaN, 0);
+
+        double bestVel = 0;
         double bestF = double.NaN, bestA = 0;
-        for (int i = 1; i < spectrum.Amplitudes.Length; i++)
+        for (int i = 1; i < n; i++)
         {
-            var f = spectrum.Frequencies[i];
+            double f = freqs[i];
             if (f < fMin || f > fMax) continue;
-            if (spectrum.Amplitudes[i] > bestA) { bestA = spectrum.Amplitudes[i]; bestF = f; }
+            double vel = amps[i] * 2.0 * Math.PI * f;
+            if (vel > bestVel)
+            {
+                bestVel = vel;
+                bestF = f;
+                bestA = amps[i];
+            }
         }
         return (bestF, bestA);
     }
@@ -1541,7 +1563,7 @@ public class TelemetryData
             var spec = ComputeWelchSpectrum(Front.Travel, SampleRate);
             if (spec.Amplitudes.Length > 0)
             {
-                var (f, a) = FindDominantPeak(spec, 0.5, 5.0);
+                var (f, a) = FindDominantPeak(spec, 1.3, 4.5);
                 if (!double.IsNaN(f)) { fPeak = f; fAmp = a; }
             }
         }
@@ -1550,7 +1572,7 @@ public class TelemetryData
             var spec = ComputeWelchSpectrum(Rear.Travel, SampleRate);
             if (spec.Amplitudes.Length > 0)
             {
-                var (f, a) = FindDominantPeak(spec, 0.5, 5.0);
+                var (f, a) = FindDominantPeak(spec, 1.3, 4.5);
                 if (!double.IsNaN(f)) { rPeak = f; rAmp = a; }
             }
         }
@@ -1560,7 +1582,7 @@ public class TelemetryData
             ampRatio = fAmp.Value / rAmp.Value;
 
         // Front/Rear frequency-balance: per-band energy ratio (dB) + magnitude-squared
-        // coherence γ²(f). Bands: Low [0.2, fSplit], Mid [fSplit, 8], High [8, 40].
+        // coherence γ²(f). Bands: Low [1.0, fSplit], Mid [fSplit, 8], High [8, 50].
         if (Front.Present && Rear.Present
             && Front.Travel != null && Rear.Travel != null
             && Front.Travel.Length >= 8192 && Rear.Travel.Length >= 8192
@@ -1576,13 +1598,13 @@ public class TelemetryData
                     if (ef <= 0 || er <= 0) return null;
                     return 10.0 * Math.Log10(ef / er);
                 }
-                lowEnergyDb  = RatioDb(cf, pxx, pyy, 0.2,    fSplit);
+                lowEnergyDb  = RatioDb(cf, pxx, pyy, 1.0,    fSplit);
                 midEnergyDb  = RatioDb(cf, pxx, pyy, fSplit, 8.0);
-                highEnergyDb = RatioDb(cf, pxx, pyy, 8.0,    40.0);
+                highEnergyDb = RatioDb(cf, pxx, pyy, 8.0,    50.0);
 
-                lowCoh  = MeanCoherence(cf, pxx, pyy, pxy, 0.2,    fSplit);
+                lowCoh  = MeanCoherence(cf, pxx, pyy, pxy, 1.0,    fSplit);
                 midCoh  = MeanCoherence(cf, pxx, pyy, pxy, fSplit, 8.0);
-                highCoh = MeanCoherence(cf, pxx, pyy, pxy, 8.0,    40.0);
+                highCoh = MeanCoherence(cf, pxx, pyy, pxy, 8.0,    50.0);
             }
         }
 

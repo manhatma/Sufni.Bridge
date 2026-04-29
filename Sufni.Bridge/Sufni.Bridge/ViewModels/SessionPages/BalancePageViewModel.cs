@@ -42,25 +42,30 @@ public partial class BalanceMetricsViewModel : ObservableObject
     public BalanceMetricRow RebVelRatio   { get; } = new() { Label = "Reb Vel F/R",      Target = "1.00–1.15" };
     public BalanceMetricRow CompMsd       { get; } = new() { Label = "MSD Compression",  Target = "≈ 0" };
     public BalanceMetricRow RebMsd        { get; } = new() { Label = "MSD Rebound",      Target = "≈ 0" };
-    // Discipline-dependent eigenfrequency targets — see GetFreqBand below.
-    // Front sits ~0.2–0.4 Hz higher than Rear so the rear absorbs the bump first
-    // and the bike doesn't pitch forward under compression (Ortega 2008; NSMB;
-    // Vorsprung tuning notes). Defaults are Enduro; updated when Apply runs.
-    public BalanceMetricRow FrontFreq     { get; } = new() { Label = "Front Eigenfreq.", Target = "2.2–3.5 Hz" };
-    public BalanceMetricRow RearFreq      { get; } = new() { Label = "Rear Eigenfreq.",  Target = "1.8–3.0 Hz" };
-    public BalanceMetricRow FreqDiff      { get; } = new() { Label = "Frequency-Diff",   Target = "≤ 0.4 Hz" };
+    // Discipline-dependent eigenfrequency targets — see GetFreqBands below.
+    // Following Vorsprung's recommendation, the band starts equal front/rear
+    // (lower bound matches Rear); the upper bound runs ~0.3 Hz higher to allow
+    // for the common practice of running the front slightly stiffer.
+    // Defaults are Enduro; updated when Apply runs.
+    public BalanceMetricRow FrontFreq     { get; } = new() { Label = "Front Eigenfreq.", Target = "2.1–3.2 Hz" };
+    public BalanceMetricRow RearFreq      { get; } = new() { Label = "Rear Eigenfreq.",  Target = "2.1–2.9 Hz" };
+    public BalanceMetricRow FreqDiff      { get; } = new() { Label = "Frequency-Diff |F−R|", Target = "≤ 0.4 Hz" };
     public BalanceMetricRow PeakAmpRatio  { get; } = new() { Label = "Peak Amp F/R",     Target = "0.9–1.1" };
 
     // Front/Rear travel-energy distribution per band (10·log10(F/R)).
     // Low/Mid split is discipline-aware (see TelemetryData.FrequencySplitFor); High band fix 8–40 Hz.
     public BalanceMetricRow LowEnergyRatio  { get; } = new() { Label = "Energy F/R Low",  Target = "0 dB ±2" };
     public BalanceMetricRow MidEnergyRatio  { get; } = new() { Label = "Energy F/R Mid",  Target = "0 dB ±2" };
-    public BalanceMetricRow HighEnergyRatio { get; } = new() { Label = "Energy F/R (8–40 Hz)", Target = "0 dB ±2" };
+    public BalanceMetricRow HighEnergyRatio { get; } = new() { Label = "Energy F/R (8.0–50.0 Hz)", Target = "0 dB ±2" };
 
     // Front/Rear coupling per band (mean magnitude-squared coherence γ²).
+    // Low band: high coherence is desirable (frame couples both axes during pitch/heave).
+    // Mid/High bands: low coherence is desirable — those are surface- and tire-driven and
+    // should excite the axes independently. High γ² there implies shared excitation
+    // (e.g. drivetrain bob, frame resonance) which is generally not what you want.
     public BalanceMetricRow LowCoherence  { get; } = new() { Label = "Coherence Low",  Target = "≥ 0.7" };
-    public BalanceMetricRow MidCoherence  { get; } = new() { Label = "Coherence Mid",  Target = "≥ 0.7" };
-    public BalanceMetricRow HighCoherence { get; } = new() { Label = "Coherence (8–40 Hz)", Target = "≥ 0.7" };
+    public BalanceMetricRow MidCoherence  { get; } = new() { Label = "Coherence Mid",  Target = "≤ 0.4" };
+    public BalanceMetricRow HighCoherence { get; } = new() { Label = "Coherence (8.0–50.0 Hz)", Target = "≤ 0.4" };
 
     public void Apply(BalanceMetrics m, Discipline? discipline = null)
     {
@@ -91,19 +96,19 @@ public partial class BalanceMetricsViewModel : ObservableObject
 
         var fSplit = m.FrequencySplitHz ?? 2.0;
         var fSplitStr = fSplit.ToString("0.0", CultureInfo.InvariantCulture);
-        LowEnergyRatio.Label  = $"Energy F/R (0.2–{fSplitStr} Hz)";
-        MidEnergyRatio.Label  = $"Energy F/R ({fSplitStr}–8 Hz)";
-        HighEnergyRatio.Label = "Energy F/R (8–40 Hz)";
+        LowEnergyRatio.Label  = $"Energy F/R (1.0–{fSplitStr} Hz)";
+        MidEnergyRatio.Label  = $"Energy F/R ({fSplitStr}–8.0 Hz)";
+        HighEnergyRatio.Label = "Energy F/R (8.0–50.0 Hz)";
         SetEnergyRatioDb(LowEnergyRatio,  m.LowEnergyRatioDb);
         SetEnergyRatioDb(MidEnergyRatio,  m.MidEnergyRatioDb);
         SetEnergyRatioDb(HighEnergyRatio, m.HighEnergyRatioDb);
 
-        LowCoherence.Label  = $"Coherence (0.2–{fSplitStr} Hz)";
-        MidCoherence.Label  = $"Coherence ({fSplitStr}–8 Hz)";
-        HighCoherence.Label = "Coherence (8–40 Hz)";
-        SetCoherence(LowCoherence,  m.LowCoherence);
-        SetCoherence(MidCoherence,  m.MidCoherence);
-        SetCoherence(HighCoherence, m.HighCoherence);
+        LowCoherence.Label  = $"Coherence (1.0–{fSplitStr} Hz)";
+        MidCoherence.Label  = $"Coherence ({fSplitStr}–8.0 Hz)";
+        HighCoherence.Label = "Coherence (8.0–50.0 Hz)";
+        SetCoherence(LowCoherence,  m.LowCoherence,  higherIsBetter: true);
+        SetCoherence(MidCoherence,  m.MidCoherence,  higherIsBetter: false);
+        SetCoherence(HighCoherence, m.HighCoherence, higherIsBetter: false);
     }
 
     private static void SetEnergyRatioDb(BalanceMetricRow row, double? value)
@@ -116,13 +121,22 @@ public partial class BalanceMetricsViewModel : ObservableObject
             :                     BalanceStatus.Critical;
     }
 
-    private static void SetCoherence(BalanceMetricRow row, double? value)
+    private static void SetCoherence(BalanceMetricRow row, double? value, bool higherIsBetter)
     {
         if (!value.HasValue) { row.Value = "—"; row.Status = BalanceStatus.Unknown; return; }
         row.Value = string.Format(CultureInfo.InvariantCulture, "{0:0.00}", value.Value);
-        row.Status = value.Value >= 0.7 ? BalanceStatus.Good
-            : value.Value >= 0.5        ? BalanceStatus.Acceptable
-            :                             BalanceStatus.Critical;
+        if (higherIsBetter)
+        {
+            row.Status = value.Value >= 0.7 ? BalanceStatus.Good
+                : value.Value >= 0.5        ? BalanceStatus.Acceptable
+                :                             BalanceStatus.Critical;
+        }
+        else
+        {
+            row.Status = value.Value <= 0.4 ? BalanceStatus.Good
+                : value.Value <= 0.6        ? BalanceStatus.Acceptable
+                :                             BalanceStatus.Critical;
+        }
     }
 
     private static void SetSagBand(BalanceMetricRow row, double? value, double goodLo, double goodHi)
@@ -187,18 +201,19 @@ public partial class BalanceMetricsViewModel : ObservableObject
     }
 
     /// <summary>
-    /// Discipline-specific body eigenfrequency target bands. Driven by typical travel
-    /// and spring-rate ranges per category:
-    ///   XC        — short travel, stiff   → high f_n
-    ///   Enduro    — medium travel         → mid f_n
-    ///   Downhill  — long travel, soft     → low f_n
-    /// In all categories Front sits 0.3 Hz higher than Rear (see comment on FrontFreq).
+    /// Discipline-specific body eigenfrequency target bands. Derived from
+    /// f_n = (1/2π)·√(g/x_static) at sag 20–35 % for typical travel per category:
+    ///   XC        ~80 mm  → 3.0–3.9 Hz
+    ///   Enduro    ~160 mm → 2.1–3.2 Hz
+    ///   Downhill  ~200 mm → 1.7–2.5 Hz
+    /// Front lower bound equals Rear lower bound (Vorsprung); Front upper bound
+    /// runs ~0.3 Hz higher to allow for a slightly stiffer front. See FrontFreq comment.
     /// </summary>
     private static (double frontLo, double frontHi, double rearLo, double rearHi) GetFreqBands(Discipline d) => d switch
     {
-        Discipline.XC       => (2.8, 4.0, 2.5, 3.5),
-        Discipline.Downhill => (1.5, 2.5, 1.3, 2.2),
-        _                   => (2.2, 3.5, 1.8, 3.0), // Enduro / default
+        Discipline.XC       => (3.0, 3.9, 3.0, 3.6),
+        Discipline.Downhill => (1.7, 2.5, 1.7, 2.3),
+        _                   => (2.1, 3.2, 2.1, 2.9), // Enduro / default
     };
 
     private static void SetFreqBand(BalanceMetricRow row, double? value, double goodLo, double goodHi)
@@ -230,6 +245,7 @@ public partial class BalancePageViewModel() : PageViewModelBase("Balance")
     [ObservableProperty] private SvgImage? reboundBalance;
     [ObservableProperty] private SvgImage? combinedTravelFft;
     [ObservableProperty] private SvgImage? combinedTravelFftHigh;
+    [ObservableProperty] private SvgImage? combinedVelocityFft;
 
     public BalanceMetricsViewModel Metrics { get; } = new();
 }
