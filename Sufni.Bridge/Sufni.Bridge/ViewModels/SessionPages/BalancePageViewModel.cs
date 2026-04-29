@@ -3,6 +3,7 @@ using System.Globalization;
 using Avalonia.Media;
 using Avalonia.Svg.Skia;
 using CommunityToolkit.Mvvm.ComponentModel;
+using Sufni.Bridge.Models;
 using Sufni.Bridge.Models.Telemetry;
 
 namespace Sufni.Bridge.ViewModels.SessionPages;
@@ -41,15 +42,16 @@ public partial class BalanceMetricsViewModel : ObservableObject
     public BalanceMetricRow RebVelRatio   { get; } = new() { Label = "Reb Vel F/R",      Target = "1.00–1.15" };
     public BalanceMetricRow CompMsd       { get; } = new() { Label = "MSD Compression",  Target = "≈ 0" };
     public BalanceMetricRow RebMsd        { get; } = new() { Label = "MSD Rebound",      Target = "≈ 0" };
-    // Trail/Enduro target ranges. Front sits ~0.2–0.4 Hz higher than Rear so the
-    // rear absorbs the bump first and the bike doesn't pitch forward under
-    // compression (Ortega 2008; NSMB; Vorsprung tuning notes).
+    // Discipline-dependent eigenfrequency targets — see GetFreqBand below.
+    // Front sits ~0.2–0.4 Hz higher than Rear so the rear absorbs the bump first
+    // and the bike doesn't pitch forward under compression (Ortega 2008; NSMB;
+    // Vorsprung tuning notes). Defaults are Enduro; updated when Apply runs.
     public BalanceMetricRow FrontFreq     { get; } = new() { Label = "Front Eigenfreq.", Target = "2.2–3.5 Hz" };
     public BalanceMetricRow RearFreq      { get; } = new() { Label = "Rear Eigenfreq.",  Target = "1.8–3.0 Hz" };
     public BalanceMetricRow FreqDiff      { get; } = new() { Label = "Frequency-Diff",   Target = "≤ 0.4 Hz" };
     public BalanceMetricRow PeakAmpRatio  { get; } = new() { Label = "Peak Amp F/R",     Target = "0.9–1.1" };
 
-    public void Apply(BalanceMetrics m)
+    public void Apply(BalanceMetrics m, Discipline? discipline = null)
     {
         SetSagBand(FrontSag, m.FrontSagPct, 23, 28);
         SetSagBand(RearSag,  m.RearSagPct,  28, 33);
@@ -68,8 +70,11 @@ public partial class BalanceMetricsViewModel : ObservableObject
         SetRatioBand(RebVelRatio,  m.ReboundVelocityRatio,     1.00, 1.15, 0.90, 1.20);
         SetMsd(CompMsd, m.CompressionMsd);
         SetMsd(RebMsd,  m.ReboundMsd);
-        SetFreqBand(FrontFreq, m.FrontPeakFrequencyHz, 2.2, 3.5);
-        SetFreqBand(RearFreq,  m.RearPeakFrequencyHz,  1.8, 3.0);
+        var (frontLo, frontHi, rearLo, rearHi) = GetFreqBands(discipline ?? Discipline.Enduro);
+        FrontFreq.Target = $"{frontLo:0.0}–{frontHi:0.0} Hz";
+        RearFreq.Target  = $"{rearLo:0.0}–{rearHi:0.0} Hz";
+        SetFreqBand(FrontFreq, m.FrontPeakFrequencyHz, frontLo, frontHi);
+        SetFreqBand(RearFreq,  m.RearPeakFrequencyHz,  rearLo,  rearHi);
         SetFreqDiff(FreqDiff, m.FrequencyDifferenceHz);
         SetRatioBand(PeakAmpRatio, m.PeakAmplitudeRatio, 0.9, 1.1, 0.8, 1.2);
     }
@@ -134,6 +139,21 @@ public partial class BalanceMetricsViewModel : ObservableObject
             : abs <= 15        ? BalanceStatus.Acceptable
             :                    BalanceStatus.Critical;
     }
+
+    /// <summary>
+    /// Discipline-specific body eigenfrequency target bands. Driven by typical travel
+    /// and spring-rate ranges per category:
+    ///   XC        — short travel, stiff   → high f_n
+    ///   Enduro    — medium travel         → mid f_n
+    ///   Downhill  — long travel, soft     → low f_n
+    /// In all categories Front sits 0.3 Hz higher than Rear (see comment on FrontFreq).
+    /// </summary>
+    private static (double frontLo, double frontHi, double rearLo, double rearHi) GetFreqBands(Discipline d) => d switch
+    {
+        Discipline.XC       => (2.8, 4.0, 2.5, 3.5),
+        Discipline.Downhill => (1.5, 2.5, 1.3, 2.2),
+        _                   => (2.2, 3.5, 1.8, 3.0), // Enduro / default
+    };
 
     private static void SetFreqBand(BalanceMetricRow row, double? value, double goodLo, double goodHi)
     {

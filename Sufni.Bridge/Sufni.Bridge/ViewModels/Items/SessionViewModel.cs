@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 99;
+    private const int CurrentPlotVersion = 101;
 
     // Limits concurrent plot generation tasks to reduce peak memory on iOS.
     private static readonly SemaphoreSlim s_plotSemaphore = new(3, 3);
@@ -207,6 +207,12 @@ public partial class SessionViewModel : ItemViewModelBase
                 var frontPosVelSrc  = frontPosVelTask.Result;
                 var rearPosVelSrc   = rearPosVelTask.Result;
 
+                // Resolve discipline up-front (async DB lookup) — the UI-thread
+                // lambda below is sync and can't await.
+                var sessionDiscipline = cache.BalanceMetricsJson is not null
+                    ? await GetSessionDisciplineAsync()
+                    : null;
+
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     DamperPage.FrontVelocityHistogram          = SourceToImage(frontVelHistSrc);
@@ -234,7 +240,7 @@ public partial class SessionViewModel : ItemViewModelBase
                             try
                             {
                                 var m = JsonSerializer.Deserialize<BalanceMetrics>(cache.BalanceMetricsJson);
-                                if (m is not null) BalancePage.Metrics.Apply(m);
+                                if (m is not null) BalancePage.Metrics.Apply(m, sessionDiscipline);
                             }
                             catch { /* corrupt metrics cache; will be rebuilt */ }
                         }
@@ -258,6 +264,24 @@ public partial class SessionViewModel : ItemViewModelBase
         }
 
         return (true, hasVdc, hasPvc);
+    }
+
+    /// <summary>
+    /// Resolves the discipline of the Setup that owns this session, or null if the
+    /// setup is missing/unreadable. Used by the balance metrics box to pick
+    /// discipline-specific eigenfrequency target bands.
+    /// </summary>
+    private async Task<Discipline?> GetSessionDisciplineAsync()
+    {
+        if (!session.Setup.HasValue) return null;
+        var dbSvc = App.Current?.Services?.GetService<IDatabaseService>();
+        if (dbSvc is null) return null;
+        try
+        {
+            var setup = await dbSvc.GetSetupAsync(session.Setup.Value);
+            return setup?.Discipline;
+        }
+        catch { return null; }
     }
 
     private static Task ThrottledPlotTask(Action work)
@@ -546,7 +570,7 @@ public partial class SessionViewModel : ItemViewModelBase
             // on noise.
             tasks.Add(ThrottledPlotTask(() =>
             {
-                var fftHigh = new CombinedTravelFftPlot(new Plot(), minHz: 3.0, maxHz: 100.0,
+                var fftHigh = new CombinedTravelFftPlot(new Plot(), minHz: 10.0, maxHz: 100.0,
                     peakMinHz: 0.0, peakMaxHz: 0.0, segmentLength: 4096, fitYAxisToData: true);
                 fftHigh.LoadTelemetryData(telemetryData);
                 sessionCache.CombinedTravelFftHigh = fftHigh.Plot.GetSvgXml(width, height);
@@ -554,11 +578,12 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { BalancePage.CombinedTravelFftHigh = SourceToImage(src); });
             }));
 
-            tasks.Add(Task.Run(() =>
+            tasks.Add(Task.Run(async () =>
             {
                 var metrics = telemetryData.CalculateBalanceMetrics();
                 sessionCache.BalanceMetricsJson = JsonSerializer.Serialize(metrics);
-                Dispatcher.UIThread.Post(() => BalancePage.Metrics.Apply(metrics));
+                var discipline = await GetSessionDisciplineAsync();
+                Dispatcher.UIThread.Post(() => BalancePage.Metrics.Apply(metrics, discipline));
             }));
         }
 
