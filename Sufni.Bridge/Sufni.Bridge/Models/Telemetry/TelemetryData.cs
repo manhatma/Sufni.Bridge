@@ -1473,8 +1473,8 @@ public class TelemetryData
         int n = amps.Length;
         if (n < 2) return (double.NaN, 0);
 
+        int bestK = -1;
         double bestVel = 0;
-        double bestF = double.NaN, bestA = 0;
         for (int i = 1; i < n; i++)
         {
             double f = freqs[i];
@@ -1483,10 +1483,53 @@ public class TelemetryData
             if (vel > bestVel)
             {
                 bestVel = vel;
-                bestF = f;
-                bestA = amps[i];
+                bestK = i;
             }
         }
+
+        if (bestK < 0) return (double.NaN, 0);
+
+        double bestF = freqs[bestK];
+        double bestA = amps[bestK];
+
+        // Quadratic peak interpolation in velocity-dB domain. The Hann window
+        // used by ComputeWelchSpectrum has a worst-case scalloping loss of
+        // ~1.4 dB when the true resonance frequency lies between two bins;
+        // fitting a parabola through the three bins around the maximum and
+        // returning the vertex recovers sub-bin accuracy in both frequency
+        // and amplitude (residual error < 0.1 dB). Standard technique in
+        // audio / vibration analysis.
+        if (bestK > 0 && bestK < n - 1)
+        {
+            // Velocity at the three bins (peak detection runs in velocity
+            // domain, so the parabola must be fitted in the same domain).
+            double v0 = amps[bestK - 1] * 2.0 * Math.PI * freqs[bestK - 1];
+            double v1 = bestVel;
+            double v2 = amps[bestK + 1] * 2.0 * Math.PI * freqs[bestK + 1];
+            if (v0 > 0 && v1 > 0 && v2 > 0)
+            {
+                double alpha = 20.0 * Math.Log10(v0);
+                double beta  = 20.0 * Math.Log10(v1);
+                double gamma = 20.0 * Math.Log10(v2);
+                double denom = alpha - 2.0 * beta + gamma;
+                // denom < 0 confirms the parabola opens downward (true local max)
+                if (denom < 0)
+                {
+                    double delta = 0.5 * (alpha - gamma) / denom;
+                    if (delta > -0.5 && delta < 0.5)
+                    {
+                        double dF = freqs[bestK + 1] - freqs[bestK]; // bin width (constant)
+                        bestF = freqs[bestK] + delta * dF;
+                        double peakVelDb = beta - 0.25 * (alpha - gamma) * delta;
+                        double peakVel = Math.Pow(10.0, peakVelDb / 20.0);
+                        // Convert back to travel amplitude (the API contract
+                        // — callers multiply by 2π·f to get velocity).
+                        bestA = peakVel / (2.0 * Math.PI * bestF);
+                    }
+                }
+            }
+        }
+
         return (bestF, bestA);
     }
 
