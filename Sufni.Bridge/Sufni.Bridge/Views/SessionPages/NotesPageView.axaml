@@ -21,7 +21,7 @@
     <Grid
         Width="{Binding $parent[ScrollViewer].Bounds.Width}"
         Margin="0,10,0,0"
-        ColumnDefinitions="15 auto 10 * 28 6 * 28 15"
+        ColumnDefinitions="15 auto 10 * 18 6 * 18 15"
         RowDefinitions="auto auto auto auto auto auto auto auto auto *">
 
         <Grid.Styles>
@@ -31,6 +31,17 @@
                 <Setter Property="Margin" Value="2" />
                 <Setter Property="FontSize" Value="12" />
             </Style>
+            <!--  Compact spinner buttons so the value stays readable on touch screens  -->
+            <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton">
+                <Setter Property="MinWidth" Value="22" />
+                <Setter Property="Width" Value="22" />
+                <Setter Property="Padding" Value="0" />
+            </Style>
+            <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ Button">
+                <Setter Property="MinWidth" Value="22" />
+                <Setter Property="Width" Value="22" />
+                <Setter Property="Padding" Value="0" />
+            </Style>
             <Style Selector="Label">
                 <Setter Property="FontSize" Value="12" />
             </Style>
@@ -38,8 +49,8 @@
                 <Setter Property="FontSize" Value="12" />
             </Style>
             <Style Selector="ToggleButton.pencil">
-                <Setter Property="Padding" Value="3" />
-                <Setter Property="Margin" Value="2" />
+                <Setter Property="Padding" Value="1" />
+                <Setter Property="Margin" Value="0" />
                 <Setter Property="MinWidth" Value="0" />
                 <Setter Property="MinHeight" Value="0" />
                 <Setter Property="VerticalAlignment" Value="Center" />
@@ -96,7 +107,7 @@
             Grid.Column="4"
             Classes="pencil"
             IsChecked="{Binding ForkSettings.SpringRateEditing}">
-            <Image Width="13" Source="{SvgImage /Assets/fa-pen-square.svg}" />
+            <Image Width="11" Source="{SvgImage /Assets/fa-pen-square.svg}" />
         </ToggleButton>
         <TextBox
             Grid.Row="1"
@@ -109,7 +120,7 @@
             Grid.Column="7"
             Classes="pencil"
             IsChecked="{Binding ShockSettings.SpringRateEditing}">
-            <Image Width="13" Source="{SvgImage /Assets/fa-pen-square.svg}" />
+            <Image Width="11" Source="{SvgImage /Assets/fa-pen-square.svg}" />
         </ToggleButton>
 
         <!--  VolSpc row  -->
@@ -130,7 +141,7 @@
             Grid.Column="4"
             Classes="pencil"
             IsChecked="{Binding ForkSettings.VolSpcEditing}">
-            <Image Width="13" Source="{SvgImage /Assets/fa-pen-square.svg}" />
+            <Image Width="11" Source="{SvgImage /Assets/fa-pen-square.svg}" />
         </ToggleButton>
         <NumericUpDown
             Grid.Row="2"
@@ -143,7 +154,7 @@
             Grid.Column="7"
             Classes="pencil"
             IsChecked="{Binding ShockSettings.VolSpcEditing}">
-            <Image Width="13" Source="{SvgImage /Assets/fa-pen-square.svg}" />
+            <Image Width="11" Source="{SvgImage /Assets/fa-pen-square.svg}" />
         </ToggleButton>
 
         <!--  HSC row  -->
@@ -162,7 +173,7 @@
             Grid.Column="4"
             Classes="pencil"
             IsChecked="{Binding ForkSettings.HighSpeedCompressionEditing}">
-            <Image Width="13" Source="{SvgImage /Assets/fa-pen-square.svg}" />
+            <Image Width="11" Source="{SvgImage /Assets/fa-pen-square.svg}" />
         </ToggleButton>
         <NumericUpDown
             Grid.Row="3"
@@ -173,7 +184,7 @@
             Grid.Column="7"
             Classes="pencil"
             IsChecked="{Binding ShockSettings.HighSpeedCompressionEditing}">
-            <Image Width="13" Source="{SvgImage /Assets/fa-pen-square.svg}" />
+            <Image Width="11" Source="{SvgImage /Assets/fa-pen-square.svg}" />
         </ToggleButton>
 
         <!--  LSC row  -->
@@ -192,7 +203,7 @@
             Grid.Column="4"
             Classes="pencil"
             IsChecked="{Binding ForkSettings.LowSpeedCompressionEditing}">
-            <Image Width="13" Source="{SvgImage /Assets/fa-pen-square.svg}" />
+            <Image Width="11" Source="{SvgImage /Assets/fa-pen-square.svg}" />
         </ToggleButton>
         <NumericUpDown
             Grid.Row="4"
@@ -203,7 +214,7 @@
             Grid.Column="7"
             Classes="pencil"
             IsChecked="{Binding ShockSettings.LowSpeedCompressionEditing}">
-            <Image Width="13" Source="{SvgImage /Assets/fa-pen-square.svg}" />
+            <Image Width="11" Source="{SvgImage /Assets/fa-pen-square.svg}" />
         </ToggleButton>
 
         <!--  LSR row  -->
@@ -222,7 +233,7 @@
             Grid.Column="4"
             Classes="pencil"
             IsChecked="{Binding ForkSettings.LowSpeedReboundEditing}">
-            <Image Width="13" Source="{SvgImage /Assets/fa-pen-square.svg}" />
+            <Image Width="11" Source="{SvgImage /Assets/fa-pen-square.svg}" />
         </ToggleButton>
         <NumericUpDown
             Grid.Row="5"
@@ -233,7 +244,7 @@
             Grid.Column="7"
             Classes="pencil"
             IsChecked="{Binding ShockSettings.LowSpeedReboundEditing}">
-            <Image Width="13" Source="{SvgImage /Assets/fa-pen-square.svg}" />
+            <Image Width="11" Source="{SvgImage /Assets/fa-pen-square.svg}" />
         </ToggleButton>
 
         <!--  HSR row  -->
@@ -252,7 +263,7 @@
             Grid.Column="4"
             Classes="pencil"
             IsChecked="{Binding ForkSettings.HighSpeedReboundEditing}">
-            <Image Width="13" Source="{SvgImage /Assets/fa-pen-square.svg}" />
+            <Image Width="11" Source="{SvgImage /Assets/fa-pen-square.svg}" />
         </ToggleButton>
         <NumericUpDown
             Grid.Row="6"
@@ -263,7 +274,7 @@
             Grid.Column="7"
             Classes="pencil"
             IsChecked="{Binding ShockSettings.HighSpeedReboundEditing}">
-            <Image Width="13" Source="{SvgImage /Assets/fa-pen-square.svg}" />
+            <Image Width="11" Source="{SvgImage /Assets/fa-pen-square.svg}" />
         </ToggleButton>
 
         <!--  Tire pressure row  -->
@@ -284,7 +295,7 @@
             Grid.Column="4"
             Classes="pencil"
             IsChecked="{Binding ForkSettings.TirePressureEditing}">
-            <Image Width="13" Source="{SvgImage /Assets/fa-pen-square.svg}" />
+            <Image Width="11" Source="{SvgImage /Assets/fa-pen-square.svg}" />
         </ToggleButton>
         <NumericUpDown
             Grid.Row="7"
@@ -297,7 +308,7 @@
             Grid.Column="7"
             Classes="pencil"
             IsChecked="{Binding ShockSettings.TirePressureEditing}">
-            <Image Width="13" Source="{SvgImage /Assets/fa-pen-square.svg}" />
+            <Image Width="11" Source="{SvgImage /Assets/fa-pen-square.svg}" />
         </ToggleButton>
 
         <!--  Pending changes for next session  -->
