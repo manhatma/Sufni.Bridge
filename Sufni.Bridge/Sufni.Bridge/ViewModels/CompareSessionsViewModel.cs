@@ -60,6 +60,12 @@ public partial class CompareSessionsViewModel : ViewModelBase
     [ObservableProperty] private SvgImage? compressionBalanceSvg;
     [ObservableProperty] private SvgImage? frontLowSpeedSvg;
     [ObservableProperty] private SvgImage? rearLowSpeedSvg;
+    [ObservableProperty] private SvgImage? frontVelocitySpectrumSvg;
+    [ObservableProperty] private SvgImage? rearVelocitySpectrumSvg;
+    [ObservableProperty] private SvgImage? frontTravelSpectrumLowSvg;
+    [ObservableProperty] private SvgImage? rearTravelSpectrumLowSvg;
+    [ObservableProperty] private SvgImage? frontTravelSpectrumHighSvg;
+    [ObservableProperty] private SvgImage? rearTravelSpectrumHighSvg;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ExportPdfCommand))]
@@ -78,6 +84,12 @@ public partial class CompareSessionsViewModel : ViewModelBase
     private string? _compressionBalanceXml;
     private string? _frontLowSpeedXml;
     private string? _rearLowSpeedXml;
+    private string? _frontVelocitySpectrumXml;
+    private string? _rearVelocitySpectrumXml;
+    private string? _frontTravelSpectrumLowXml;
+    private string? _rearTravelSpectrumLowXml;
+    private string? _frontTravelSpectrumHighXml;
+    private string? _rearTravelSpectrumHighXml;
 
     public ObservableCollection<CompareTableRow> FrontWheelRows { get; } = [];
     public ObservableCollection<CompareTableRow> RearWheelRows { get; } = [];
@@ -311,7 +323,97 @@ public partial class CompareSessionsViewModel : ViewModelBase
             Dispatcher.UIThread.Post(() => RearLowSpeedSvg = SourceToImage(src));
         }));
 
-        // 7. Summary Table
+        // 7. Front velocity spectrum (1–10 Hz, with body-resonance peak markers)
+        tasks.Add(Task.Run(() =>
+        {
+            var p = new CompareSpectrumPlot(new Plot(), SuspensionType.Front,
+                minHz: 1.0, maxHz: 10.0,
+                peakMinHz: 1.3, peakMaxHz: 4.5,
+                topHeadroomDb: 2.0,
+                mode: WheelSpectrumMode.Velocity);
+            p.LoadMultipleSessions(sessionData);
+            var svg = p.Plot.GetSvgXml(width, height);
+            _frontVelocitySpectrumXml = svg;
+            var src = SvgToSource(svg);
+            Dispatcher.UIThread.Post(() => FrontVelocitySpectrumSvg = SourceToImage(src));
+        }));
+
+        // 8. Rear velocity spectrum (1–10 Hz)
+        tasks.Add(Task.Run(() =>
+        {
+            var p = new CompareSpectrumPlot(new Plot(), SuspensionType.Rear,
+                minHz: 1.0, maxHz: 10.0,
+                peakMinHz: 1.3, peakMaxHz: 4.5,
+                topHeadroomDb: 2.0,
+                mode: WheelSpectrumMode.Velocity);
+            p.LoadMultipleSessions(sessionData);
+            var svg = p.Plot.GetSvgXml(width, height);
+            _rearVelocitySpectrumXml = svg;
+            var src = SvgToSource(svg);
+            Dispatcher.UIThread.Post(() => RearVelocitySpectrumSvg = SourceToImage(src));
+        }));
+
+        // 9. Front travel spectrum (1–10 Hz)
+        tasks.Add(Task.Run(() =>
+        {
+            var p = new CompareSpectrumPlot(new Plot(), SuspensionType.Front,
+                minHz: 1.0, maxHz: 10.0,
+                peakMinHz: 1.3, peakMaxHz: 4.5,
+                topHeadroomDb: 3.0);
+            p.LoadMultipleSessions(sessionData);
+            var svg = p.Plot.GetSvgXml(width, height);
+            _frontTravelSpectrumLowXml = svg;
+            var src = SvgToSource(svg);
+            Dispatcher.UIThread.Post(() => FrontTravelSpectrumLowSvg = SourceToImage(src));
+        }));
+
+        // 10. Rear travel spectrum (1–10 Hz)
+        tasks.Add(Task.Run(() =>
+        {
+            var p = new CompareSpectrumPlot(new Plot(), SuspensionType.Rear,
+                minHz: 1.0, maxHz: 10.0,
+                peakMinHz: 1.3, peakMaxHz: 4.5,
+                topHeadroomDb: 3.0);
+            p.LoadMultipleSessions(sessionData);
+            var svg = p.Plot.GetSvgXml(width, height);
+            _rearTravelSpectrumLowXml = svg;
+            var src = SvgToSource(svg);
+            Dispatcher.UIThread.Post(() => RearTravelSpectrumLowSvg = SourceToImage(src));
+        }));
+
+        // 11. Front travel spectrum (10–100 Hz, no peak markers)
+        tasks.Add(Task.Run(() =>
+        {
+            var p = new CompareSpectrumPlot(new Plot(), SuspensionType.Front,
+                minHz: 10.0, maxHz: 100.0,
+                peakMinHz: 0.0, peakMaxHz: 0.0,
+                segmentLength: 4096,
+                topHeadroomDb: 3.0,
+                lineWidth: 1.5f);
+            p.LoadMultipleSessions(sessionData);
+            var svg = p.Plot.GetSvgXml(width, height);
+            _frontTravelSpectrumHighXml = svg;
+            var src = SvgToSource(svg);
+            Dispatcher.UIThread.Post(() => FrontTravelSpectrumHighSvg = SourceToImage(src));
+        }));
+
+        // 12. Rear travel spectrum (10–100 Hz)
+        tasks.Add(Task.Run(() =>
+        {
+            var p = new CompareSpectrumPlot(new Plot(), SuspensionType.Rear,
+                minHz: 10.0, maxHz: 100.0,
+                peakMinHz: 0.0, peakMaxHz: 0.0,
+                segmentLength: 4096,
+                topHeadroomDb: 3.0,
+                lineWidth: 1.5f);
+            p.LoadMultipleSessions(sessionData);
+            var svg = p.Plot.GetSvgXml(width, height);
+            _rearTravelSpectrumHighXml = svg;
+            var src = SvgToSource(svg);
+            Dispatcher.UIThread.Post(() => RearTravelSpectrumHighSvg = SourceToImage(src));
+        }));
+
+        // 13. Summary Table
         tasks.Add(Task.Run(() =>
         {
             var frontStatsList = sessionData.Select(s => BuildSessionStats(s.data, SuspensionType.Front)).ToList();
@@ -336,7 +438,10 @@ public partial class CompareSessionsViewModel : ViewModelBase
         (_frontTravelHistogramXml is not null || _rearTravelHistogramXml is not null ||
          _frontRearTravelXml is not null || _balanceXml is not null ||
          _reboundBalanceXml is not null || _compressionBalanceXml is not null ||
-         _frontLowSpeedXml is not null || _rearLowSpeedXml is not null);
+         _frontLowSpeedXml is not null || _rearLowSpeedXml is not null ||
+         _frontVelocitySpectrumXml is not null || _rearVelocitySpectrumXml is not null ||
+         _frontTravelSpectrumLowXml is not null || _rearTravelSpectrumLowXml is not null ||
+         _frontTravelSpectrumHighXml is not null || _rearTravelSpectrumHighXml is not null);
 
     [RelayCommand(CanExecute = nameof(CanExportPdf))]
     private async Task ExportPdf()
@@ -344,7 +449,15 @@ public partial class CompareSessionsViewModel : ViewModelBase
         IsGeneratingPdf = true;
         try
         {
-            var svgs = new List<string?> { _frontTravelHistogramXml, _rearTravelHistogramXml, _frontRearTravelXml, _balanceXml, _reboundBalanceXml, _compressionBalanceXml, _frontLowSpeedXml, _rearLowSpeedXml };
+            var svgs = new List<string?> {
+                _frontTravelHistogramXml, _rearTravelHistogramXml,
+                _frontRearTravelXml,
+                _balanceXml, _reboundBalanceXml, _compressionBalanceXml,
+                _frontLowSpeedXml, _rearLowSpeedXml,
+                _frontVelocitySpectrumXml, _rearVelocitySpectrumXml,
+                _frontTravelSpectrumLowXml, _rearTravelSpectrumLowXml,
+                _frontTravelSpectrumHighXml, _rearTravelSpectrumHighXml,
+            };
             var validSvgs = svgs.Where(s => s is not null).Cast<string>().ToList();
             if (validSvgs.Count == 0)
             {

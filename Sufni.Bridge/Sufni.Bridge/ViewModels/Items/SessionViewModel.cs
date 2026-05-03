@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 131;
+    private const int CurrentPlotVersion = 133;
 
     // Limits concurrent plot generation tasks to reduce peak memory on iOS.
     private static readonly SemaphoreSlim s_plotSemaphore = new(3, 3);
@@ -586,7 +586,8 @@ public partial class SessionViewModel : ItemViewModelBase
             tasks.Add(ThrottledPlotTask(() =>
             {
                 var fftHigh = new CombinedTravelFftPlot(new Plot(), minHz: 10.0, maxHz: 100.0,
-                    peakMinHz: 0.0, peakMaxHz: 0.0, segmentLength: 4096, fitYAxisToData: true);
+                    peakMinHz: 0.0, peakMaxHz: 0.0, segmentLength: 4096, fitYAxisToData: true,
+                    lineWidth: 1.5f);
                 fftHigh.LoadTelemetryData(telemetryData);
                 sessionCache.CombinedTravelFftHigh = fftHigh.Plot.GetSvgXml(width, height);
                 var src = SvgToSource(sessionCache.CombinedTravelFftHigh);

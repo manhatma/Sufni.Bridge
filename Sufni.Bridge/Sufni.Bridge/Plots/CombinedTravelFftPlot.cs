@@ -34,6 +34,7 @@ public class CombinedTravelFftPlot(
     int segmentLength = 8192,
     bool fitYAxisToData = false,
     double topHeadroomDb = 8.0,
+    float lineWidth = 2f,
     WheelSpectrumMode mode = WheelSpectrumMode.Travel)
     : TelemetryPlot(plot)
 {
@@ -228,7 +229,7 @@ public class CombinedTravelFftPlot(
         var line = Plot.Add.Scatter(xs.ToArray(), ys.ToArray());
         line.Color = color;
         line.MarkerStyle.IsVisible = false;
-        line.LineStyle.Width = 2;
+        line.LineStyle.Width = lineWidth;
         line.LineStyle.Pattern = LinePattern.Solid;
 
         if (!PeakMarkersEnabled) return (yMin, yMax);

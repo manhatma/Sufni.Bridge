@@ -151,18 +151,22 @@ public partial class SessionListViewModel : ItemListViewModelBase
                 sessionMap[session.Id] = svm;
             }
 
-            // Populate SubSessions for combined sessions and collect all source IDs
+            // Populate SubSessions for combined sessions and collect all source IDs.
+            // Sub-sessions are listed newest-first to match the global session list order.
             var allSourceIds = new HashSet<Guid>();
             foreach (var combinedId in _combinedIds)
             {
                 if (!sessionMap.TryGetValue(combinedId, out var combinedVm)) continue;
                 var sourceIds = await databaseService.GetCombinedSourcesAsync(combinedId);
+                var sourceVms = new List<SessionViewModel>();
                 foreach (var sourceId in sourceIds)
                 {
                     allSourceIds.Add(sourceId);
                     if (sessionMap.TryGetValue(sourceId, out var sourceVm))
-                        combinedVm.SubSessions.Add(sourceVm);
+                        sourceVms.Add(sourceVm);
                 }
+                foreach (var sourceVm in sourceVms.OrderByDescending(s => s.Timestamp ?? DateTime.MinValue))
+                    combinedVm.SubSessions.Add(sourceVm);
             }
 
             // Add only non-source sessions to the main list
@@ -525,9 +529,10 @@ public partial class SessionListViewModel : ItemListViewModelBase
             await databaseService.PutSessionAsync(newSession);
             await databaseService.PutCombinedSourcesAsync(newSession.Id, selected.Select(s => s.Id).ToList());
 
-            // Add to UI — move source sessions from main list into SubSessions
+            // Add to UI — move source sessions from main list into SubSessions.
+            // List sub-sessions newest-first so the order matches the global session list.
             var newVm = new SessionViewModel(newSession, true) { IsCombinedSession = true, IsExpanded = true };
-            foreach (var svm in selected)
+            foreach (var svm in selected.OrderByDescending(s => s.Timestamp ?? DateTime.MinValue))
             {
                 newVm.SubSessions.Add(svm);
                 Source.Remove(svm);

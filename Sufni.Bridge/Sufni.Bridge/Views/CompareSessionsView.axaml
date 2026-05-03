@@ -111,6 +111,30 @@
                 <Image IsVisible="{Binding RearLowSpeedSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
                        Source="{Binding RearLowSpeedSvg}" />
 
+                <!-- Front Velocity Spectrum (1–10 Hz) -->
+                <Image IsVisible="{Binding FrontVelocitySpectrumSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Source="{Binding FrontVelocitySpectrumSvg}" />
+
+                <!-- Rear Velocity Spectrum (1–10 Hz) -->
+                <Image IsVisible="{Binding RearVelocitySpectrumSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Source="{Binding RearVelocitySpectrumSvg}" />
+
+                <!-- Front Travel Spectrum (1–10 Hz) -->
+                <Image IsVisible="{Binding FrontTravelSpectrumLowSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Source="{Binding FrontTravelSpectrumLowSvg}" />
+
+                <!-- Rear Travel Spectrum (1–10 Hz) -->
+                <Image IsVisible="{Binding RearTravelSpectrumLowSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Source="{Binding RearTravelSpectrumLowSvg}" />
+
+                <!-- Front Travel Spectrum (10–100 Hz) -->
+                <Image IsVisible="{Binding FrontTravelSpectrumHighSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Source="{Binding FrontTravelSpectrumHighSvg}" />
+
+                <!-- Rear Travel Spectrum (10–100 Hz) -->
+                <Image IsVisible="{Binding RearTravelSpectrumHighSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Source="{Binding RearTravelSpectrumHighSvg}" />
+
                 <!-- Front Wheel Table -->
                 <Grid RowDefinitions="auto auto" ColumnDefinitions="*"
                       IsVisible="{Binding FrontWheelRows.Count}">
