@@ -219,6 +219,8 @@ public partial class ImportSessionsViewModel : ViewModelBase
         ImportInProgress = true;
 
         var lastSession = await databaseService.GetMostRecentSessionAsync();
+        var pendingChanges = await databaseService.GetPendingSetupChangesAsync(SelectedSetup!.Value);
+        var pendingApplied = false;
 
         foreach (var telemetryFile in TelemetryFiles.Where(f => f.ShouldBeImported.HasValue && f.ShouldBeImported.Value))
         {
@@ -272,23 +274,30 @@ public partial class ImportSessionsViewModel : ViewModelBase
                 {
                     ProcessedData = psst,
                     SourceIdentifier = telemetryFile.SourceIdentifier,
-                    FrontSpringRate = lastSession?.FrontSpringRate,
-                    FrontVolSpc = lastSession?.FrontVolSpc,
-                    FrontHighSpeedCompression = lastSession?.FrontHighSpeedCompression,
-                    FrontLowSpeedCompression = lastSession?.FrontLowSpeedCompression,
-                    FrontLowSpeedRebound = lastSession?.FrontLowSpeedRebound,
-                    FrontHighSpeedRebound = lastSession?.FrontHighSpeedRebound,
-                    RearSpringRate = lastSession?.RearSpringRate,
-                    RearVolSpc = lastSession?.RearVolSpc,
-                    RearHighSpeedCompression = lastSession?.RearHighSpeedCompression,
-                    RearLowSpeedCompression = lastSession?.RearLowSpeedCompression,
-                    RearLowSpeedRebound = lastSession?.RearLowSpeedRebound,
-                    RearHighSpeedRebound = lastSession?.RearHighSpeedRebound,
+                    FrontSpringRate = pendingChanges?.FrontSpringRate ?? lastSession?.FrontSpringRate,
+                    FrontVolSpc = pendingChanges?.FrontVolSpc ?? lastSession?.FrontVolSpc,
+                    FrontHighSpeedCompression = pendingChanges?.FrontHighSpeedCompression ?? lastSession?.FrontHighSpeedCompression,
+                    FrontLowSpeedCompression = pendingChanges?.FrontLowSpeedCompression ?? lastSession?.FrontLowSpeedCompression,
+                    FrontLowSpeedRebound = pendingChanges?.FrontLowSpeedRebound ?? lastSession?.FrontLowSpeedRebound,
+                    FrontHighSpeedRebound = pendingChanges?.FrontHighSpeedRebound ?? lastSession?.FrontHighSpeedRebound,
+                    FrontTirePressure = pendingChanges?.FrontTirePressure ?? lastSession?.FrontTirePressure,
+                    RearSpringRate = pendingChanges?.RearSpringRate ?? lastSession?.RearSpringRate,
+                    RearVolSpc = pendingChanges?.RearVolSpc ?? lastSession?.RearVolSpc,
+                    RearHighSpeedCompression = pendingChanges?.RearHighSpeedCompression ?? lastSession?.RearHighSpeedCompression,
+                    RearLowSpeedCompression = pendingChanges?.RearLowSpeedCompression ?? lastSession?.RearLowSpeedCompression,
+                    RearLowSpeedRebound = pendingChanges?.RearLowSpeedRebound ?? lastSession?.RearLowSpeedRebound,
+                    RearHighSpeedRebound = pendingChanges?.RearHighSpeedRebound ?? lastSession?.RearHighSpeedRebound,
+                    RearTirePressure = pendingChanges?.RearTirePressure ?? lastSession?.RearTirePressure,
                     DurationSeconds = durationSeconds,
                 };
 
                 await databaseService.PutSessionAsync(session);
                 lastSession = session;
+                if (pendingChanges != null)
+                {
+                    pendingApplied = true;
+                    pendingChanges = null; // only apply to the first session in this batch
+                }
                 await telemetryFile.OnImported();
 
                 await Dispatcher.UIThread.InvokeAsync(() =>
@@ -306,6 +315,11 @@ public partial class ImportSessionsViewModel : ViewModelBase
                     ErrorMessages.Add($"Could not import {telemetryFile.Name}: {e.Message}");
                 });
             }
+        }
+
+        if (pendingApplied)
+        {
+            await databaseService.DeletePendingSetupChangesAsync(SelectedSetup!.Value);
         }
 
         foreach (var telemetryFile in TelemetryFiles.Where(f => !f.ShouldBeImported.HasValue))

@@ -55,4 +55,7 @@ public interface IDatabaseService
     public Task PutCombinedSourcesAsync(Guid combinedId, List<Guid> sourceIds);
     public Task DeleteCombinedSourcesAsync(Guid combinedId);
     public Task BackfillDurationAsync();
+    public Task<PendingSetupChanges?> GetPendingSetupChangesAsync(Guid setupId);
+    public Task PutPendingSetupChangesAsync(PendingSetupChanges pending);
+    public Task DeletePendingSetupChangesAsync(Guid setupId);
 }

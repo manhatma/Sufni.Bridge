@@ -121,7 +121,8 @@ public class SqLiteDatabaseService : IDatabaseService
             typeof(Session),
             typeof(SessionCache),
             typeof(Synchronization),
-            typeof(CombinedSessionSource)
+            typeof(CombinedSessionSource),
+            typeof(PendingSetupChanges)
         });
 
         if (result.Results[typeof(CalibrationMethod)] == CreateTableResult.Created)
@@ -873,5 +874,26 @@ public class SqLiteDatabaseService : IDatabaseService
             }
             catch { /* skip sessions with corrupt data */ }
         }
+    }
+
+    public async Task<PendingSetupChanges?> GetPendingSetupChangesAsync(Guid setupId)
+    {
+        await Initialization;
+        return await connection.Table<PendingSetupChanges>()
+            .Where(p => p.SetupId == setupId)
+            .FirstOrDefaultAsync();
+    }
+
+    public async Task PutPendingSetupChangesAsync(PendingSetupChanges pending)
+    {
+        await Initialization;
+        pending.Updated = (int)DateTimeOffset.Now.ToUnixTimeSeconds();
+        await connection.InsertOrReplaceAsync(pending);
+    }
+
+    public async Task DeletePendingSetupChangesAsync(Guid setupId)
+    {
+        await Initialization;
+        await connection.ExecuteAsync("DELETE FROM pending_setup_changes WHERE setup_id = ?", setupId);
     }
 }

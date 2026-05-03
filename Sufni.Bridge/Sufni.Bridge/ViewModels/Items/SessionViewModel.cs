@@ -1182,7 +1182,7 @@ public partial class SessionViewModel : ItemViewModelBase
         NotesPage.PropertyChanged += (_, _) => EvaluateDirtiness();
         CropPage.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(CropPage.IsModified)) OnPropertyChanged(nameof(SaveLabel)); };
 
-        ResetImplementation();
+        _ = ResetImplementation();
     }
 
     #endregion
@@ -1231,6 +1231,19 @@ public partial class SessionViewModel : ItemViewModelBase
             };
 
             await databaseService.PutSessionAsync(newSession);
+
+            if (newSession.Setup is { } setupId)
+            {
+                if (NotesPage.PendingChanges.Count > 0)
+                {
+                    await databaseService.PutPendingSetupChangesAsync(NotesPage.BuildPending(setupId));
+                }
+                else
+                {
+                    await databaseService.DeletePendingSetupChangesAsync(setupId);
+                }
+            }
+
             session = newSession;
             IsDirty = false;
             IsInDatabase = true;
@@ -1241,7 +1254,7 @@ public partial class SessionViewModel : ItemViewModelBase
         }
     }
 
-    protected override Task ResetImplementation()
+    protected override async Task ResetImplementation()
     {
         Id = session.Id;
         Name = session.Name;
@@ -1265,7 +1278,15 @@ public partial class SessionViewModel : ItemViewModelBase
 
         Timestamp = DateTimeOffset.FromUnixTimeSeconds(session.Timestamp ?? 0).LocalDateTime;
 
-        return Task.CompletedTask;
+        if (session.Setup is { } setupId)
+        {
+            var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
+            if (databaseService != null)
+            {
+                var pending = await databaseService.GetPendingSetupChangesAsync(setupId);
+                NotesPage.LoadPending(pending);
+            }
+        }
     }
 
     #endregion
