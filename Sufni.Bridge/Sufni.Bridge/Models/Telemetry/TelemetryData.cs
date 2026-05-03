@@ -1576,10 +1576,16 @@ public class TelemetryData
         {
             var fv = CalculateVelocityStatistics(SuspensionType.Front);
             var rv = CalculateVelocityStatistics(SuspensionType.Rear);
-            if (rv.AverageCompression > 1e-6)
-                compRatio = fv.AverageCompression / rv.AverageCompression;
-            if (Math.Abs(rv.AverageRebound) > 1e-6)
-                rebRatio = Math.Abs(fv.AverageRebound) / Math.Abs(rv.AverageRebound);
+            // Michelson-style imbalance index (F-R)/(F+R) — bounded in (-1, +1),
+            // 0 = perfect balance, positive = front dominates, negative = rear dominates.
+            var fc = fv.AverageCompression;
+            var rc = rv.AverageCompression;
+            if (fc + rc > 1e-6)
+                compRatio = (fc - rc) / (fc + rc);
+            var fr = Math.Abs(fv.AverageRebound);
+            var rr = Math.Abs(rv.AverageRebound);
+            if (fr + rr > 1e-6)
+                rebRatio = (fr - rr) / (fr + rr);
 
             // Normalize MSD by the larger of front/rear peak velocity (matches BalancePlot's
             // on-plot label, which is in % of full-scale velocity, not raw mm/s).
@@ -1623,8 +1629,9 @@ public class TelemetryData
         }
         if (fPeak.HasValue && rPeak.HasValue)
             freqDiff = Math.Abs(fPeak.Value - rPeak.Value);
-        if (fAmp.HasValue && rAmp.HasValue && rAmp.Value > 1e-9)
-            ampRatio = fAmp.Value / rAmp.Value;
+        // Michelson-style imbalance index, same convention as the velocity ratios.
+        if (fAmp.HasValue && rAmp.HasValue && fAmp.Value + rAmp.Value > 1e-9)
+            ampRatio = (fAmp.Value - rAmp.Value) / (fAmp.Value + rAmp.Value);
 
         // Front/Rear frequency-balance: per-band energy ratio (dB) + magnitude-squared
         // coherence γ²(f). Four bands isolating distinct physical regimes:

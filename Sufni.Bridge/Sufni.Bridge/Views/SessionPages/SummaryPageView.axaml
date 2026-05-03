@@ -51,9 +51,23 @@
 
     <ScrollViewer Width="{Binding $parent[ScrollViewer].Bounds.Width}" Height="{Binding $parent[ScrollViewer].Bounds.Height}" IsScrollChainingEnabled="False">
         <StackPanel Margin="0,0,0,10" Orientation="Vertical" Spacing="12">
-            <Grid RowDefinitions="auto auto auto" ColumnDefinitions="*">
+            <Grid RowDefinitions="auto auto auto auto" ColumnDefinitions="*">
                 <TextBlock Grid.Row="0" Classes="summary-title" Text="RUN DATA" />
-                <Grid Grid.Row="1" ColumnDefinitions="110,*">
+                <ItemsControl Grid.Row="1" ItemsSource="{Binding RunDataRows}">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:SummaryValueRow">
+                            <Grid ColumnDefinitions="110,*">
+                                <Border Grid.Column="0" Classes="summary-cell">
+                                    <TextBlock Text="{Binding Label}" />
+                                </Border>
+                                <Border Grid.Column="1" Classes="summary-cell">
+                                    <TextBlock HorizontalAlignment="Right" Text="{Binding Value}" />
+                                </Border>
+                            </Grid>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+                <Grid Grid.Row="2" ColumnDefinitions="110,*">
                     <Border Grid.Column="0" Classes="summary-cell" Padding="8,2">
                         <TextBlock Text="Setup" VerticalAlignment="Center" />
                     </Border>
@@ -97,20 +111,14 @@
                         </Grid>
                     </Border>
                 </Grid>
-                <ItemsControl Grid.Row="2" ItemsSource="{Binding RunDataRows}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:SummaryValueRow">
-                            <Grid ColumnDefinitions="110,*">
-                                <Border Grid.Column="0" Classes="summary-cell">
-                                    <TextBlock Text="{Binding Label}" />
-                                </Border>
-                                <Border Grid.Column="1" Classes="summary-cell">
-                                    <TextBlock HorizontalAlignment="Right" Text="{Binding Value}" />
-                                </Border>
-                            </Grid>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
+                <Grid Grid.Row="3" ColumnDefinitions="110,*">
+                    <Border Grid.Column="0" Classes="summary-cell">
+                        <TextBlock Text="Discipline" />
+                    </Border>
+                    <Border Grid.Column="1" Classes="summary-cell">
+                        <TextBlock HorizontalAlignment="Right" Text="{Binding SelectedSetup.SelectedDiscipline}" />
+                    </Border>
+                </Grid>
             </Grid>
 
             <Grid RowDefinitions="auto auto" ColumnDefinitions="*">

@@ -54,7 +54,7 @@ public class VelocityTimeCroppedPlot(Plot plot, SuspensionType type) : Telemetry
         Plot.Add.HorizontalLine(0, 1f, Color.FromHex("#dddddd"), LinePattern.Dotted);
 
         static string N(double val) =>
-            val.ToString("F2").PadLeft(6).Replace(' ', ' ');
+            val.ToString("F3").PadLeft(7).Replace(' ', ' ');
 
         var statsText =
             $"max: {N(vMax)}\n" +

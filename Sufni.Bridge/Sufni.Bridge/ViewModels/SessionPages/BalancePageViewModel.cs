@@ -30,16 +30,16 @@ public partial class BalanceMetricRow : ObservableObject
 
 public partial class BalanceMetricsViewModel : ObservableObject
 {
-    public BalanceMetricRow FrontSag      { get; } = new() { Label = "Front Sag",        Target = "23–28 %" };
-    public BalanceMetricRow RearSag       { get; } = new() { Label = "Rear Sag",         Target = "28–33 %" };
+    public BalanceMetricRow FrontSag      { get; } = new() { Label = "Front SAG (dyn.)", Target = "23–28 %" };
+    public BalanceMetricRow RearSag       { get; } = new() { Label = "Rear SAG (dyn.)",  Target = "28–33 %" };
     public BalanceMetricRow SagDiff       { get; } = new() { Label = "Sag-Diff |F−R|",   Target = "≤ 5 pp" };
-    public BalanceMetricRow FrontP95      { get; } = new() { Label = "Front 95th",       Target = "—" };
-    public BalanceMetricRow RearP95       { get; } = new() { Label = "Rear 95th",        Target = "—" };
+    public BalanceMetricRow FrontP95      { get; } = new() { Label = "Front 95th",       Target = "> 55 %" };
+    public BalanceMetricRow RearP95       { get; } = new() { Label = "Rear 95th",        Target = "> 55 %" };
     public BalanceMetricRow P95Diff       { get; } = new() { Label = "95th-Diff |F−R|",  Target = "≤ 5 pp" };
-    public BalanceMetricRow FrontBO       { get; } = new() { Label = "Front Bottom-out", Target = "low" };
-    public BalanceMetricRow RearBO        { get; } = new() { Label = "Rear Bottom-out",  Target = "low" };
-    public BalanceMetricRow CompVelRatio  { get; } = new() { Label = "Comp Vel F/R",     Target = "0.85–1.15" };
-    public BalanceMetricRow RebVelRatio   { get; } = new() { Label = "Reb Vel F/R",      Target = "1.00–1.15" };
+    public BalanceMetricRow FrontBO       { get; } = new() { Label = "Front Bottom-out", Target = "≈ 0" };
+    public BalanceMetricRow RearBO        { get; } = new() { Label = "Rear Bottom-out",  Target = "≈ 0" };
+    public BalanceMetricRow CompVelRatio  { get; } = new() { Label = "Comp Vel F/R",     Target = "−0.08 … +0.07" };
+    public BalanceMetricRow RebVelRatio   { get; } = new() { Label = "Reb Vel F/R",      Target = "0.00 … +0.07" };
     public BalanceMetricRow CompMsd       { get; } = new() { Label = "MSD Compression",  Target = "≈ 0" };
     public BalanceMetricRow RebMsd        { get; } = new() { Label = "MSD Rebound",      Target = "−10 to 0 %" };
     // Discipline-dependent eigenfrequency targets — see GetFreqBands below.
@@ -50,7 +50,7 @@ public partial class BalanceMetricsViewModel : ObservableObject
     public BalanceMetricRow FrontFreq     { get; } = new() { Label = "Front Eigenfreq.", Target = "2.1–3.2 Hz" };
     public BalanceMetricRow RearFreq      { get; } = new() { Label = "Rear Eigenfreq.",  Target = "2.1–2.9 Hz" };
     public BalanceMetricRow FreqDiff      { get; } = new() { Label = "Frequency-Diff |F−R|", Target = "≤ 0.4 Hz" };
-    public BalanceMetricRow PeakAmpRatio  { get; } = new() { Label = "Peak Amp F/R",     Target = "0.9–1.1" };
+    public BalanceMetricRow PeakAmpRatio  { get; } = new() { Label = "Peak Amp F/R",     Target = "−0.05 … +0.05" };
 
     // Front/Rear travel-energy distribution per band (10·log10(F/R)).
     // Low/Mid split is discipline-aware (see TelemetryData.FrequencySplitFor);
@@ -75,18 +75,22 @@ public partial class BalanceMetricsViewModel : ObservableObject
         SetSagBand(FrontSag, m.FrontSagPct, 23, 28);
         SetSagBand(RearSag,  m.RearSagPct,  28, 33);
         SetThreshold(SagDiff, m.SagDifferencePp, "{0:0.0} pp", 5.0, 8.0, lowerIsBetter: true);
-        SetSimple(FrontP95, m.FrontP95Pct, "{0:0.0} %");
-        SetSimple(RearP95,  m.RearP95Pct,  "{0:0.0} %");
+        SetThreshold(FrontP95, m.FrontP95Pct, "{0:0.0} %", 55.0, 50.0, lowerIsBetter: false);
+        SetThreshold(RearP95,  m.RearP95Pct,  "{0:0.0} %", 55.0, 50.0, lowerIsBetter: false);
         var p95Diff = (m.FrontP95Pct.HasValue && m.RearP95Pct.HasValue)
             ? (double?)Math.Abs(m.FrontP95Pct.Value - m.RearP95Pct.Value)
             : null;
         SetThreshold(P95Diff, p95Diff, "{0:0.0} pp", 5.0, 10.0, lowerIsBetter: true);
         SetCount(FrontBO, m.FrontBottomouts);
         SetCount(RearBO,  m.RearBottomouts);
-        SetRatioBand(CompVelRatio, m.CompressionVelocityRatio, 0.85, 1.15, 0.80, 1.20);
+        // Michelson index (F-R)/(F+R): bands derived from old ratio bands 0.85–1.15 (good)
+        // and 0.80–1.20 (acceptable), via x → (x-1)/(x+1).
+        SetSignedBand(CompVelRatio, m.CompressionVelocityRatio, -0.0811, 0.0698, -0.1111, 0.0909);
         // Rebound: rear should NOT rebound faster than front (kicks under jumps).
         // F/R < 1 means rear is faster → push the band upward.
-        SetRatioBand(RebVelRatio,  m.ReboundVelocityRatio,     1.00, 1.15, 0.90, 1.20);
+        // Asymmetric: front rebound should not be slower than rear (rear-faster rebound = kick).
+        // Acceptable band stays at 1.00–1.20 → 0.0–0.0909 in Michelson space.
+        SetSignedBand(RebVelRatio,  m.ReboundVelocityRatio,      0.0,    0.0698,  0.0,    0.0909);
         SetMsd(CompMsd, m.CompressionMsd);
         SetMsdRebound(RebMsd, m.ReboundMsd);
         var (frontLo, frontHi, rearLo, rearHi) = GetFreqBands(discipline ?? Discipline.Enduro);
@@ -95,7 +99,8 @@ public partial class BalanceMetricsViewModel : ObservableObject
         SetFreqBand(FrontFreq, m.FrontPeakFrequencyHz, frontLo, frontHi);
         SetFreqBand(RearFreq,  m.RearPeakFrequencyHz,  rearLo,  rearHi);
         SetFreqDiff(FreqDiff, m.FrequencyDifferenceHz);
-        SetRatioBand(PeakAmpRatio, m.PeakAmplitudeRatio, 0.9, 1.1, 0.8, 1.2);
+        // Michelson bands derived from old ratio bands 0.9–1.1 (good) and 0.8–1.2 (acceptable).
+        SetSignedBand(PeakAmpRatio, m.PeakAmplitudeRatio, -0.0526, 0.0476, -0.1111, 0.0909);
 
         var fSplit = m.FrequencySplitHz ?? 2.0;
         var fSplitStr = fSplit.ToString("0.0", CultureInfo.InvariantCulture);
@@ -132,21 +137,24 @@ public partial class BalanceMetricsViewModel : ObservableObject
     {
         if (!value.HasValue) { row.Value = "—"; row.Status = BalanceStatus.Unknown; return; }
         row.Value = string.Format(CultureInfo.InvariantCulture, "{0:0.00}", value.Value);
-        // Acceptable extends ±0.2 from the "good" cutoff.
+        // Acceptable extends ±0.2 from the "good" cutoff. Tiny epsilon keeps a value that
+        // matches the cutoff at two-decimal display precision (e.g. 0.10) on the Good side
+        // even when the underlying double is a hair above (0.10000000000000001…).
         const double buffer = 0.2;
+        const double epsilon = 5e-3;
         if (higherIsBetter)
         {
             double cutoff = goodCutoff ?? 0.7;
-            row.Status = value.Value >= cutoff          ? BalanceStatus.Good
-                : value.Value >= cutoff - buffer        ? BalanceStatus.Acceptable
-                :                                         BalanceStatus.Critical;
+            row.Status = value.Value >= cutoff - epsilon          ? BalanceStatus.Good
+                : value.Value >= cutoff - buffer - epsilon        ? BalanceStatus.Acceptable
+                :                                                   BalanceStatus.Critical;
         }
         else
         {
             double cutoff = goodCutoff ?? 0.4;
-            row.Status = value.Value <= cutoff          ? BalanceStatus.Good
-                : value.Value <= cutoff + buffer        ? BalanceStatus.Acceptable
-                :                                         BalanceStatus.Critical;
+            row.Status = value.Value <= cutoff + epsilon          ? BalanceStatus.Good
+                : value.Value <= cutoff + buffer + epsilon        ? BalanceStatus.Acceptable
+                :                                                   BalanceStatus.Critical;
         }
     }
 
@@ -161,15 +169,21 @@ public partial class BalanceMetricsViewModel : ObservableObject
     }
 
     private static void SetThreshold(BalanceMetricRow row, double? value, string fmt,
-        double goodMax, double acceptableMax, bool lowerIsBetter)
+        double goodCutoff, double acceptableCutoff, bool lowerIsBetter)
     {
         if (!value.HasValue) { row.Value = "—"; row.Status = BalanceStatus.Unknown; return; }
         row.Value = string.Format(CultureInfo.InvariantCulture, fmt, value.Value);
         var v = value.Value;
         if (lowerIsBetter)
         {
-            row.Status = v <= goodMax ? BalanceStatus.Good
-                : v <= acceptableMax ? BalanceStatus.Acceptable
+            row.Status = v <= goodCutoff ? BalanceStatus.Good
+                : v <= acceptableCutoff ? BalanceStatus.Acceptable
+                : BalanceStatus.Critical;
+        }
+        else
+        {
+            row.Status = v > goodCutoff ? BalanceStatus.Good
+                : v > acceptableCutoff ? BalanceStatus.Acceptable
                 : BalanceStatus.Critical;
         }
     }
@@ -190,11 +204,13 @@ public partial class BalanceMetricsViewModel : ObservableObject
             :                           BalanceStatus.Critical;
     }
 
-    private static void SetRatioBand(BalanceMetricRow row, double? value,
+    // Michelson-style imbalance index centered on 0; positive = front, negative = rear.
+    // Always shows an explicit sign so the bias direction is visible at a glance.
+    private static void SetSignedBand(BalanceMetricRow row, double? value,
         double goodLo, double goodHi, double accLo, double accHi)
     {
         if (!value.HasValue) { row.Value = "—"; row.Status = BalanceStatus.Unknown; return; }
-        row.Value = string.Format(CultureInfo.InvariantCulture, "{0:0.00}", value.Value);
+        row.Value = string.Format(CultureInfo.InvariantCulture, "{0:+0.00;-0.00;0.00}", value.Value);
         var v = value.Value;
         row.Status = (v >= goodLo && v <= goodHi) ? BalanceStatus.Good
             : (v >= accLo && v <= accHi) ? BalanceStatus.Acceptable

@@ -14,10 +14,10 @@ public class VelocityDistributionPlot(Plot plot, SuspensionType type) : Telemetr
     {
         var statistics = telemetryData.CalculateVelocityStatistics(type);
 
-        var maxReboundVelString = $"Max reb: {statistics.MaxRebound:0.0} mm/s";
-        var avgReboundVelString = $"Avg reb: {statistics.AverageRebound:0.0} mm/s";
-        var avgCompVelString = $"Avg cmp: {statistics.AverageCompression:0.0} mm/s";
-        var maxCompVelString = $"Max cmp: {statistics.MaxCompression:0.0} mm/s";
+        var maxReboundVelString = $"Max reb: {statistics.MaxRebound:0} mm/s";
+        var avgReboundVelString = $"Avg reb: {statistics.AverageRebound:0} mm/s";
+        var avgCompVelString = $"Avg cmp: {statistics.AverageCompression:0} mm/s";
+        var maxCompVelString = $"Max cmp: {statistics.MaxCompression:0} mm/s";
 
         AddLabelWithHorizontalLine(avgReboundVelString, statistics.AverageRebound, LabelLinePosition.Below);
         AddLabelWithHorizontalLine(avgCompVelString, statistics.AverageCompression, LabelLinePosition.Above);

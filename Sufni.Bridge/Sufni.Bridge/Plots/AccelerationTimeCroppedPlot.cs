@@ -114,7 +114,7 @@ public class AccelerationTimeCroppedPlot(Plot plot) : TelemetryPlot(plot)
         // Stats readouts (max/min/rms) — upper-right per side, stacked
         var rightX = maxDuration > 0 ? maxDuration : 1.0;
 
-        static string N(double val) => val.ToString("F2").PadLeft(6).Replace(' ', ' ');
+        static string N(double val) => val.ToString("F1").PadLeft(5).Replace(' ', ' ');
 
         void AddStats((double Max, double Min, double Rms) s, Color color, double anchorY, Alignment alignment, int offsetY)
         {

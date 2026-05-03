@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 135;
+    private const int CurrentPlotVersion = 141;
 
     // Limits concurrent plot generation tasks to reduce peak memory on iOS.
     private static readonly SemaphoreSlim s_plotSemaphore = new(3, 3);
@@ -1035,24 +1035,6 @@ public partial class SessionViewModel : ItemViewModelBase
             ? duration.ToString(@"h\:mm\:ss")
             : duration.ToString(@"m\:ss");
 
-        var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
-        var setupName = "-";
-        var frontCalName = "-";
-        var rearCalName = "-";
-        if (databaseService != null && session.Setup.HasValue)
-        {
-            var setup = await databaseService.GetSetupAsync(session.Setup.Value);
-            if (setup != null)
-            {
-                setupName = setup.Name;
-                if (setup.FrontCalibrationId.HasValue)
-                    frontCalName = (await databaseService.GetCalibrationAsync(setup.FrontCalibrationId.Value))?.Name ?? "-";
-                if (setup.RearCalibrationId.HasValue)
-                    rearCalName = (await databaseService.GetCalibrationAsync(setup.RearCalibrationId.Value))?.Name ?? "-";
-            }
-        }
-        var linkageName = telemetryData.Linkage?.Name ?? "-";
-
         // Run the independent (read-only) computations in parallel
         var forkStatsTask = Task.Run(() => BuildForkStats(telemetryData));
         var frontWheelStatsTask = Task.Run(() => BuildWheelStats(telemetryData, SuspensionType.Front));
@@ -1072,9 +1054,6 @@ public partial class SessionViewModel : ItemViewModelBase
             new SummaryValueRow("Date", date),
             new SummaryValueRow("Time", time),
             new SummaryValueRow("Run duration", runDuration),
-            new SummaryValueRow("Front cal.", frontCalName),
-            new SummaryValueRow("Rear cal.", rearCalName),
-            new SummaryValueRow("Linkage", linkageName),
         ]);
 
         var forkShockRows = new ObservableCollection<SummaryComparisonRow>(
