@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Sufni.Bridge.Models;
@@ -45,47 +46,56 @@ public partial class SuspensionSettings : ObservableObject
 
     public event EventHandler<(string FieldKey, object? Value)>? CommitRequested;
 
+    // After capturing a pending change the field reverts to the snapshot — the
+    // pending value is for the NEXT session, not the current one.
     partial void OnSpringRateEditingChanged(bool value)
     {
-        if (value) springRateSnapshot = SpringRate;
-        else if (SpringRate != springRateSnapshot)
-            CommitRequested?.Invoke(this, ("SpringRate", SpringRate));
+        if (value) { springRateSnapshot = SpringRate; return; }
+        if (SpringRate == springRateSnapshot) return;
+        CommitRequested?.Invoke(this, ("SpringRate", SpringRate));
+        SpringRate = springRateSnapshot;
     }
     partial void OnVolSpcEditingChanged(bool value)
     {
-        if (value) volSpcSnapshot = VolSpc;
-        else if (VolSpc != volSpcSnapshot)
-            CommitRequested?.Invoke(this, ("VolSpc", VolSpc));
+        if (value) { volSpcSnapshot = VolSpc; return; }
+        if (VolSpc == volSpcSnapshot) return;
+        CommitRequested?.Invoke(this, ("VolSpc", VolSpc));
+        VolSpc = volSpcSnapshot;
     }
     partial void OnHighSpeedCompressionEditingChanged(bool value)
     {
-        if (value) hscSnapshot = HighSpeedCompression;
-        else if (HighSpeedCompression != hscSnapshot)
-            CommitRequested?.Invoke(this, ("HSC", HighSpeedCompression));
+        if (value) { hscSnapshot = HighSpeedCompression; return; }
+        if (HighSpeedCompression == hscSnapshot) return;
+        CommitRequested?.Invoke(this, ("HSC", HighSpeedCompression));
+        HighSpeedCompression = hscSnapshot;
     }
     partial void OnLowSpeedCompressionEditingChanged(bool value)
     {
-        if (value) lscSnapshot = LowSpeedCompression;
-        else if (LowSpeedCompression != lscSnapshot)
-            CommitRequested?.Invoke(this, ("LSC", LowSpeedCompression));
+        if (value) { lscSnapshot = LowSpeedCompression; return; }
+        if (LowSpeedCompression == lscSnapshot) return;
+        CommitRequested?.Invoke(this, ("LSC", LowSpeedCompression));
+        LowSpeedCompression = lscSnapshot;
     }
     partial void OnLowSpeedReboundEditingChanged(bool value)
     {
-        if (value) lsrSnapshot = LowSpeedRebound;
-        else if (LowSpeedRebound != lsrSnapshot)
-            CommitRequested?.Invoke(this, ("LSR", LowSpeedRebound));
+        if (value) { lsrSnapshot = LowSpeedRebound; return; }
+        if (LowSpeedRebound == lsrSnapshot) return;
+        CommitRequested?.Invoke(this, ("LSR", LowSpeedRebound));
+        LowSpeedRebound = lsrSnapshot;
     }
     partial void OnHighSpeedReboundEditingChanged(bool value)
     {
-        if (value) hsrSnapshot = HighSpeedRebound;
-        else if (HighSpeedRebound != hsrSnapshot)
-            CommitRequested?.Invoke(this, ("HSR", HighSpeedRebound));
+        if (value) { hsrSnapshot = HighSpeedRebound; return; }
+        if (HighSpeedRebound == hsrSnapshot) return;
+        CommitRequested?.Invoke(this, ("HSR", HighSpeedRebound));
+        HighSpeedRebound = hsrSnapshot;
     }
     partial void OnTirePressureEditingChanged(bool value)
     {
-        if (value) tirePressureSnapshot = TirePressure;
-        else if (TirePressure != tirePressureSnapshot)
-            CommitRequested?.Invoke(this, ("TirePressure", TirePressure));
+        if (value) { tirePressureSnapshot = TirePressure; return; }
+        if (TirePressure == tirePressureSnapshot) return;
+        CommitRequested?.Invoke(this, ("TirePressure", TirePressure));
+        TirePressure = tirePressureSnapshot;
     }
 }
 
@@ -94,13 +104,15 @@ public partial class PendingChangeEntry : ObservableObject
     public string FieldKey { get; }
     public string Label { get; }
     public string ValueDisplay { get; }
+    public object? Value { get; }
     public IRelayCommand RemoveCommand { get; }
 
-    public PendingChangeEntry(string fieldKey, string label, string valueDisplay, Action<PendingChangeEntry> onRemove)
+    public PendingChangeEntry(string fieldKey, string label, string valueDisplay, object? value, Action<PendingChangeEntry> onRemove)
     {
         FieldKey = fieldKey;
         Label = label;
         ValueDisplay = valueDisplay;
+        Value = value;
         RemoveCommand = new RelayCommand(() => onRemove(this));
     }
 }
@@ -112,6 +124,13 @@ public partial class NotesPageViewModel : PageViewModelBase
     public SuspensionSettings ForkSettings { get; } = new();
     public SuspensionSettings ShockSettings { get; } = new();
     public ObservableCollection<PendingChangeEntry> PendingChanges { get; } = new();
+
+    /// <summary>
+    /// Set by SessionViewModel — invoked after every user-driven edit to PendingChanges
+    /// (capture or remove) so the row in pending_setup_changes is written immediately,
+    /// not only when the session is saved.
+    /// </summary>
+    public Func<Task>? PersistPendingAsync { get; set; }
 
     public NotesPageViewModel() : base("Notes")
     {
@@ -135,10 +154,17 @@ public partial class NotesPageViewModel : PageViewModelBase
             key,
             side + " " + FieldDisplayName(fieldKey),
             FormatValue(fieldKey, value),
+            value,
             RemoveEntry));
+
+        _ = PersistPendingAsync?.Invoke();
     }
 
-    private void RemoveEntry(PendingChangeEntry entry) => PendingChanges.Remove(entry);
+    private void RemoveEntry(PendingChangeEntry entry)
+    {
+        PendingChanges.Remove(entry);
+        _ = PersistPendingAsync?.Invoke();
+    }
 
     private static string FieldDisplayName(string key) => key switch
     {
@@ -161,20 +187,20 @@ public partial class NotesPageViewModel : PageViewModelBase
         {
             switch (entry.FieldKey)
             {
-                case "FrontSpringRate": p.FrontSpringRate = ForkSettings.SpringRate; break;
-                case "FrontVolSpc": p.FrontVolSpc = ForkSettings.VolSpc; break;
-                case "FrontHSC": p.FrontHighSpeedCompression = ForkSettings.HighSpeedCompression; break;
-                case "FrontLSC": p.FrontLowSpeedCompression = ForkSettings.LowSpeedCompression; break;
-                case "FrontLSR": p.FrontLowSpeedRebound = ForkSettings.LowSpeedRebound; break;
-                case "FrontHSR": p.FrontHighSpeedRebound = ForkSettings.HighSpeedRebound; break;
-                case "FrontTirePressure": p.FrontTirePressure = ForkSettings.TirePressure; break;
-                case "RearSpringRate": p.RearSpringRate = ShockSettings.SpringRate; break;
-                case "RearVolSpc": p.RearVolSpc = ShockSettings.VolSpc; break;
-                case "RearHSC": p.RearHighSpeedCompression = ShockSettings.HighSpeedCompression; break;
-                case "RearLSC": p.RearLowSpeedCompression = ShockSettings.LowSpeedCompression; break;
-                case "RearLSR": p.RearLowSpeedRebound = ShockSettings.LowSpeedRebound; break;
-                case "RearHSR": p.RearHighSpeedRebound = ShockSettings.HighSpeedRebound; break;
-                case "RearTirePressure": p.RearTirePressure = ShockSettings.TirePressure; break;
+                case "FrontSpringRate": p.FrontSpringRate = entry.Value as string; break;
+                case "FrontVolSpc": p.FrontVolSpc = entry.Value as double?; break;
+                case "FrontHSC": p.FrontHighSpeedCompression = entry.Value as uint?; break;
+                case "FrontLSC": p.FrontLowSpeedCompression = entry.Value as uint?; break;
+                case "FrontLSR": p.FrontLowSpeedRebound = entry.Value as uint?; break;
+                case "FrontHSR": p.FrontHighSpeedRebound = entry.Value as uint?; break;
+                case "FrontTirePressure": p.FrontTirePressure = entry.Value as double?; break;
+                case "RearSpringRate": p.RearSpringRate = entry.Value as string; break;
+                case "RearVolSpc": p.RearVolSpc = entry.Value as double?; break;
+                case "RearHSC": p.RearHighSpeedCompression = entry.Value as uint?; break;
+                case "RearLSC": p.RearLowSpeedCompression = entry.Value as uint?; break;
+                case "RearLSR": p.RearLowSpeedRebound = entry.Value as uint?; break;
+                case "RearHSR": p.RearHighSpeedRebound = entry.Value as uint?; break;
+                case "RearTirePressure": p.RearTirePressure = entry.Value as double?; break;
             }
         }
         return p;
@@ -185,23 +211,23 @@ public partial class NotesPageViewModel : PageViewModelBase
         PendingChanges.Clear();
         if (p is null) return;
 
-        void Add(string key, string label, string display) =>
-            PendingChanges.Add(new PendingChangeEntry(key, label, display, RemoveEntry));
+        void Add(string key, string label, string display, object? value) =>
+            PendingChanges.Add(new PendingChangeEntry(key, label, display, value, RemoveEntry));
 
-        if (p.FrontSpringRate is not null) Add("FrontSpringRate", "Front Spring", p.FrontSpringRate);
-        if (p.FrontVolSpc is not null) Add("FrontVolSpc", "Front VolSpc", FormatValue("VolSpc", p.FrontVolSpc));
-        if (p.FrontHighSpeedCompression is not null) Add("FrontHSC", "Front HSC", p.FrontHighSpeedCompression.ToString()!);
-        if (p.FrontLowSpeedCompression is not null) Add("FrontLSC", "Front LSC", p.FrontLowSpeedCompression.ToString()!);
-        if (p.FrontLowSpeedRebound is not null) Add("FrontLSR", "Front LSR", p.FrontLowSpeedRebound.ToString()!);
-        if (p.FrontHighSpeedRebound is not null) Add("FrontHSR", "Front HSR", p.FrontHighSpeedRebound.ToString()!);
-        if (p.FrontTirePressure is not null) Add("FrontTirePressure", "Front Tire", FormatValue("TirePressure", p.FrontTirePressure));
-        if (p.RearSpringRate is not null) Add("RearSpringRate", "Rear Spring", p.RearSpringRate);
-        if (p.RearVolSpc is not null) Add("RearVolSpc", "Rear VolSpc", FormatValue("VolSpc", p.RearVolSpc));
-        if (p.RearHighSpeedCompression is not null) Add("RearHSC", "Rear HSC", p.RearHighSpeedCompression.ToString()!);
-        if (p.RearLowSpeedCompression is not null) Add("RearLSC", "Rear LSC", p.RearLowSpeedCompression.ToString()!);
-        if (p.RearLowSpeedRebound is not null) Add("RearLSR", "Rear LSR", p.RearLowSpeedRebound.ToString()!);
-        if (p.RearHighSpeedRebound is not null) Add("RearHSR", "Rear HSR", p.RearHighSpeedRebound.ToString()!);
-        if (p.RearTirePressure is not null) Add("RearTirePressure", "Rear Tire", FormatValue("TirePressure", p.RearTirePressure));
+        if (p.FrontSpringRate is not null) Add("FrontSpringRate", "Front Spring", p.FrontSpringRate, p.FrontSpringRate);
+        if (p.FrontVolSpc is not null) Add("FrontVolSpc", "Front VolSpc", FormatValue("VolSpc", p.FrontVolSpc), p.FrontVolSpc);
+        if (p.FrontHighSpeedCompression is not null) Add("FrontHSC", "Front HSC", p.FrontHighSpeedCompression.ToString()!, p.FrontHighSpeedCompression);
+        if (p.FrontLowSpeedCompression is not null) Add("FrontLSC", "Front LSC", p.FrontLowSpeedCompression.ToString()!, p.FrontLowSpeedCompression);
+        if (p.FrontLowSpeedRebound is not null) Add("FrontLSR", "Front LSR", p.FrontLowSpeedRebound.ToString()!, p.FrontLowSpeedRebound);
+        if (p.FrontHighSpeedRebound is not null) Add("FrontHSR", "Front HSR", p.FrontHighSpeedRebound.ToString()!, p.FrontHighSpeedRebound);
+        if (p.FrontTirePressure is not null) Add("FrontTirePressure", "Front Tire", FormatValue("TirePressure", p.FrontTirePressure), p.FrontTirePressure);
+        if (p.RearSpringRate is not null) Add("RearSpringRate", "Rear Spring", p.RearSpringRate, p.RearSpringRate);
+        if (p.RearVolSpc is not null) Add("RearVolSpc", "Rear VolSpc", FormatValue("VolSpc", p.RearVolSpc), p.RearVolSpc);
+        if (p.RearHighSpeedCompression is not null) Add("RearHSC", "Rear HSC", p.RearHighSpeedCompression.ToString()!, p.RearHighSpeedCompression);
+        if (p.RearLowSpeedCompression is not null) Add("RearLSC", "Rear LSC", p.RearLowSpeedCompression.ToString()!, p.RearLowSpeedCompression);
+        if (p.RearLowSpeedRebound is not null) Add("RearLSR", "Rear LSR", p.RearLowSpeedRebound.ToString()!, p.RearLowSpeedRebound);
+        if (p.RearHighSpeedRebound is not null) Add("RearHSR", "Rear HSR", p.RearHighSpeedRebound.ToString()!, p.RearHighSpeedRebound);
+        if (p.RearTirePressure is not null) Add("RearTirePressure", "Rear Tire", FormatValue("TirePressure", p.RearTirePressure), p.RearTirePressure);
     }
 
     public bool IsDirty(Session session)

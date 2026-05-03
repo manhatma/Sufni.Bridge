@@ -37,4 +37,10 @@ public class PendingSetupChanges
         RearHighSpeedCompression is null && RearLowSpeedCompression is null &&
         RearLowSpeedRebound is null && RearHighSpeedRebound is null &&
         RearTirePressure is null;
+
+    // Raised when a setup's pending row is written or deleted. Open SessionViewModels
+    // listen so the in-memory pending list stays in sync after another VM (or the
+    // import flow) updates the DB.
+    public static event EventHandler<Guid>? Changed;
+    internal static void RaiseChanged(Guid setupId) => Changed?.Invoke(null, setupId);
 }

@@ -889,11 +889,13 @@ public class SqLiteDatabaseService : IDatabaseService
         await Initialization;
         pending.Updated = (int)DateTimeOffset.Now.ToUnixTimeSeconds();
         await connection.InsertOrReplaceAsync(pending);
+        PendingSetupChanges.RaiseChanged(pending.SetupId);
     }
 
     public async Task DeletePendingSetupChangesAsync(Guid setupId)
     {
         await Initialization;
         await connection.ExecuteAsync("DELETE FROM pending_setup_changes WHERE setup_id = ?", setupId);
+        PendingSetupChanges.RaiseChanged(setupId);
     }
 }

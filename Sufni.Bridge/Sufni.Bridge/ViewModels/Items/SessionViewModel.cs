@@ -1182,7 +1182,36 @@ public partial class SessionViewModel : ItemViewModelBase
         NotesPage.PropertyChanged += (_, _) => EvaluateDirtiness();
         CropPage.PropertyChanged += (_, e) => { if (e.PropertyName == nameof(CropPage.IsModified)) OnPropertyChanged(nameof(SaveLabel)); };
 
+        // Persist pending changes to the DB the moment the user toggles the pencil —
+        // they need to survive a session import even if the user never explicitly saves.
+        NotesPage.PersistPendingAsync = PersistPendingAsync;
+
+        // Other VMs (or the import flow) can update this setup's pending row; reload
+        // ours so a stale list doesn't linger after the row is cleared on import.
+        PendingSetupChanges.Changed += OnPendingSetupChangesChanged;
+
         _ = ResetImplementation();
+    }
+
+    private async Task PersistPendingAsync()
+    {
+        if (session.Setup is not Guid setupId) return;
+        var dbSvc = App.Current?.Services?.GetService<IDatabaseService>();
+        if (dbSvc is null) return;
+
+        if (NotesPage.PendingChanges.Count > 0)
+            await dbSvc.PutPendingSetupChangesAsync(NotesPage.BuildPending(setupId));
+        else
+            await dbSvc.DeletePendingSetupChangesAsync(setupId);
+    }
+
+    private async void OnPendingSetupChangesChanged(object? sender, Guid setupId)
+    {
+        if (session.Setup != setupId) return;
+        var dbSvc = App.Current?.Services?.GetService<IDatabaseService>();
+        if (dbSvc is null) return;
+        var pending = await dbSvc.GetPendingSetupChangesAsync(setupId);
+        Dispatcher.UIThread.Post(() => NotesPage.LoadPending(pending));
     }
 
     #endregion

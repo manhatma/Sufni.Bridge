@@ -31,16 +31,20 @@
                 <Setter Property="Margin" Value="2" />
                 <Setter Property="FontSize" Value="12" />
             </Style>
-            <!--  Compact spinner buttons so the value stays readable on touch screens  -->
+            <!--  Cap spinner button width so the value stays readable on touch screens.  -->
             <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton">
-                <Setter Property="MinWidth" Value="22" />
-                <Setter Property="Width" Value="22" />
-                <Setter Property="Padding" Value="0" />
+                <Setter Property="MinWidth" Value="0" />
+                <Setter Property="MaxWidth" Value="28" />
             </Style>
-            <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ Button">
-                <Setter Property="MinWidth" Value="22" />
-                <Setter Property="Width" Value="22" />
-                <Setter Property="Padding" Value="0" />
+            <!--  Avalonia's default disabled spinner draws a noticeably darker background on
+                  iOS dark theme, which reads as "pressed/activated" instead of "disabled at
+                  the limit". Strip the background and just fade the chevron.  -->
+            <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton:disabled /template/ ContentPresenter#PART_ContentPresenter">
+                <Setter Property="Background" Value="Transparent" />
+                <Setter Property="BorderBrush" Value="Transparent" />
+            </Style>
+            <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton:disabled">
+                <Setter Property="Opacity" Value="0.35" />
             </Style>
             <Style Selector="Label">
                 <Setter Property="FontSize" Value="12" />
