@@ -34,7 +34,7 @@ public class CombinedTravelFftPlot(
     int segmentLength = 8192,
     bool fitYAxisToData = false,
     double topHeadroomDb = 8.0,
-    float lineWidth = 2f,
+    float lineWidth = 1.5f,
     WheelSpectrumMode mode = WheelSpectrumMode.Travel)
     : TelemetryPlot(plot)
 {

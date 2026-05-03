@@ -23,7 +23,7 @@ public class CompareSpectrumPlot(
     double peakMaxHz = 4.5,
     int segmentLength = 8192,
     double topHeadroomDb = 2.0,
-    float lineWidth = 2f,
+    float lineWidth = 1.5f,
     WheelSpectrumMode mode = WheelSpectrumMode.Travel)
     : SufniPlot(plot)
 {
