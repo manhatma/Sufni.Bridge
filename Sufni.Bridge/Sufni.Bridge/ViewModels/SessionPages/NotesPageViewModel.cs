@@ -1,16 +1,77 @@
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Sufni.Bridge.Models;
+using Sufni.Bridge.Models.Telemetry;
 
 namespace Sufni.Bridge.ViewModels.SessionPages;
 
 public partial class SuspensionSettings : ObservableObject
 {
+    // The persisted spring-rate string (e.g. "75.0 psi"). Kept as the single source of
+    // truth so existing DB persistence and pending-change capture continue to work.
+    // SpringRateValue + SpringRateUnit are bound to the UI and stay in sync via the
+    // partial OnXxxChanged hooks below.
     [ObservableProperty] private string? springRate;
+
+    [ObservableProperty] private double? springRateValue;
+    [ObservableProperty] private string springRateUnit = SpringRateParser.UnitPsi;
+
+    public IReadOnlyList<string> SpringRateUnitOptions { get; } = SpringRateParser.AllUnits;
+
+    [RelayCommand]
+    private void CycleSpringRateUnit()
+    {
+        var options = SpringRateUnitOptions;
+        var idx = -1;
+        for (var i = 0; i < options.Count; i++)
+            if (options[i] == SpringRateUnit) { idx = i; break; }
+        SpringRateUnit = options[(idx < 0 ? 0 : idx + 1) % options.Count];
+    }
+
+    private bool springRateUpdating;
+
+    partial void OnSpringRateChanged(string? value)
+    {
+        if (springRateUpdating) return;
+        if (SpringRateParser.TryParse(value, out var v, out var u))
+        {
+            springRateUpdating = true;
+            try
+            {
+                SpringRateValue = v;
+                // Empty unit = legacy bare-number entry; keep the current unit selection.
+                if (!string.IsNullOrEmpty(u))
+                    SpringRateUnit = u;
+            }
+            finally { springRateUpdating = false; }
+        }
+        else if (string.IsNullOrWhiteSpace(value))
+        {
+            springRateUpdating = true;
+            try { SpringRateValue = null; }
+            finally { springRateUpdating = false; }
+        }
+    }
+
+    partial void OnSpringRateValueChanged(double? value) => UpdateSpringRateString();
+    partial void OnSpringRateUnitChanged(string value) => UpdateSpringRateString();
+
+    private void UpdateSpringRateString()
+    {
+        if (springRateUpdating) return;
+        springRateUpdating = true;
+        try
+        {
+            SpringRate = SpringRateParser.Format(SpringRateValue, SpringRateUnit);
+        }
+        finally { springRateUpdating = false; }
+    }
+
     [ObservableProperty] private double? volSpc;
 
     partial void OnVolSpcChanged(double? value)

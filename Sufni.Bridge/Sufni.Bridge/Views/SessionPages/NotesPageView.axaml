@@ -93,19 +93,32 @@
             HorizontalAlignment="Center"
             Content="Rear" />
 
-        <!--  Spring row  -->
+        <!--  Spring row: numeric value + unit selector  -->
         <Label
             Grid.Row="1"
             Grid.Column="1"
             HorizontalAlignment="Right"
             VerticalAlignment="Center"
             Content="Spring:" />
-        <TextBox
+        <Grid
             Grid.Row="1"
             Grid.Column="3"
-            Margin="2"
-            VerticalContentAlignment="Center"
-            Text="{Binding ForkSettings.SpringRate}" />
+            ColumnDefinitions="* 50">
+            <NumericUpDown
+                Grid.Column="0"
+                FormatString="F1"
+                Increment="1"
+                ShowButtonSpinner="False"
+                Value="{Binding ForkSettings.SpringRateValue}" />
+            <Button
+                Grid.Column="1"
+                Margin="2"
+                Padding="0"
+                HorizontalContentAlignment="Center"
+                Command="{Binding ForkSettings.CycleSpringRateUnitCommand}"
+                Content="{Binding ForkSettings.SpringRateUnit}"
+                FontSize="11" />
+        </Grid>
         <ToggleButton
             Grid.Row="1"
             Grid.Column="4"
@@ -113,12 +126,25 @@
             IsChecked="{Binding ForkSettings.SpringRateEditing}">
             <Image Width="11" Source="{SvgImage /Assets/fa-pen-square.svg}" />
         </ToggleButton>
-        <TextBox
+        <Grid
             Grid.Row="1"
             Grid.Column="6"
-            Margin="2"
-            VerticalContentAlignment="Center"
-            Text="{Binding ShockSettings.SpringRate}" />
+            ColumnDefinitions="* 50">
+            <NumericUpDown
+                Grid.Column="0"
+                FormatString="F1"
+                Increment="1"
+                ShowButtonSpinner="False"
+                Value="{Binding ShockSettings.SpringRateValue}" />
+            <Button
+                Grid.Column="1"
+                Margin="2"
+                Padding="0"
+                HorizontalContentAlignment="Center"
+                Command="{Binding ShockSettings.CycleSpringRateUnitCommand}"
+                Content="{Binding ShockSettings.SpringRateUnit}"
+                FontSize="11" />
+        </Grid>
         <ToggleButton
             Grid.Row="1"
             Grid.Column="7"
