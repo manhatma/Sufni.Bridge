@@ -112,7 +112,33 @@ public record BalanceMetrics(
     double? MidCoherence,
     double? WheelCoherence,
     double? HighCoherence,
-    double? FrequencySplitHz);
+    double? FrequencySplitHz,
+    // Wheel-load metrics (V1, dyno-spring-based force estimator).
+    // All null when no force estimator is configured for the session/setup.
+    double? FrontStaticForceN = null,
+    double? RearStaticForceN = null,
+    // Flat-floor reference: wheel load this setup would produce at the centre of the
+    // sag-target band. Used to derive a bike-specific expected front/rear share.
+    double? FrontStaticForceFlatN = null,
+    double? RearStaticForceFlatN = null,
+    double? FrontUnloadingPct = null,
+    double? RearUnloadingPct = null,
+    double? UnloadingDifferencePp = null,
+    int? FrontUnloadingEvents = null,
+    int? RearUnloadingEvents = null,
+    double? LowLoadMichelson = null,
+    double? MidLoadMichelson = null,
+    double? WheelLoadMichelson = null,
+    double? HighLoadMichelson = null,
+    // Dynamic range expressed as a factor (max−min)/static. 1.0 = oscillates within
+    // ±static; 3.0 = swings 3× the static load (typical for medium trails).
+    double? FrontDynamicRangeFactor = null,
+    double? RearDynamicRangeFactor = null,
+    double? DynamicRangeDifference = null,
+    // Schema marker for cached metrics. Bump when computation logic changes in a way that
+    // invalidates older cached results (e.g. airtime-aware unloading, threshold tuning).
+    // Caches with a lower version trigger a background recompute on session open.
+    int WheelLoadSchemaVersion = 0);
 
 [MessagePackObject(keyAsPropertyName: true)]
 public class TelemetryData
@@ -122,6 +148,20 @@ public class TelemetryData
     // Increment when velocity processing parameters change (e.g. smoother lambda).
     // Blobs with a lower version are automatically re-processed from Travel arrays on load.
     public const int CurrentProcessingVersion = 4;
+
+    // Increment when wheel-load metrics computation changes in a way that invalidates
+    // cached BalanceMetricsJson.
+    //   v1: airtime-aware unloading + share-based static load
+    //   v2: bike-specific flat-reference static load (StaticForceFlatN per axle)
+    //   v3: first damper-curve assets shipped — recompute so the damper contribution
+    //       reaches sessions whose setup gains a damper assignment after this update
+    //   v4: motion-based airtime detection (replaces strict top-out heuristic) so jumps
+    //       on real air-shocks no longer pollute Front/Rear unloading metrics
+    //   v5: tightened unloading thresholds (20 % / 100 ms), dynamic range expressed as a
+    //       factor (max−min)/static instead of a percentage
+    //   v6: Schmitt-trigger hysteresis on unloading counter (enter 20 %, exit 30 %);
+    //       airtime detector min-duration 200 ms → 100 ms to catch small hops
+    public const int CurrentBalanceMetricsSchemaVersion = 6;
 
     #region Public properties
 
@@ -1533,7 +1573,11 @@ public class TelemetryData
         return (bestF, bestA);
     }
 
-    public BalanceMetrics CalculateBalanceMetrics(Discipline? discipline = null)
+    public BalanceMetrics CalculateBalanceMetrics(
+        Discipline? discipline = null,
+        IForceEstimator? forceEstimator = null,
+        Setup? setup = null,
+        Session? session = null)
     {
         double? fSag = null, rSag = null, sagDiff = null;
         double? fP95Pct = null, rP95Pct = null;
@@ -1545,6 +1589,15 @@ public class TelemetryData
         double? lowEnergyDb = null, midEnergyDb = null, wheelEnergyDb = null, highEnergyDb = null;
         double? lowCoh = null, midCoh = null, wheelCoh = null, highCoh = null;
         double fSplit = FrequencySplitFor(discipline);
+
+        // Wheel-load metrics (V1, dyno-spring-based estimator). All null when the estimator
+        // is missing inputs (no spring component assigned, unparsable spring rate, etc.).
+        double? fStaticN = null, rStaticN = null;
+        double? fStaticFlatN = null, rStaticFlatN = null;
+        double? fUnloadPct = null, rUnloadPct = null, unloadDiff = null;
+        int? fUnloadEvents = null, rUnloadEvents = null;
+        double? lowLoadM = null, midLoadM = null, wheelLoadM = null, highLoadM = null;
+        double? fDynRangeFactor = null, rDynRangeFactor = null, dynRangeDiff = null;
 
         var maxF = Linkage?.MaxFrontTravel ?? 0;
         var maxR = Linkage?.MaxRearTravel ?? 0;
@@ -1666,6 +1719,84 @@ public class TelemetryData
             }
         }
 
+        // Wheel-load force metrics. Active only when caller supplied an estimator + setup + session.
+        if (forceEstimator is not null && setup is not null && session is not null)
+        {
+            ForceData? fForce = null, rForce = null;
+            try { fForce = forceEstimator.Estimate(SuspensionType.Front, this, setup, session); } catch { }
+            try { rForce = forceEstimator.Estimate(SuspensionType.Rear,  this, setup, session); } catch { }
+
+            // Per-axis time-domain metrics. Tightened from the initial defaults after real-trail
+            // sessions produced unrealistically high event counts (>30 on a moderate trail):
+            //   - threshold 30 % → 20 %: 30 % is "less loaded than usual", not actual grip loss.
+            //     Real traction loss on a tyre starts well below ~25 % of static load.
+            //   - dwell 50 ms → 100 ms: 50 ms is in the same range as pedalling impulses and
+            //     short root-bumps; only sustained dips deserve to count as a setup-relevant event.
+            //   - Schmitt-trigger hysteresis (enter at 20 %, exit at 30 %): a single sustained
+            //     unloading phase often shows small force spikes back above the entry threshold
+            //     when the spring vibrates on a rough patch. Without hysteresis those spikes
+            //     fragment one real event into several spurious ones. Exit-on-30 % bridges them
+            //     while still demanding clear re-loading before counting the next event.
+            int minSamples = Math.Max(1, (int)(0.10 * SampleRate));  // 100 ms minimum dwell for an "event"
+            const double UnloadEnterFraction = 0.20;                  // F_wheel < 20% F_static = event start
+            const double UnloadExitFraction  = 0.30;                  // F_wheel > 30% F_static = event end
+
+            // Airtime mask — exclude periods where the whole bike is airborne. Both wheels
+            // are unloaded by definition then; counting that as an unloading event would
+            // pollute the metric and obscure setup-driven (asymmetric) unloading on rough ground.
+            // The session-level Airtimes[] array uses a strict top-out criterion (travel ≤ 3 mm)
+            // that real-world dampers often miss because of internal friction / negative-spring
+            // equilibrium; we detect airtime here from the motion signal directly, using a
+            // travel threshold relative to the running median (dyn-sag proxy).
+            int forceLen = fForce?.WheelForce.Length ?? rForce?.WheelForce.Length ?? 0;
+            var airMask = BuildAirtimeMaskFromMotion(forceLen, SampleRate, Front, Rear);
+
+            if (fForce is not null && fForce.WheelForce.Length > 0 && fForce.StaticForce > 0)
+            {
+                fStaticN = fForce.StaticForce;
+                fStaticFlatN = fForce.StaticForceFlat;
+                var (pct, ev) = UnloadingStats(fForce.WheelForce,
+                    UnloadEnterFraction * fForce.StaticForce,
+                    UnloadExitFraction  * fForce.StaticForce,
+                    minSamples, airMask);
+                fUnloadPct = pct;
+                fUnloadEvents = ev;
+                fDynRangeFactor = DynamicRangeFactor(fForce.WheelForce, fForce.StaticForce);
+            }
+            if (rForce is not null && rForce.WheelForce.Length > 0 && rForce.StaticForce > 0)
+            {
+                rStaticN = rForce.StaticForce;
+                rStaticFlatN = rForce.StaticForceFlat;
+                var (pct, ev) = UnloadingStats(rForce.WheelForce,
+                    UnloadEnterFraction * rForce.StaticForce,
+                    UnloadExitFraction  * rForce.StaticForce,
+                    minSamples, airMask);
+                rUnloadPct = pct;
+                rUnloadEvents = ev;
+                rDynRangeFactor = DynamicRangeFactor(rForce.WheelForce, rForce.StaticForce);
+            }
+            if (fUnloadPct.HasValue && rUnloadPct.HasValue)
+                unloadDiff = Math.Abs(fUnloadPct.Value - rUnloadPct.Value);
+            if (fDynRangeFactor.HasValue && rDynRangeFactor.HasValue)
+                dynRangeDiff = Math.Abs(fDynRangeFactor.Value - rDynRangeFactor.Value);
+
+            // Frequency-domain Load F/R (statically-normalised Michelson).
+            if (fForce is not null && rForce is not null
+                && fForce.WheelForce.Length >= 8192 && rForce.WheelForce.Length >= 8192
+                && fForce.WheelForce.Length == rForce.WheelForce.Length
+                && fForce.StaticForce > 0 && rForce.StaticForce > 0)
+            {
+                var (ff, fpxx, fpyy, _) = ComputeWelchCrossSpectrum(fForce.WheelForce, rForce.WheelForce, SampleRate);
+                if (ff.Length > 0)
+                {
+                    lowLoadM   = LoadMichelson(ff, fpxx, fpyy, fForce.StaticForce, rForce.StaticForce, 1.0,    fSplit);
+                    midLoadM   = LoadMichelson(ff, fpxx, fpyy, fForce.StaticForce, rForce.StaticForce, fSplit, 10.0);
+                    wheelLoadM = LoadMichelson(ff, fpxx, fpyy, fForce.StaticForce, rForce.StaticForce, 10.0,   25.0);
+                    highLoadM  = LoadMichelson(ff, fpxx, fpyy, fForce.StaticForce, rForce.StaticForce, 25.0,   50.0);
+                }
+            }
+        }
+
         return new BalanceMetrics(
             fSag, rSag, sagDiff,
             fP95Pct, rP95Pct,
@@ -1676,7 +1807,214 @@ public class TelemetryData
             freqDiff, ampRatio,
             lowEnergyDb, midEnergyDb, wheelEnergyDb, highEnergyDb,
             lowCoh, midCoh, wheelCoh, highCoh,
-            fSplit);
+            fSplit,
+            FrontStaticForceN: fStaticN, RearStaticForceN: rStaticN,
+            FrontStaticForceFlatN: fStaticFlatN, RearStaticForceFlatN: rStaticFlatN,
+            FrontUnloadingPct: fUnloadPct, RearUnloadingPct: rUnloadPct,
+            UnloadingDifferencePp: unloadDiff,
+            FrontUnloadingEvents: fUnloadEvents, RearUnloadingEvents: rUnloadEvents,
+            LowLoadMichelson: lowLoadM, MidLoadMichelson: midLoadM,
+            WheelLoadMichelson: wheelLoadM, HighLoadMichelson: highLoadM,
+            FrontDynamicRangeFactor: fDynRangeFactor, RearDynamicRangeFactor: rDynRangeFactor,
+            DynamicRangeDifference: dynRangeDiff,
+            WheelLoadSchemaVersion: CurrentBalanceMetricsSchemaVersion);
+    }
+
+    /// <summary>
+    /// Counts unloading events with Schmitt-trigger hysteresis to suppress spurious
+    /// re-triggers from spike noise around the threshold.
+    ///
+    /// State machine:
+    ///   loaded  → unloading: force drops below <paramref name="enterThreshold"/>
+    ///   unloading → loaded:  force rises above <paramref name="exitThreshold"/>
+    /// An unloading run only counts as an event when it lasted at least
+    /// <paramref name="minSamples"/> samples while in the "unloading" state.
+    ///
+    /// "% time" is the fraction of considered samples that were below the *enter*
+    /// threshold (the strict "really unloaded" definition; the hysteresis exit only
+    /// affects event counting, not the dwell percentage).
+    ///
+    /// Samples flagged in <paramref name="skipMask"/> (e.g. airtime where both wheels
+    /// are trivially unloaded) are excluded from both numerator and denominator, and
+    /// they close any active unloading run so airborne segments can't merge into one
+    /// giant event.
+    /// </summary>
+    private static (double Pct, int Events) UnloadingStats(double[] force,
+        double enterThreshold, double exitThreshold, int minSamples, bool[]? skipMask = null)
+    {
+        int below = 0, considered = 0, events = 0, runLen = 0;
+        bool unloading = false;
+        for (int i = 0; i < force.Length; i++)
+        {
+            if (skipMask != null && i < skipMask.Length && skipMask[i])
+            {
+                if (unloading && runLen >= minSamples) events++;
+                unloading = false;
+                runLen = 0;
+                continue;
+            }
+            considered++;
+            var f = force[i];
+
+            if (unloading)
+            {
+                runLen++;
+                if (f < enterThreshold) below++;
+                if (f > exitThreshold)
+                {
+                    if (runLen >= minSamples) events++;
+                    unloading = false;
+                    runLen = 0;
+                }
+            }
+            else
+            {
+                if (f < enterThreshold)
+                {
+                    unloading = true;
+                    runLen = 1;
+                    below++;
+                }
+            }
+        }
+        if (unloading && runLen >= minSamples) events++;
+        var pct = considered == 0 ? 0.0 : 100.0 * below / considered;
+        return (pct, events);
+    }
+
+    /// <summary>
+    /// Motion-based airtime detection used to exclude airborne samples from the
+    /// wheel-unloading metric. Independent of the strict top-out heuristic in Strokes —
+    /// real air-shocks rarely reach travel ≤ 3 mm because of internal friction and the
+    /// negative-spring equilibrium offset.
+    ///
+    /// A sample is flagged airborne when both axles are simultaneously "quiet & light":
+    ///   |velocity| ≤ 150 mm/s   (spring effectively still)
+    ///   travel ≤ 0.4 × median(travel)   (well below dynamic sag)
+    /// for at least 200 ms continuously, AND there is a landing-velocity spike
+    /// (≥ 500 mm/s on either axle) within 500 ms after the run.
+    ///
+    /// The travel threshold scales with the rider's setup via the session median,
+    /// so it works for both stiff DH and softer trail setups without re-tuning.
+    /// Returns null if motion data is missing.
+    /// </summary>
+    private static bool[]? BuildAirtimeMaskFromMotion(int length, int sampleRate, Suspension front, Suspension rear)
+    {
+        if (length <= 0 || sampleRate <= 0) return null;
+        if (!front.Present || !rear.Present) return null;
+        var ft = front.Travel; var fv = front.Velocity;
+        var rt = rear.Travel;  var rv = rear.Velocity;
+        if (ft == null || fv == null || rt == null || rv == null) return null;
+        if (ft.Length < length || fv.Length < length || rt.Length < length || rv.Length < length) return null;
+
+        const double VelQuietMmS    = 150.0;   // spring nearly still
+        const double TravelRelative = 0.40;    // travel ≤ 40 % of dyn-sag = clearly unloaded
+        const double MinDurationS   = 0.10;    // 100 ms minimum — catches small caps/hops too
+        const double LandingVelMmS  = 500.0;   // landing-compression spike threshold
+        const double LandingWindowS = 0.50;    // search window after run
+
+        var fMedian = MedianCopy(ft, length);
+        var rMedian = MedianCopy(rt, length);
+        // Defensive lower bound: if median is tiny (low-sag setup), keep the threshold at
+        // a sensible absolute floor so isolated sensor noise can't trigger detection.
+        var fThr = Math.Max(2.0, fMedian * TravelRelative);
+        var rThr = Math.Max(2.0, rMedian * TravelRelative);
+
+        var quiet = new bool[length];
+        for (int i = 0; i < length; i++)
+        {
+            bool fQuiet = ft[i] <= fThr && Math.Abs(fv[i]) <= VelQuietMmS;
+            bool rQuiet = rt[i] <= rThr && Math.Abs(rv[i]) <= VelQuietMmS;
+            quiet[i] = fQuiet && rQuiet;
+        }
+
+        int minSamples     = Math.Max(1, (int)(MinDurationS   * sampleRate));
+        int landingSamples = Math.Max(1, (int)(LandingWindowS * sampleRate));
+
+        var mask = new bool[length];
+        int runStart = -1;
+        for (int i = 0; i <= length; i++)
+        {
+            bool isQuiet = i < length && quiet[i];
+            if (isQuiet)
+            {
+                if (runStart < 0) runStart = i;
+                continue;
+            }
+            if (runStart >= 0)
+            {
+                int runLen = i - runStart;
+                if (runLen >= minSamples)
+                {
+                    // Confirm landing within the search window — ensures the run is a real
+                    // jump rather than e.g. the rider standing at the trailhead with light
+                    // weight on the bike.
+                    int searchEnd = Math.Min(length, i + landingSamples);
+                    bool hasLanding = false;
+                    for (int j = i; j < searchEnd; j++)
+                    {
+                        if (Math.Abs(fv[j]) >= LandingVelMmS || Math.Abs(rv[j]) >= LandingVelMmS)
+                        {
+                            hasLanding = true;
+                            break;
+                        }
+                    }
+                    if (hasLanding)
+                    {
+                        for (int j = runStart; j < i; j++) mask[j] = true;
+                    }
+                }
+                runStart = -1;
+            }
+        }
+        return mask;
+    }
+
+    /// <summary>Median over the first <paramref name="length"/> samples of <paramref name="data"/>.</summary>
+    private static double MedianCopy(double[] data, int length)
+    {
+        if (length <= 0) return 0;
+        var copy = new double[length];
+        Array.Copy(data, copy, length);
+        Array.Sort(copy);
+        return length % 2 == 1
+            ? copy[length / 2]
+            : 0.5 * (copy[length / 2 - 1] + copy[length / 2]);
+    }
+
+    /// <summary>
+    /// Dynamic range expressed as a ratio (max − min) / staticForce. Reads as a multiplier:
+    /// 1.0 = swings within ±static load, 3.0 = three times the static load, etc. Easier to
+    /// interpret than a percentage where typical trail values land around 300–500 %.
+    /// </summary>
+    private static double DynamicRangeFactor(double[] force, double staticForce)
+    {
+        if (force.Length == 0 || staticForce <= 0) return 0;
+        double min = double.PositiveInfinity, max = double.NegativeInfinity;
+        for (int i = 0; i < force.Length; i++)
+        {
+            if (force[i] < min) min = force[i];
+            if (force[i] > max) max = force[i];
+        }
+        return (max - min) / staticForce;
+    }
+
+    /// <summary>
+    /// Statically-normalised Michelson load index per frequency band:
+    /// M = (σF/F_F_static − σR/F_R_static) / (σF/F_F_static + σR/F_R_static)
+    /// where σ = √∫P(f) df over [fLow, fHigh].
+    /// </summary>
+    private static double? LoadMichelson(double[] freqs, double[] pxxF, double[] pxxR,
+        double fStatic, double rStatic, double fLow, double fHigh)
+    {
+        var energyF = IntegrateBand(freqs, pxxF, fLow, fHigh);
+        var energyR = IntegrateBand(freqs, pxxR, fLow, fHigh);
+        if (energyF <= 0 && energyR <= 0) return null;
+        var sigmaF = Math.Sqrt(Math.Max(0, energyF)) / fStatic;
+        var sigmaR = Math.Sqrt(Math.Max(0, energyR)) / rStatic;
+        var sum = sigmaF + sigmaR;
+        if (sum <= 1e-12) return null;
+        return (sigmaF - sigmaR) / sum;
     }
 
     #endregion

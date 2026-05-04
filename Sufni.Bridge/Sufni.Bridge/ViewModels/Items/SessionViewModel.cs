@@ -242,7 +242,20 @@ public partial class SessionViewModel : ItemViewModelBase
                             try
                             {
                                 var m = JsonSerializer.Deserialize<BalanceMetrics>(cache.BalanceMetricsJson);
-                                if (m is not null) BalancePage.Metrics.Apply(m, sessionDiscipline);
+                                if (m is not null)
+                                {
+                                    BalancePage.Metrics.Apply(m, sessionDiscipline);
+                                    // Two cases trigger a wheel-load recompute:
+                                    //   1) The cache pre-dates the wheel-load fields (no static force values).
+                                    //   2) The cached schema version is older than the current — wheel-load
+                                    //      computation changed in a way that invalidates the cached numbers.
+                                    bool needsForce = !m.FrontStaticForceN.HasValue && !m.RearStaticForceN.HasValue;
+                                    bool oldSchema  = m.WheelLoadSchemaVersion < TelemetryData.CurrentBalanceMetricsSchemaVersion;
+                                    if (needsForce || oldSchema)
+                                    {
+                                        _ = RefreshForceMetricsAsync(cache, sessionDiscipline);
+                                    }
+                                }
                             }
                             catch { /* corrupt metrics cache; will be rebuilt */ }
                         }
@@ -284,6 +297,65 @@ public partial class SessionViewModel : ItemViewModelBase
             return setup?.Discipline;
         }
         catch { return null; }
+    }
+
+    /// <summary>
+    /// Loads the full Setup row for this session, used by wheel-load metrics that need
+    /// access to component IDs and (later) mass parameters.
+    /// </summary>
+    private async Task<Setup?> GetSessionSetupAsync()
+    {
+        if (!session.Setup.HasValue) return null;
+        var dbSvc = App.Current?.Services?.GetService<IDatabaseService>();
+        if (dbSvc is null) return null;
+        try
+        {
+            return await dbSvc.GetSetupAsync(session.Setup.Value);
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Recomputes only the wheel-load force metrics for sessions whose cached metrics
+    /// predate the wheel-load fields. Loads telemetry, runs CalculateBalanceMetrics, then
+    /// updates the cache row + the UI. Called when the user has assigned a spring
+    /// component to the setup but the session was last processed before that field existed.
+    /// </summary>
+    private async Task RefreshForceMetricsAsync(SessionCache cache, Discipline? discipline)
+    {
+        try
+        {
+            var setup = await GetSessionSetupAsync();
+            if (setup is null) { Debug.WriteLine("[Refresh] setup not loaded"); return; }
+            if (setup.FrontSpringComponentId is null && setup.RearSpringComponentId is null)
+            {
+                Debug.WriteLine("[Refresh] no spring component assigned to setup; skipping");
+                return;
+            }
+            Debug.WriteLine($"[Refresh] setup spring components: front={setup.FrontSpringComponentId}, rear={setup.RearSpringComponentId}");
+            Debug.WriteLine($"[Refresh] session spring rates: front='{session.FrontSpringRate}', rear='{session.RearSpringRate}'");
+            Debug.WriteLine($"[Refresh] session vol spacers: front={session.FrontVolSpc}, rear={session.RearVolSpc}");
+
+            var dbSvc = App.Current?.Services?.GetService<IDatabaseService>();
+            if (dbSvc is null) { Debug.WriteLine("[Refresh] no database service"); return; }
+            var td = await dbSvc.GetSessionPsstAsync(Id);
+            if (td is null) { Debug.WriteLine("[Refresh] no telemetry blob"); return; }
+
+            var estimator = App.Current?.Services?.GetService<IForceEstimator>();
+            if (estimator is null) { Debug.WriteLine("[Refresh] no IForceEstimator service"); return; }
+
+            var newM = td.CalculateBalanceMetrics(discipline, estimator, setup, session);
+            Debug.WriteLine($"[Refresh] new metrics: fStaticN={newM.FrontStaticForceN}, rStaticN={newM.RearStaticForceN}");
+
+            cache.BalanceMetricsJson = JsonSerializer.Serialize(newM);
+            try { await dbSvc.PutSessionCacheAsync(cache); } catch (Exception ex) { Debug.WriteLine($"[Refresh] cache update failed: {ex.Message}"); }
+
+            Dispatcher.UIThread.Post(() => BalancePage.Metrics.Apply(newM, discipline));
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[Refresh] exception: {ex.Message}");
+        }
     }
 
     private static Task ThrottledPlotTask(Action work)
@@ -596,8 +668,10 @@ public partial class SessionViewModel : ItemViewModelBase
 
             tasks.Add(Task.Run(async () =>
             {
-                var discipline = await GetSessionDisciplineAsync();
-                var metrics = telemetryData.CalculateBalanceMetrics(discipline);
+                var setup = await GetSessionSetupAsync();
+                var discipline = setup?.Discipline;
+                var estimator = App.Current?.Services?.GetService<IForceEstimator>();
+                var metrics = telemetryData.CalculateBalanceMetrics(discipline, estimator, setup, session);
                 sessionCache.BalanceMetricsJson = JsonSerializer.Serialize(metrics);
                 Dispatcher.UIThread.Post(() => BalancePage.Metrics.Apply(metrics, discipline));
             }));

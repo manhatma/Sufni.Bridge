@@ -70,6 +70,28 @@ public partial class BalanceMetricsViewModel : ObservableObject
     public BalanceMetricRow WheelCoherence { get; } = new() { Label = "Coherence (10.0–25.0 Hz)", Target = "≤ 0.4" };
     public BalanceMetricRow HighCoherence  { get; } = new() { Label = "Coherence (25.0–50.0 Hz)", Target = "≤ 0.1" };
 
+    // Dynamic wheel-load metrics. Active only when the session has a spring component
+    // assigned and a parsable spring-rate value. Source: spring-curve-based force estimator.
+    public BalanceMetricRow FrontStaticForce { get; } = new() { Label = "Front static load",     Target = "" };
+    public BalanceMetricRow RearStaticForce  { get; } = new() { Label = "Rear static load",      Target = "" };
+    public BalanceMetricRow FrontUnloading   { get; } = new() { Label = "Front unloading time",  Target = "≤ 5 %" };
+    public BalanceMetricRow RearUnloading    { get; } = new() { Label = "Rear unloading time",   Target = "≤ 5 %" };
+    public BalanceMetricRow UnloadingDiff    { get; } = new() { Label = "Unloading-Diff |F−R|",  Target = "≤ 5 pp" };
+    public BalanceMetricRow FrontUnloadEv    { get; } = new() { Label = "Front unload events",   Target = "≈ 0" };
+    public BalanceMetricRow RearUnloadEv     { get; } = new() { Label = "Rear unload events",    Target = "≈ 0" };
+    public BalanceMetricRow FrontDynRange    { get; } = new() { Label = "Front dynamic range",   Target = "≈ 2.0–7.0×" };
+    public BalanceMetricRow RearDynRange     { get; } = new() { Label = "Rear dynamic range",    Target = "≈ 2.0–7.0×" };
+    public BalanceMetricRow DynRangeDiff     { get; } = new() { Label = "DynRange-Diff |F−R|",   Target = "≤ 0.5×" };
+    // Statically-normalised Michelson load index per frequency band, range [-1, +1].
+    // 0 = both axes oscillate equally relative to their static load. Positive = front-biased.
+    // Low/Mid bands favour a slight front bias (front grip preferred for braking and
+    // tracking). Wheel/High are tied to unsprung-mass dynamics, which aren't axis-biased,
+    // so those bands stay symmetric.
+    public BalanceMetricRow LowLoadMichelson   { get; } = new() { Label = "Load F/R Low",   Target = "−0.02 … +0.10" };
+    public BalanceMetricRow MidLoadMichelson   { get; } = new() { Label = "Load F/R Mid",   Target = "−0.02 … +0.10" };
+    public BalanceMetricRow WheelLoadMichelson { get; } = new() { Label = "Load F/R (10.0–25.0 Hz)", Target = "±0.05" };
+    public BalanceMetricRow HighLoadMichelson  { get; } = new() { Label = "Load F/R (25.0–50.0 Hz)", Target = "±0.05" };
+
     public void Apply(BalanceMetrics m, Discipline? discipline = null)
     {
         SetSagBand(FrontSag, m.FrontSagPct, 23, 28);
@@ -121,6 +143,113 @@ public partial class BalanceMetricsViewModel : ObservableObject
         SetCoherence(MidCoherence,   m.MidCoherence,   higherIsBetter: false);
         SetCoherence(WheelCoherence, m.WheelCoherence, higherIsBetter: false);
         SetCoherence(HighCoherence,  m.HighCoherence,  higherIsBetter: false, goodCutoff: 0.1);
+
+        // Wheel-load section. Static load is informational only (no status); the rest
+        // reuses existing helpers — SetThreshold for one-sided %-pp metrics, SetCount
+        // for unload events, SetSignedBand (Michelson) for the per-band load ratio.
+        LowLoadMichelson.Label   = $"Load F/R (1.0–{fSplitStr} Hz)";
+        MidLoadMichelson.Label   = $"Load F/R ({fSplitStr}–10.0 Hz)";
+        WheelLoadMichelson.Label = "Load F/R (10.0–25.0 Hz)";
+        HighLoadMichelson.Label  = "Load F/R (25.0–50.0 Hz)";
+
+        // Static loads: show absolute Newton plus share of the dynamic total. The N value
+        // is the median of F_wheel(t), reflecting the *dynamic* (trail) sag. We compare
+        // its share against a bike-specific flat-floor reference computed from the spring
+        // setup at the centre of the sag-target band (front 25.5 %, rear 30.5 %). That gives
+        // a personalised expected share instead of a generic 35/45 % range.
+        SetForceWithShare(FrontStaticForce, m.FrontStaticForceN,
+            m.FrontStaticForceN, m.RearStaticForceN,
+            m.FrontStaticForceFlatN, m.RearStaticForceFlatN, isFront: true);
+        SetForceWithShare(RearStaticForce, m.RearStaticForceN,
+            m.FrontStaticForceN, m.RearStaticForceN,
+            m.FrontStaticForceFlatN, m.RearStaticForceFlatN, isFront: false);
+        SetThreshold(FrontUnloading, m.FrontUnloadingPct, "{0:0.0} %", 5.0, 15.0, lowerIsBetter: true);
+        SetThreshold(RearUnloading,  m.RearUnloadingPct,  "{0:0.0} %", 5.0, 15.0, lowerIsBetter: true);
+        SetThreshold(UnloadingDiff,  m.UnloadingDifferencePp, "{0:0.0} pp", 5.0, 10.0, lowerIsBetter: true);
+        SetCount(FrontUnloadEv, m.FrontUnloadingEvents);
+        SetCount(RearUnloadEv,  m.RearUnloadingEvents);
+        // Per-axis dynamic range as a load-multiplier (max−min)/static. 2.0–7.0× is the
+        // typical band on real trails; 1.0–8.0× stays acceptable; outside that the suspension
+        // is either barely moving or constantly bottoming/topping out.
+        SetRangeBand(FrontDynRange, m.FrontDynamicRangeFactor, "{0:0.00}×", 2.0, 7.0, 1.0, 8.0);
+        SetRangeBand(RearDynRange,  m.RearDynamicRangeFactor,  "{0:0.00}×", 2.0, 7.0, 1.0, 8.0);
+        // F-R difference of the dynamic-range factors. ≤ 0.5× balanced, ≤ 1.0× acceptable.
+        // Above that, one axle swings noticeably more than the other (setup mismatch).
+        SetThreshold(DynRangeDiff, m.DynamicRangeDifference, "{0:0.00}×", 0.5, 1.0, lowerIsBetter: true);
+        // Asymmetric Michelson bands for low/mid: a slight positive (front-biased) value is
+        // desirable — front grip aids braking and line-tracking. Wheel/High remain symmetric:
+        // unsprung-mass dynamics are tied to tire/rim properties, not to which axle they're on.
+        SetSignedBand(LowLoadMichelson,   m.LowLoadMichelson,   -0.02, 0.10, -0.08, 0.20);
+        SetSignedBand(MidLoadMichelson,   m.MidLoadMichelson,   -0.02, 0.10, -0.08, 0.15);
+        SetSignedBand(WheelLoadMichelson, m.WheelLoadMichelson, -0.05, 0.05, -0.10, 0.10);
+        SetSignedBand(HighLoadMichelson,  m.HighLoadMichelson,  -0.05, 0.05, -0.10, 0.10);
+    }
+
+    /// <summary>
+    /// Format a static wheel load as "<value> N (<share> %)" and rate the share against
+    /// the bike-specific flat-floor expectation computed from the spring setup at the
+    /// centre of the sag target. The Target column shows that expected flat-share so the
+    /// user can see at a glance how far the trail-mean diverges from the static reference.
+    /// Falls back to a generic 35/45 % band when no flat reference is available.
+    /// </summary>
+    private static void SetForceWithShare(BalanceMetricRow row, double? value,
+        double? f, double? r, double? fFlat, double? rFlat, bool isFront)
+    {
+        if (!value.HasValue) { row.Value = "—"; row.Status = BalanceStatus.Unknown; row.Target = ""; return; }
+        if (!(f.HasValue && r.HasValue && f.Value + r.Value > 0))
+        {
+            row.Value = string.Format(CultureInfo.InvariantCulture, "{0:0} N", value.Value);
+            row.Status = BalanceStatus.Unknown;
+            row.Target = "";
+            return;
+        }
+
+        var share = 100.0 * value.Value / (f.Value + r.Value);
+        row.Value = string.Format(CultureInfo.InvariantCulture, "{0:0} N ({1:0.0} %)", value.Value, share);
+
+        if (fFlat.HasValue && rFlat.HasValue && fFlat.Value + rFlat.Value > 0)
+        {
+            // Bike-specific expectation. Compare share against the flat-floor reference share
+            // for this axle. Tolerance is ±3 pp (good) / ±6 pp (acceptable) — tighter than the
+            // generic band because we're comparing to the rider's own setup, not a fleet average.
+            var flatShareFront = 100.0 * fFlat.Value / (fFlat.Value + rFlat.Value);
+            var flatShareThis  = isFront ? flatShareFront : 100.0 - flatShareFront;
+            row.Target = string.Format(CultureInfo.InvariantCulture, "≈ {0:0.0} % flat", flatShareThis);
+            var dev = Math.Abs(share - flatShareThis);
+            row.Status =
+                dev <= 3.0 ? BalanceStatus.Good
+              : dev <= 6.0 ? BalanceStatus.Acceptable
+              :              BalanceStatus.Critical;
+        }
+        else
+        {
+            // Fallback: generic 35–45 % front-share band when the flat reference is missing
+            // (e.g. cached metrics from before the v2 schema).
+            var frontShare = isFront ? share : 100.0 - share;
+            row.Target = isFront ? "≈ 35–45 % share" : "≈ 55–65 % share";
+            row.Status =
+                (frontShare >= 35 && frontShare <= 45) ? BalanceStatus.Good
+              : (frontShare >= 30 && frontShare <= 50) ? BalanceStatus.Acceptable
+              :                                          BalanceStatus.Critical;
+        }
+    }
+
+    /// <summary>
+    /// Same shape as <see cref="SetSagBand"/> but with caller-supplied acceptable bounds
+    /// and a configurable format string. Used for metrics whose acceptable buffer can't be
+    /// expressed as a fixed ±2 around the good range (e.g. dynamic range, where good is
+    /// 200–700 % and acceptable still extends to 100 / 800 %).
+    /// </summary>
+    private static void SetRangeBand(BalanceMetricRow row, double? value, string fmt,
+        double goodLo, double goodHi, double accLo, double accHi)
+    {
+        if (!value.HasValue) { row.Value = "—"; row.Status = BalanceStatus.Unknown; return; }
+        row.Value = string.Format(CultureInfo.InvariantCulture, fmt, value.Value);
+        var v = value.Value;
+        row.Status =
+            (v >= goodLo && v <= goodHi) ? BalanceStatus.Good
+          : (v >= accLo  && v <= accHi)  ? BalanceStatus.Acceptable
+          :                                BalanceStatus.Critical;
     }
 
     private static void SetEnergyRatioDb(BalanceMetricRow row, double? value)

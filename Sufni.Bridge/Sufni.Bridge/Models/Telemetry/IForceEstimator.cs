@@ -9,6 +9,12 @@ public class ForceData
     public double[] WheelForce { get; init; } = [];
     /// <summary>Static wheel load at sag in Newton. Used as the reference for normalised metrics.</summary>
     public double StaticForce { get; init; }
+    /// <summary>
+    /// Reference wheel load at the *static-on-flat* sag target (mid of the discipline's
+    /// sag band). Independent of the trail profile; serves as the personalised flat-floor
+    /// expectation for share/balance comparisons. Null when the estimator can't compute it.
+    /// </summary>
+    public double? StaticForceFlat { get; init; }
 }
 
 /// <summary>

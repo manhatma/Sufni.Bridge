@@ -169,6 +169,87 @@
                     </Grid>
                 </StackPanel>
             </Border>
+
+            <!-- Wheel-load (dynamic) section. Values stay "—" until the session has a
+                 spring component assigned in Setup and a parsable spring-rate value. -->
+            <Border Background="#20262B" BorderBrush="#505558" BorderThickness="1"
+                    CornerRadius="4" Padding="10" Margin="6">
+                <StackPanel Orientation="Vertical">
+                    <TextBlock Text="Wheel load (dynamic)" Foreground="#D0D0D0" FontSize="14"
+                               FontWeight="SemiBold" Margin="0,0,0,6" />
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.FrontStaticForce.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.FrontStaticForce.Value}"  Foreground="{Binding Metrics.FrontStaticForce.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.FrontStaticForce.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.RearStaticForce.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.RearStaticForce.Value}"  Foreground="{Binding Metrics.RearStaticForce.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.RearStaticForce.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.FrontUnloading.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.FrontUnloading.Value}"  Foreground="{Binding Metrics.FrontUnloading.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.FrontUnloading.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.RearUnloading.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.RearUnloading.Value}"  Foreground="{Binding Metrics.RearUnloading.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.RearUnloading.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.UnloadingDiff.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.UnloadingDiff.Value}"  Foreground="{Binding Metrics.UnloadingDiff.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.UnloadingDiff.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.FrontUnloadEv.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.FrontUnloadEv.Value}"  Foreground="{Binding Metrics.FrontUnloadEv.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.FrontUnloadEv.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.RearUnloadEv.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.RearUnloadEv.Value}"  Foreground="{Binding Metrics.RearUnloadEv.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.RearUnloadEv.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.FrontDynRange.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.FrontDynRange.Value}"  Foreground="{Binding Metrics.FrontDynRange.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.FrontDynRange.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.RearDynRange.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.RearDynRange.Value}"  Foreground="{Binding Metrics.RearDynRange.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.RearDynRange.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.DynRangeDiff.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.DynRangeDiff.Value}"  Foreground="{Binding Metrics.DynRangeDiff.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.DynRangeDiff.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.LowLoadMichelson.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.LowLoadMichelson.Value}"  Foreground="{Binding Metrics.LowLoadMichelson.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.LowLoadMichelson.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.MidLoadMichelson.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.MidLoadMichelson.Value}"  Foreground="{Binding Metrics.MidLoadMichelson.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.MidLoadMichelson.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.WheelLoadMichelson.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.WheelLoadMichelson.Value}"  Foreground="{Binding Metrics.WheelLoadMichelson.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.WheelLoadMichelson.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.HighLoadMichelson.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.HighLoadMichelson.Value}"  Foreground="{Binding Metrics.HighLoadMichelson.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.HighLoadMichelson.Target}" />
+                    </Grid>
+                </StackPanel>
+            </Border>
+
             <Image IsVisible="{Binding CombinedBalance, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CombinedBalance}" />
             <Image IsVisible="{Binding ReboundBalance, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding ReboundBalance}" />
             <Image IsVisible="{Binding CompressionBalance, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CompressionBalance}" />

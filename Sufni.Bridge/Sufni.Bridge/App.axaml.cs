@@ -2,6 +2,7 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Microsoft.Extensions.DependencyInjection;
+using Sufni.Bridge.Models.Telemetry;
 using Sufni.Bridge.Services;
 using Sufni.Bridge.ViewModels;
 using Sufni.Bridge.Views;
@@ -32,6 +33,7 @@ public partial class App : Application
             loader.Load();
             return loader;
         });
+        RegisteredServices.Collection.AddSingleton<IForceEstimator, SpringDamperForceEstimator>();
     }
 
     public override void Initialize()

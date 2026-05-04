@@ -9,6 +9,7 @@ using CommunityToolkit.Mvvm.Input;
 using DynamicData;
 using Microsoft.Extensions.DependencyInjection;
 using Sufni.Bridge.Models;
+using Sufni.Bridge.Models.Telemetry;
 using Sufni.Bridge.Services;
 
 namespace Sufni.Bridge.ViewModels.Items;
@@ -48,6 +49,33 @@ public partial class SetupViewModel : ItemViewModelBase
 
     public IReadOnlyList<Discipline> Disciplines { get; } = Enum.GetValues<Discipline>();
 
+    // Wheel-load components. Loaded once from the dyno-curve asset bundle on construction.
+    // Empty options for both axes leave the wheel-load metrics disabled for the session.
+    public IReadOnlyList<SpringLibrary?> FrontSpringComponents { get; }
+    public IReadOnlyList<SpringLibrary?> RearSpringComponents { get; }
+    public IReadOnlyList<DamperLibrary?> FrontDamperComponents { get; }
+    public IReadOnlyList<DamperLibrary?> RearDamperComponents { get; }
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ResetCommand))]
+    private SpringLibrary? selectedFrontSpring;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ResetCommand))]
+    private DamperLibrary? selectedFrontDamper;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ResetCommand))]
+    private SpringLibrary? selectedRearSpring;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ResetCommand))]
+    private DamperLibrary? selectedRearDamper;
+
     public ReadOnlyObservableCollection<ItemViewModelBase> Linkages => linkages;
     private readonly ReadOnlyObservableCollection<ItemViewModelBase> linkages;
 
@@ -81,6 +109,8 @@ public partial class SetupViewModel : ItemViewModelBase
         BoardId = originalBoardId = boardId;
         linkages = new ReadOnlyObservableCollection<ItemViewModelBase>([]);
         calibrations = new ReadOnlyObservableCollection<ItemViewModelBase>([]);
+        (FrontSpringComponents, RearSpringComponents, FrontDamperComponents, RearDamperComponents)
+            = BuildComponentLists();
     }
 
     public SetupViewModel(Setup setup, string? boardId, bool fromDatabase,
@@ -102,7 +132,35 @@ public partial class SetupViewModel : ItemViewModelBase
             .DisposeMany()
             .Subscribe();
 
+        (FrontSpringComponents, RearSpringComponents, FrontDamperComponents, RearDamperComponents)
+            = BuildComponentLists();
+
         ResetImplementation();
+    }
+
+    /// <summary>
+    /// Build per-axis component dropdown lists. Each list is sorted by the component's
+    /// declared default axle (matching axle first, then the rest), with a leading null entry
+    /// representing "none" so users can clear the selection.
+    /// </summary>
+    private static (IReadOnlyList<SpringLibrary?> fSpring, IReadOnlyList<SpringLibrary?> rSpring,
+                    IReadOnlyList<DamperLibrary?> fDamper, IReadOnlyList<DamperLibrary?> rDamper) BuildComponentLists()
+    {
+        var loader = App.Current?.Services?.GetService<DynoCurveLoader>();
+        var springs = loader?.SpringLibraries ?? [];
+        var dampers = loader?.DamperLibraries ?? [];
+
+        IReadOnlyList<SpringLibrary?> SortSprings(string axle) =>
+            new SpringLibrary?[] { null }
+                .Concat(springs.OrderBy(s => s.DefaultAxle == axle ? 0 : 1).ThenBy(s => s.DisplayName))
+                .ToList();
+        IReadOnlyList<DamperLibrary?> SortDampers(string axle) =>
+            new DamperLibrary?[] { null }
+                .Concat(dampers.OrderBy(d => d.DefaultAxle == axle ? 0 : 1).ThenBy(d => d.DisplayName))
+                .ToList();
+
+        return (SortSprings("front"), SortSprings("rear"),
+                SortDampers("front"), SortDampers("rear"));
     }
 
     #endregion
@@ -118,7 +176,11 @@ public partial class SetupViewModel : ItemViewModelBase
             SelectedLinkage == null || SelectedLinkage.Id != setup.LinkageId ||
             SelectedFrontCalibration?.Id != setup.FrontCalibrationId ||
             SelectedRearCalibration?.Id != setup.RearCalibrationId ||
-            SelectedDiscipline != setup.Discipline;
+            SelectedDiscipline != setup.Discipline ||
+            SelectedFrontSpring?.Id != setup.FrontSpringComponentId ||
+            SelectedFrontDamper?.Id != setup.FrontDamperComponentId ||
+            SelectedRearSpring?.Id != setup.RearSpringComponentId ||
+            SelectedRearDamper?.Id != setup.RearDamperComponentId;
     }
 
     protected override bool CanSave()
@@ -146,6 +208,16 @@ public partial class SetupViewModel : ItemViewModelBase
                 SelectedRearCalibration?.Id)
             {
                 Discipline = SelectedDiscipline,
+                FrontSpringComponentId = SelectedFrontSpring?.Id,
+                FrontDamperComponentId = SelectedFrontDamper?.Id,
+                RearSpringComponentId  = SelectedRearSpring?.Id,
+                RearDamperComponentId  = SelectedRearDamper?.Id,
+                // Mass + IMU hooks are reserved for V2; preserve any value already in the row.
+                FrontUnsprungMassKg            = setup.FrontUnsprungMassKg,
+                RearUnsprungMassEffectiveKg    = setup.RearUnsprungMassEffectiveKg,
+                RearLinkageEffectivenessFactor = setup.RearLinkageEffectivenessFactor,
+                TotalSprungMassKg              = setup.TotalSprungMassKg,
+                ImuConfigJson                  = setup.ImuConfigJson,
             };
             Id = await databaseService.PutSetupAsync(newSetup);
 
@@ -195,6 +267,10 @@ public partial class SetupViewModel : ItemViewModelBase
             SelectedFrontCalibration = Calibrations.FirstOrDefault(c => c?.Id == setup.FrontCalibrationId, null) as CalibrationViewModel;
             SelectedRearCalibration = Calibrations.FirstOrDefault(c => c?.Id == setup.RearCalibrationId, null) as CalibrationViewModel;
             SelectedDiscipline = setup.Discipline;
+            SelectedFrontSpring = FrontSpringComponents.FirstOrDefault(s => s?.Id == setup.FrontSpringComponentId);
+            SelectedFrontDamper = FrontDamperComponents.FirstOrDefault(d => d?.Id == setup.FrontDamperComponentId);
+            SelectedRearSpring  = RearSpringComponents.FirstOrDefault(s => s?.Id == setup.RearSpringComponentId);
+            SelectedRearDamper  = RearDamperComponents.FirstOrDefault(d => d?.Id == setup.RearDamperComponentId);
         }
         catch (Exception e)
         {
