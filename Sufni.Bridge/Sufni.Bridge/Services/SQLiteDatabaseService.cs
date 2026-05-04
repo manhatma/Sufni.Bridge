@@ -164,6 +164,23 @@ public class SqLiteDatabaseService : IDatabaseService
                 "UPDATE setup SET discipline = 1 WHERE LOWER(name) NOT LIKE '%exc%'");
             await connection.ExecuteAsync("PRAGMA user_version = 1");
         }
+
+        // Wheel-load component IDs and mass/IMU hooks. All nullable, default NULL,
+        // so existing setups remain unchanged and wheel-load metrics stay opt-in.
+        async Task AddColumnIfMissing(string name, string type)
+        {
+            if (!columnNames.Contains(name))
+                await connection.ExecuteAsync($"ALTER TABLE setup ADD COLUMN {name} {type}");
+        }
+        await AddColumnIfMissing("front_spring_component", "TEXT");
+        await AddColumnIfMissing("front_damper_component", "TEXT");
+        await AddColumnIfMissing("rear_spring_component", "TEXT");
+        await AddColumnIfMissing("rear_damper_component", "TEXT");
+        await AddColumnIfMissing("front_unsprung_mass_kg", "REAL");
+        await AddColumnIfMissing("rear_unsprung_mass_kg", "REAL");
+        await AddColumnIfMissing("rear_linkage_effectiveness", "REAL");
+        await AddColumnIfMissing("total_sprung_mass_kg", "REAL");
+        await AddColumnIfMissing("imu_config", "TEXT");
     }
 
     private async Task EnsureDefaultCalibrationMethods()
