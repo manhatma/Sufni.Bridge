@@ -1,0 +1,10 @@
+{
+  "manufacturer": "Fox",
+  "model": "Float 38",
+  "year": 2023,
+  "springType": "air",
+  "axle": "front",
+  "pressureRange": [60, 130],
+  "volumespacerRange": [0, 50],
+  "volumespacerHint": "Standard Float 38 spacers are 10 ccm each. Enter total installed volume in ccm."
+}

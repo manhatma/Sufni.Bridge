@@ -1,0 +1,10 @@
+{
+  "manufacturer": "Fox",
+  "model": "Float 38",
+  "year": 2023,
+  "axle": "front",
+  "hscRange": [0, 16],
+  "lscRange": [0, 16],
+  "hsrRange": [0, 18],
+  "lsrRange": [0, 18]
+}

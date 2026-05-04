@@ -26,6 +26,12 @@ public partial class App : Application
         RegisteredServices.Collection.AddSingleton<ITelemetryDataStoreService, TelemetryDataStoreService>();
         RegisteredServices.Collection.AddSingleton<IDatabaseService, SqLiteDatabaseService>();
         RegisteredServices.Collection.AddSingleton<ISynchronizationService, SynchronizationService>();
+        RegisteredServices.Collection.AddSingleton<DynoCurveLoader>(_ =>
+        {
+            var loader = new DynoCurveLoader();
+            loader.Load();
+            return loader;
+        });
     }
 
     public override void Initialize()

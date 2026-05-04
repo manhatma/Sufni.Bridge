@@ -1,0 +1,10 @@
+{
+  "manufacturer": "Fox",
+  "model": "Float X2",
+  "year": 2023,
+  "springType": "air",
+  "axle": "rear",
+  "pressureRange": [100, 300],
+  "volumespacerRange": [0.0, 1.6],
+  "volumespacerHint": "Float X2 spacers come in small volumes (e.g. 0.2 / 0.4 ccm). Enter total installed volume in ccm."
+}

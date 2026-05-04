@@ -1,0 +1,10 @@
+{
+  "manufacturer": "Fox",
+  "model": "Float X2",
+  "year": 2023,
+  "axle": "rear",
+  "hscRange": [0, 16],
+  "lscRange": [0, 16],
+  "hsrRange": [0, 16],
+  "lsrRange": [0, 16]
+}
