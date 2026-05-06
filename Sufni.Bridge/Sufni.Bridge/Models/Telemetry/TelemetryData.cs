@@ -161,7 +161,13 @@ public class TelemetryData
     //       factor (max−min)/static instead of a percentage
     //   v6: Schmitt-trigger hysteresis on unloading counter (enter 20 %, exit 30 %);
     //       airtime detector min-duration 200 ms → 100 ms to catch small hops
-    public const int CurrentBalanceMetricsSchemaVersion = 6;
+    //   v7: damper force uses inverse-distance-weighted multi-curve interpolation; setups
+    //       with multiple measured damper curves now respond smoothly to click tuning
+    //   v8: damper curve linearly extrapolates beyond measured velocity range; idle
+    //       periods (rest at trailhead, lift, breaks) excluded from unloading metrics
+    //   v9: idle mask removed — the Sufni recorder doesn't sample during rest periods,
+    //       so the filter was based on a wrong assumption and the cache must be invalidated
+    public const int CurrentBalanceMetricsSchemaVersion = 9;
 
     #region Public properties
 
@@ -1741,15 +1747,12 @@ public class TelemetryData
             const double UnloadEnterFraction = 0.20;                  // F_wheel < 20% F_static = event start
             const double UnloadExitFraction  = 0.30;                  // F_wheel > 30% F_static = event end
 
-            // Airtime mask — exclude periods where the whole bike is airborne. Both wheels
-            // are unloaded by definition then; counting that as an unloading event would
-            // pollute the metric and obscure setup-driven (asymmetric) unloading on rough ground.
-            // The session-level Airtimes[] array uses a strict top-out criterion (travel ≤ 3 mm)
-            // that real-world dampers often miss because of internal friction / negative-spring
-            // equilibrium; we detect airtime here from the motion signal directly, using a
-            // travel threshold relative to the running median (dyn-sag proxy).
+            // Skip mask — exclude airborne samples where the wheel is unloaded by definition
+            // and counting it would obscure setup-driven asymmetric unloading on rough ground.
+            // The Sufni recorder only samples while the suspension is actively moving, so
+            // there is no "idle / paused" branch to handle separately — only airtime needs filtering.
             int forceLen = fForce?.WheelForce.Length ?? rForce?.WheelForce.Length ?? 0;
-            var airMask = BuildAirtimeMaskFromMotion(forceLen, SampleRate, Front, Rear);
+            var skipMask = BuildAirtimeMaskFromMotion(forceLen, SampleRate, Front, Rear);
 
             if (fForce is not null && fForce.WheelForce.Length > 0 && fForce.StaticForce > 0)
             {
@@ -1758,7 +1761,7 @@ public class TelemetryData
                 var (pct, ev) = UnloadingStats(fForce.WheelForce,
                     UnloadEnterFraction * fForce.StaticForce,
                     UnloadExitFraction  * fForce.StaticForce,
-                    minSamples, airMask);
+                    minSamples, skipMask);
                 fUnloadPct = pct;
                 fUnloadEvents = ev;
                 fDynRangeFactor = DynamicRangeFactor(fForce.WheelForce, fForce.StaticForce);
@@ -1770,7 +1773,7 @@ public class TelemetryData
                 var (pct, ev) = UnloadingStats(rForce.WheelForce,
                     UnloadEnterFraction * rForce.StaticForce,
                     UnloadExitFraction  * rForce.StaticForce,
-                    minSamples, airMask);
+                    minSamples, skipMask);
                 rUnloadPct = pct;
                 rUnloadEvents = ev;
                 rDynRangeFactor = DynamicRangeFactor(rForce.WheelForce, rForce.StaticForce);

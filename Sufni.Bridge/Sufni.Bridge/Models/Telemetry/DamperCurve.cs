@@ -44,12 +44,26 @@ public class DamperCurve
     }
 
     /// <summary>
-    /// Linear interpolation in velocity. Clamps to edges outside the measured range.
+    /// Linear interpolation in velocity. Outside the measured range the force is
+    /// linearly extrapolated using the slope of the two outermost samples — damper
+    /// force-velocity curves are roughly monotonic and locally linear at high |v|,
+    /// so extrapolating is far closer to reality than clamping to the last measured
+    /// point (which would drastically under-report damping during landings, hits,
+    /// fast rebounds).
     /// </summary>
     public double InterpolateForce(double velocity)
     {
-        if (velocity <= Velocity[0]) return Force[0];
-        if (velocity >= Velocity[^1]) return Force[^1];
+        if (velocity <= Velocity[0])
+        {
+            // Linear extrapolation from the first two samples.
+            var slope = (Force[1] - Force[0]) / (Velocity[1] - Velocity[0]);
+            return Force[0] + slope * (velocity - Velocity[0]);
+        }
+        if (velocity >= Velocity[^1])
+        {
+            var slope = (Force[^1] - Force[^2]) / (Velocity[^1] - Velocity[^2]);
+            return Force[^1] + slope * (velocity - Velocity[^1]);
+        }
 
         int lo = 0;
         int hi = Velocity.Length - 1;
@@ -117,22 +131,29 @@ public class DamperLibrary
 
     /// <summary>
     /// Evaluate damper force at arbitrary velocity for the given click configuration.
-    /// Picks the curve whose click setting is closest in Manhattan distance, then
-    /// interpolates in velocity.
+    /// Uses inverse-distance-weighted (IDW) interpolation across all measured curves with
+    /// weight w_i = 1/d_i² where d_i is the Manhattan click distance. So:
+    ///   - Exact click match (d=0) → that curve is returned (short-circuit, avoids div/0).
+    ///   - Single curve in the library → that curve is always used (trivial case).
+    ///   - Multiple curves → near curves dominate, far ones contribute proportionally less,
+    ///     producing a smooth force surface as the user tunes clicks instead of stepwise
+    ///     jumps between nearest-neighbour curves.
+    /// Power-2 weighting is the standard IDW choice — strong enough to localise around the
+    /// nearest curve but smooth enough that 1-click changes translate to gentle force shifts.
     /// </summary>
     public double EvaluateForce(double velocity, DamperClicks clicks)
     {
-        DamperCurve best = Curves[0];
-        int bestDistance = int.MaxValue;
+        if (Curves.Count == 1) return Curves[0].InterpolateForce(velocity);
+
+        double sumWeighted = 0, sumWeights = 0;
         foreach (var c in Curves)
         {
             int d = c.Clicks.ManhattanDistance(clicks);
-            if (d < bestDistance)
-            {
-                bestDistance = d;
-                best = c;
-            }
+            if (d == 0) return c.InterpolateForce(velocity);
+            double w = 1.0 / (d * d);
+            sumWeighted += w * c.InterpolateForce(velocity);
+            sumWeights  += w;
         }
-        return best.InterpolateForce(velocity);
+        return sumWeights > 0 ? sumWeighted / sumWeights : Curves[0].InterpolateForce(velocity);
     }
 }

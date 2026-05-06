@@ -95,6 +95,8 @@ public class SpringDamperForceEstimator : IForceEstimator
 
         int n = sus.Travel.Length;
         var forces = new double[n];
+        var springForces = new double[n];
+        var damperForces = new double[n];
         for (int i = 0; i < n; i++)
         {
             var wheelTravel = sus.Travel[i];
@@ -120,8 +122,9 @@ public class SpringDamperForceEstimator : IForceEstimator
 
             var fSpring = spring.EvaluateForce(shockTravel, pressurePsi, volumeCcm);
             var fDamper = damper?.EvaluateForce(shockVel, clicks) ?? 0.0;
-            var fShock = fSpring + fDamper;
-            forces[i] = fShock * dShockDWheel;
+            springForces[i] = fSpring * dShockDWheel;
+            damperForces[i] = fDamper * dShockDWheel;
+            forces[i] = springForces[i] + damperForces[i];
         }
 
         var staticForce = Median(forces);
@@ -140,6 +143,8 @@ public class SpringDamperForceEstimator : IForceEstimator
         return new ForceData
         {
             WheelForce = forces,
+            SpringForce = springForces,
+            DamperForce = damperForces,
             StaticForce = staticForce,
             StaticForceFlat = flatRef,
         };

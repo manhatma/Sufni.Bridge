@@ -250,6 +250,8 @@
                 </StackPanel>
             </Border>
 
+            <Image IsVisible="{Binding FrontWheelForceTime, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontWheelForceTime}" />
+            <Image IsVisible="{Binding RearWheelForceTime,  Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearWheelForceTime}" />
             <Image IsVisible="{Binding CombinedBalance, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CombinedBalance}" />
             <Image IsVisible="{Binding ReboundBalance, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding ReboundBalance}" />
             <Image IsVisible="{Binding CompressionBalance, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CompressionBalance}" />

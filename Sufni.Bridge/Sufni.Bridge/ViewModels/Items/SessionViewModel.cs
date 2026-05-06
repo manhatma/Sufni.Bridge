@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 141;
+    private const int CurrentPlotVersion = 154;
 
     // Limits concurrent plot generation tasks to reduce peak memory on iOS.
     private static readonly SemaphoreSlim s_plotSemaphore = new(3, 3);
@@ -185,16 +185,26 @@ public partial class SessionViewModel : ItemViewModelBase
                 var rearTravelCropTask  = Task.Run(() => SvgToSource(cache.RearTravelTimeCropped));
                 var frontVelCropTask    = Task.Run(() => SvgToSource(cache.FrontVelocityTimeCropped));
                 var rearVelCropTask     = Task.Run(() => SvgToSource(cache.RearVelocityTimeCropped));
-                var accelCropTask       = Task.Run(() => SvgToSource(cache.AccelerationTimeCropped));
+                var frontAccelCropTask  = Task.Run(() => SvgToSource(cache.FrontAccelerationTimeCropped));
+                var rearAccelCropTask   = Task.Run(() => SvgToSource(cache.RearAccelerationTimeCropped));
                 var combinedFftTask     = Task.Run(() => SvgToSource(cache.CombinedTravelFft));
                 var combinedFftHighTask = Task.Run(() => SvgToSource(cache.CombinedTravelFftHigh));
                 var combinedVelFftTask  = Task.Run(() => SvgToSource(cache.CombinedVelocityFft));
+                var frontWheelForceTask = Task.Run(() => SvgToSource(cache.FrontWheelForceTime));
+                var rearWheelForceTask  = Task.Run(() => SvgToSource(cache.RearWheelForceTime));
+                var frontDamperCurveTask = Task.Run(() => SvgToSource(cache.FrontDamperCurve));
+                var rearDamperCurveTask  = Task.Run(() => SvgToSource(cache.RearDamperCurve));
+                var frontSpringCurveTask = Task.Run(() => SvgToSource(cache.FrontSpringCurve));
+                var rearSpringCurveTask  = Task.Run(() => SvgToSource(cache.RearSpringCurve));
 
                 await Task.WhenAll(frontVelHistTask, frontLsVelHistTask, rearVelHistTask, rearLsVelHistTask,
                     combBalTask, compBalTask, rebBalTask,
                     velDistCompTask, posVelCompTask, frontPosVelTask, rearPosVelTask,
-                    frontTravelCropTask, rearTravelCropTask, frontVelCropTask, rearVelCropTask, accelCropTask,
-                    combinedFftTask, combinedFftHighTask);
+                    frontTravelCropTask, rearTravelCropTask, frontVelCropTask, rearVelCropTask,
+                    frontAccelCropTask, rearAccelCropTask,
+                    combinedFftTask, combinedFftHighTask, frontWheelForceTask, rearWheelForceTask,
+                    frontDamperCurveTask, rearDamperCurveTask,
+                    frontSpringCurveTask, rearSpringCurveTask);
 
                 var frontVelHistSrc   = frontVelHistTask.Result;
                 var frontLsVelHistSrc = frontLsVelHistTask.Result;
@@ -237,6 +247,8 @@ public partial class SessionViewModel : ItemViewModelBase
                         BalancePage.CombinedTravelFft     = SourceToImage(combinedFftTask.Result);
                         BalancePage.CombinedTravelFftHigh = SourceToImage(combinedFftHighTask.Result);
                         BalancePage.CombinedVelocityFft   = SourceToImage(combinedVelFftTask.Result);
+                        BalancePage.FrontWheelForceTime   = SourceToImage(frontWheelForceTask.Result);
+                        BalancePage.RearWheelForceTime    = SourceToImage(rearWheelForceTask.Result);
                         if (cache.BalanceMetricsJson is not null)
                         {
                             try
@@ -270,10 +282,15 @@ public partial class SessionViewModel : ItemViewModelBase
                     SpringPage.RearTravelTimeCropped          = SourceToImage(rearTravelCropTask.Result);
                     DamperPage.FrontVelocityTimeCropped       = SourceToImage(frontVelCropTask.Result);
                     DamperPage.RearVelocityTimeCropped        = SourceToImage(rearVelCropTask.Result);
-                    MiscPage.AccelerationTimeCropped          = SourceToImage(accelCropTask.Result);
+                    MiscPage.FrontAccelerationTimeCropped     = SourceToImage(frontAccelCropTask.Result);
+                    MiscPage.RearAccelerationTimeCropped      = SourceToImage(rearAccelCropTask.Result);
                     MiscPage.PositionVelocityComparison       = SourceToImage(posVelCompSrc);
                     MiscPage.FrontPositionVelocity            = SourceToImage(frontPosVelSrc);
                     MiscPage.RearPositionVelocity             = SourceToImage(rearPosVelSrc);
+                    MiscPage.FrontDamperCurve                 = SourceToImage(frontDamperCurveTask.Result);
+                    MiscPage.RearDamperCurve                  = SourceToImage(rearDamperCurveTask.Result);
+                    MiscPage.FrontSpringCurve                 = SourceToImage(frontSpringCurveTask.Result);
+                    MiscPage.RearSpringCurve                  = SourceToImage(rearSpringCurveTask.Result);
                 });
             });
         }
@@ -675,15 +692,179 @@ public partial class SessionViewModel : ItemViewModelBase
                 sessionCache.BalanceMetricsJson = JsonSerializer.Serialize(metrics);
                 Dispatcher.UIThread.Post(() => BalancePage.Metrics.Apply(metrics, discipline));
             }));
+
+            // Wheel-load over time, one plot per axle. The estimator is rerun here (cheap
+            // relative to plotting) so the raw force arrays don't have to be piped through
+            // the metrics task. Skipped silently for an axle when its inputs are missing.
+            tasks.Add(Task.Run(async () =>
+            {
+                var setup = await GetSessionSetupAsync();
+                var estimator = App.Current?.Services?.GetService<IForceEstimator>();
+                if (setup is null || estimator is null) return;
+                ForceData? fForce = null;
+                try { fForce = estimator.Estimate(SuspensionType.Front, telemetryData, setup, session); } catch { }
+                if (fForce is null) return;
+
+                await s_plotSemaphore.WaitAsync();
+                try
+                {
+                    var plot = new WheelForceTimePlot(new Plot(), SuspensionType.Front);
+                    plot.SetForceData(fForce.WheelForce, fForce.StaticForce, fForce.SpringForce, fForce.DamperForce);
+                    plot.LoadTelemetryData(telemetryData);
+                    sessionCache.FrontWheelForceTime = plot.Plot.GetSvgXml(width, height);
+                    var src = SvgToSource(sessionCache.FrontWheelForceTime);
+                    Dispatcher.UIThread.Post(() => BalancePage.FrontWheelForceTime = SourceToImage(src));
+                }
+                finally { s_plotSemaphore.Release(); }
+            }));
+
+            tasks.Add(Task.Run(async () =>
+            {
+                var setup = await GetSessionSetupAsync();
+                var estimator = App.Current?.Services?.GetService<IForceEstimator>();
+                if (setup is null || estimator is null) return;
+                ForceData? rForce = null;
+                try { rForce = estimator.Estimate(SuspensionType.Rear, telemetryData, setup, session); } catch { }
+                if (rForce is null) return;
+
+                await s_plotSemaphore.WaitAsync();
+                try
+                {
+                    var plot = new WheelForceTimePlot(new Plot(), SuspensionType.Rear);
+                    plot.SetForceData(rForce.WheelForce, rForce.StaticForce, rForce.SpringForce, rForce.DamperForce);
+                    plot.LoadTelemetryData(telemetryData);
+                    sessionCache.RearWheelForceTime = plot.Plot.GetSvgXml(width, height);
+                    var src = SvgToSource(sessionCache.RearWheelForceTime);
+                    Dispatcher.UIThread.Post(() => BalancePage.RearWheelForceTime = SourceToImage(src));
+                }
+                finally { s_plotSemaphore.Release(); }
+            }));
+
+            // Damper force/velocity curves on the Misc tab — one per axle. Renders the
+            // library's measured curves faded plus the IDW-interpolated effective curve
+            // bold for the session's clicks. Independent of telemetry timeline; needs
+            // only setup (component ID) + session (clicks) + DynoCurveLoader.
+            tasks.Add(Task.Run(async () =>
+            {
+                var setup = await GetSessionSetupAsync();
+                var loader = App.Current?.Services?.GetService<DynoCurveLoader>();
+                if (setup is null || loader is null) return;
+                var library = loader.FindDamperLibrary(setup.FrontDamperComponentId);
+                if (library is null) return;
+                var clicks = new DamperClicks(
+                    (int?)session.FrontHighSpeedCompression, (int?)session.FrontLowSpeedCompression,
+                    (int?)session.FrontHighSpeedRebound,     (int?)session.FrontLowSpeedRebound);
+
+                await s_plotSemaphore.WaitAsync();
+                try
+                {
+                    var plot = new DamperCurvePlot(new Plot(), SuspensionType.Front);
+                    plot.SetData(library, clicks);
+                    plot.LoadTelemetryData(telemetryData);
+                    sessionCache.FrontDamperCurve = plot.Plot.GetSvgXml(width, height);
+                    var src = SvgToSource(sessionCache.FrontDamperCurve);
+                    Dispatcher.UIThread.Post(() => MiscPage.FrontDamperCurve = SourceToImage(src));
+                }
+                finally { s_plotSemaphore.Release(); }
+            }));
+
+            tasks.Add(Task.Run(async () =>
+            {
+                var setup = await GetSessionSetupAsync();
+                var loader = App.Current?.Services?.GetService<DynoCurveLoader>();
+                if (setup is null || loader is null) return;
+                var library = loader.FindDamperLibrary(setup.RearDamperComponentId);
+                if (library is null) return;
+                var clicks = new DamperClicks(
+                    (int?)session.RearHighSpeedCompression, (int?)session.RearLowSpeedCompression,
+                    (int?)session.RearHighSpeedRebound,     (int?)session.RearLowSpeedRebound);
+
+                await s_plotSemaphore.WaitAsync();
+                try
+                {
+                    var plot = new DamperCurvePlot(new Plot(), SuspensionType.Rear);
+                    plot.SetData(library, clicks);
+                    plot.LoadTelemetryData(telemetryData);
+                    sessionCache.RearDamperCurve = plot.Plot.GetSvgXml(width, height);
+                    var src = SvgToSource(sessionCache.RearDamperCurve);
+                    Dispatcher.UIThread.Post(() => MiscPage.RearDamperCurve = SourceToImage(src));
+                }
+                finally { s_plotSemaphore.Release(); }
+            }));
+
+            // Spring force/travel curves on the Misc tab. Visualises every measured library
+            // curve (faded) plus the bilinearly-interpolated effective curve at the session's
+            // (pressure, volume-spacers) operating point bold on top — same convention as the
+            // damper-curve plots. Skipped silently when the spring rate isn't an air pressure.
+            tasks.Add(Task.Run(async () =>
+            {
+                var setup = await GetSessionSetupAsync();
+                var loader = App.Current?.Services?.GetService<DynoCurveLoader>();
+                if (setup is null || loader is null) return;
+                var library = loader.FindSpringLibrary(setup.FrontSpringComponentId);
+                if (library is null) return;
+                if (!SpringRateParser.TryParse(session.FrontSpringRate, out var v, out var unit)) return;
+                if (!string.IsNullOrEmpty(unit) && !SpringRateParser.IsAirUnit(unit)) return;
+                if (string.IsNullOrEmpty(unit)) unit = SpringRateParser.UnitPsi;
+                var psi = SpringRateParser.ToPsi(v, unit);
+                var vol = session.FrontVolSpc ?? 0.0;
+
+                await s_plotSemaphore.WaitAsync();
+                try
+                {
+                    var plot = new SpringCurvePlot(new Plot(), SuspensionType.Front);
+                    plot.SetData(library, psi, vol);
+                    plot.LoadTelemetryData(telemetryData);
+                    sessionCache.FrontSpringCurve = plot.Plot.GetSvgXml(width, height);
+                    var src = SvgToSource(sessionCache.FrontSpringCurve);
+                    Dispatcher.UIThread.Post(() => MiscPage.FrontSpringCurve = SourceToImage(src));
+                }
+                finally { s_plotSemaphore.Release(); }
+            }));
+
+            tasks.Add(Task.Run(async () =>
+            {
+                var setup = await GetSessionSetupAsync();
+                var loader = App.Current?.Services?.GetService<DynoCurveLoader>();
+                if (setup is null || loader is null) return;
+                var library = loader.FindSpringLibrary(setup.RearSpringComponentId);
+                if (library is null) return;
+                if (!SpringRateParser.TryParse(session.RearSpringRate, out var v, out var unit)) return;
+                if (!string.IsNullOrEmpty(unit) && !SpringRateParser.IsAirUnit(unit)) return;
+                if (string.IsNullOrEmpty(unit)) unit = SpringRateParser.UnitPsi;
+                var psi = SpringRateParser.ToPsi(v, unit);
+                var vol = session.RearVolSpc ?? 0.0;
+
+                await s_plotSemaphore.WaitAsync();
+                try
+                {
+                    var plot = new SpringCurvePlot(new Plot(), SuspensionType.Rear);
+                    plot.SetData(library, psi, vol);
+                    plot.LoadTelemetryData(telemetryData);
+                    sessionCache.RearSpringCurve = plot.Plot.GetSvgXml(width, height);
+                    var src = SvgToSource(sessionCache.RearSpringCurve);
+                    Dispatcher.UIThread.Post(() => MiscPage.RearSpringCurve = SourceToImage(src));
+                }
+                finally { s_plotSemaphore.Release(); }
+            }));
         }
 
         tasks.Add(ThrottledPlotTask(() =>
         {
-            var atc = new AccelerationTimeCroppedPlot(new Plot());
+            var atc = new AccelerationTimeCroppedPlot(new Plot(), SuspensionType.Front);
             atc.LoadTelemetryData(telemetryData);
-            sessionCache.AccelerationTimeCropped = atc.Plot.GetSvgXml(width, height);
-            var accelCropSrc = SvgToSource(sessionCache.AccelerationTimeCropped);
-            Dispatcher.UIThread.Post(() => { MiscPage.AccelerationTimeCropped = SourceToImage(accelCropSrc); });
+            sessionCache.FrontAccelerationTimeCropped = atc.Plot.GetSvgXml(width, height);
+            var src = SvgToSource(sessionCache.FrontAccelerationTimeCropped);
+            Dispatcher.UIThread.Post(() => { MiscPage.FrontAccelerationTimeCropped = SourceToImage(src); });
+        }));
+
+        tasks.Add(ThrottledPlotTask(() =>
+        {
+            var atc = new AccelerationTimeCroppedPlot(new Plot(), SuspensionType.Rear);
+            atc.LoadTelemetryData(telemetryData);
+            sessionCache.RearAccelerationTimeCropped = atc.Plot.GetSvgXml(width, height);
+            var src = SvgToSource(sessionCache.RearAccelerationTimeCropped);
+            Dispatcher.UIThread.Post(() => { MiscPage.RearAccelerationTimeCropped = SourceToImage(src); });
         }));
 
         tasks.Add(ThrottledPlotTask(() =>
@@ -1751,10 +1932,11 @@ public partial class SessionViewModel : ItemViewModelBase
             svgEntries.Add(cache.RearTravelTimeCropped);
             svgEntries.Add(cache.FrontVelocityTimeCropped);
             svgEntries.Add(cache.RearVelocityTimeCropped);
-            svgEntries.Add(cache.AccelerationTimeCropped);
             svgEntries.Add(cache.PositionVelocityComparison);
             svgEntries.Add(cache.FrontPositionVelocity);
             svgEntries.Add(cache.RearPositionVelocity);
+            svgEntries.Add(cache.FrontAccelerationTimeCropped);
+            svgEntries.Add(cache.RearAccelerationTimeCropped);
 
             var validSvgs = svgEntries.Where(s => s is not null).Cast<string>().ToList();
             if (validSvgs.Count == 0)

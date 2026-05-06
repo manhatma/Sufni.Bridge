@@ -7,6 +7,16 @@ public class ForceData
 {
     /// <summary>Sample-aligned wheel-force in Newton (signed; ground-pressing forces are positive).</summary>
     public double[] WheelForce { get; init; } = [];
+    /// <summary>
+    /// Sample-aligned spring component of the wheel force in Newton, projected to the wheel
+    /// (i.e. <c>F_spring,shock · dShock/dWheel</c>). Sums with <see cref="DamperForce"/> to <see cref="WheelForce"/>.
+    /// </summary>
+    public double[] SpringForce { get; init; } = [];
+    /// <summary>
+    /// Sample-aligned damper component of the wheel force in Newton, projected to the wheel
+    /// (i.e. <c>F_damper,shock · dShock/dWheel</c>). Signed: positive on compression, negative on rebound.
+    /// </summary>
+    public double[] DamperForce { get; init; } = [];
     /// <summary>Static wheel load at sag in Newton. Used as the reference for normalised metrics.</summary>
     public double StaticForce { get; init; }
     /// <summary>

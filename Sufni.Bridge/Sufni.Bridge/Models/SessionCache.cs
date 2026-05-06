@@ -39,9 +39,16 @@ public class SessionCache
     [Column("rear_travel_time_cropped")] public string? RearTravelTimeCropped { get; set; }
     [Column("front_velocity_time_cropped")] public string? FrontVelocityTimeCropped { get; set; }
     [Column("rear_velocity_time_cropped")] public string? RearVelocityTimeCropped { get; set; }
-    [Column("acceleration_time_cropped")] public string? AccelerationTimeCropped { get; set; }
+    [Column("front_acceleration_time_cropped")] public string? FrontAccelerationTimeCropped { get; set; }
+    [Column("rear_acceleration_time_cropped")] public string? RearAccelerationTimeCropped { get; set; }
     [Column("combined_travel_fft")] public string? CombinedTravelFft { get; set; }
     [Column("combined_travel_fft_high")] public string? CombinedTravelFftHigh { get; set; }
     [Column("combined_velocity_fft")] public string? CombinedVelocityFft { get; set; }
     [Column("balance_metrics_json")] public string? BalanceMetricsJson { get; set; }
+    [Column("front_wheel_force_time")] public string? FrontWheelForceTime { get; set; }
+    [Column("rear_wheel_force_time")] public string? RearWheelForceTime { get; set; }
+    [Column("front_damper_curve")] public string? FrontDamperCurve { get; set; }
+    [Column("rear_damper_curve")] public string? RearDamperCurve { get; set; }
+    [Column("front_spring_curve")] public string? FrontSpringCurve { get; set; }
+    [Column("rear_spring_curve")] public string? RearSpringCurve { get; set; }
 }

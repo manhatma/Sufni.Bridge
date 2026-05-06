@@ -86,6 +86,10 @@ public partial class SetupViewModel : ItemViewModelBase
     [NotifyCanExecuteChangedFor(nameof(ReassignSessionsCommand))]
     private SetupViewModel? reassignTarget;
 
+    // Includes this setup itself so the user can reassign-to-self as a "refresh" action:
+    // the underlying ReassignSetupInSessionsAsync re-processes the session blob with the
+    // current linkage and clears the session_cache row, forcing a fresh analysis next
+    // time the session is opened.
     public IEnumerable<SetupViewModel> OtherSetups
     {
         get
@@ -93,8 +97,7 @@ public partial class SetupViewModel : ItemViewModelBase
             var mainPagesViewModel = App.Current?.Services?.GetService<MainPagesViewModel>();
             if (mainPagesViewModel == null) return [];
             return mainPagesViewModel.SetupsPage.Items
-                .OfType<SetupViewModel>()
-                .Where(svm => svm.Id != Id);
+                .OfType<SetupViewModel>();
         }
     }
 
@@ -309,7 +312,11 @@ public partial class SetupViewModel : ItemViewModelBase
             }
 
             ReassignTarget = null;
-            Notifications.Add($"{count} session(s) reassigned to setup \"{target.Name}\".");
+            // Self-target acts as a refresh — the cache rows are dropped and the sessions
+            // re-process the data blob with the (possibly edited) linkage on next open.
+            Notifications.Add(target.Id == Id
+                ? $"{count} session(s) refreshed for setup \"{target.Name}\"."
+                : $"{count} session(s) reassigned to setup \"{target.Name}\".");
         }
         catch (Exception e)
         {

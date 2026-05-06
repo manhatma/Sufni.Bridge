@@ -72,8 +72,8 @@ public partial class BalanceMetricsViewModel : ObservableObject
 
     // Dynamic wheel-load metrics. Active only when the session has a spring component
     // assigned and a parsable spring-rate value. Source: spring-curve-based force estimator.
-    public BalanceMetricRow FrontStaticForce { get; } = new() { Label = "Front static load",     Target = "" };
-    public BalanceMetricRow RearStaticForce  { get; } = new() { Label = "Rear static load",      Target = "" };
+    public BalanceMetricRow FrontStaticForce { get; } = new() { Label = "Front trim load",       Target = "" };
+    public BalanceMetricRow RearStaticForce  { get; } = new() { Label = "Rear trim load",        Target = "" };
     public BalanceMetricRow FrontUnloading   { get; } = new() { Label = "Front unloading time",  Target = "≤ 5 %" };
     public BalanceMetricRow RearUnloading    { get; } = new() { Label = "Rear unloading time",   Target = "≤ 5 %" };
     public BalanceMetricRow UnloadingDiff    { get; } = new() { Label = "Unloading-Diff |F−R|",  Target = "≤ 5 pp" };
@@ -416,6 +416,8 @@ public partial class BalancePageViewModel() : PageViewModelBase("Balance")
     [ObservableProperty] private SvgImage? combinedTravelFft;
     [ObservableProperty] private SvgImage? combinedTravelFftHigh;
     [ObservableProperty] private SvgImage? combinedVelocityFft;
+    [ObservableProperty] private SvgImage? frontWheelForceTime;
+    [ObservableProperty] private SvgImage? rearWheelForceTime;
 
     public BalanceMetricsViewModel Metrics { get; } = new();
 }

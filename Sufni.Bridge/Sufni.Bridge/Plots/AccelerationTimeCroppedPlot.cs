@@ -4,7 +4,7 @@ using Sufni.Bridge.Models.Telemetry;
 
 namespace Sufni.Bridge.Plots;
 
-public class AccelerationTimeCroppedPlot(Plot plot) : TelemetryPlot(plot)
+public class AccelerationTimeCroppedPlot(Plot plot, SuspensionType type) : TelemetryPlot(plot)
 {
     private const double GravityMmPerS2 = 9806.65;
 
@@ -12,17 +12,14 @@ public class AccelerationTimeCroppedPlot(Plot plot) : TelemetryPlot(plot)
     {
         base.LoadTelemetryData(telemetryData);
 
-        SetTitle("Acceleration over time");
+        var prefix = type == SuspensionType.Front ? "Front" : "Rear";
+        SetTitle($"{prefix} acceleration over time");
         Plot.Layout.Fixed(new PixelPadding(55, 14, 50, 40));
         Plot.Axes.Bottom.Label.Text = "Time (s)";
         Plot.Axes.Left.Label.Text = "Acceleration (g)";
 
         var sampleRate = telemetryData.SampleRate;
         var period = 1.0 / sampleRate;
-
-        double maxDuration = 0;
-        double aMax = double.NegativeInfinity;
-        double aMin = double.PositiveInfinity;
 
         double[] ToAcceleration(double[] v)
         {
@@ -49,96 +46,63 @@ public class AccelerationTimeCroppedPlot(Plot plot) : TelemetryPlot(plot)
             return (mx, mn, Math.Sqrt(sumSq / a.Length));
         }
 
-        void Track(double[] a)
+        var sus = type == SuspensionType.Front ? telemetryData.Front : telemetryData.Rear;
+        if (!sus.Present || sus.Velocity is not { Length: > 0 }) return;
+
+        var color = type == SuspensionType.Front ? FrontColor : RearColor;
+        var label = type == SuspensionType.Front ? "Front" : "Rear";
+
+        var acc = ToAcceleration(sus.Velocity);
+        var sig = Plot.Add.Signal(acc, period);
+        sig.Color = color;
+        sig.LineWidth = 1;
+        var duration = acc.Length * period;
+        var stats = Stats(acc);
+
+        double aMax = double.NegativeInfinity, aMin = double.PositiveInfinity;
+        for (int i = 0; i < acc.Length; i++)
         {
-            for (int i = 0; i < a.Length; i++)
-            {
-                if (a[i] > aMax) aMax = a[i];
-                if (a[i] < aMin) aMin = a[i];
-            }
+            if (acc[i] > aMax) aMax = acc[i];
+            if (acc[i] < aMin) aMin = acc[i];
         }
-
-        (double Max, double Min, double Rms)? frontStats = null;
-        (double Max, double Min, double Rms)? rearStats = null;
-
-        // Rear first, so Front is drawn on top.
-        if (telemetryData.Rear.Present && telemetryData.Rear.Velocity is { Length: > 0 })
-        {
-            var accRear = ToAcceleration(telemetryData.Rear.Velocity);
-            var sig = Plot.Add.Signal(accRear, period);
-            sig.Color = RearColor;
-            sig.LineWidth = 1;
-            maxDuration = Math.Max(maxDuration, accRear.Length * period);
-            Track(accRear);
-            rearStats = Stats(accRear);
-        }
-
-        if (telemetryData.Front.Present && telemetryData.Front.Velocity is { Length: > 0 })
-        {
-            var accFront = ToAcceleration(telemetryData.Front.Velocity);
-            var sig = Plot.Add.Signal(accFront, period);
-            sig.Color = FrontColor;
-            sig.LineWidth = 1;
-            maxDuration = Math.Max(maxDuration, accFront.Length * period);
-            Track(accFront);
-            frontStats = Stats(accFront);
-        }
-
         if (double.IsInfinity(aMax)) { aMax = 1; aMin = -1; }
         var span = Math.Max(aMax - aMin, 1e-9);
         var top    = aMax + span * 0.05;
         var bottom = aMin - span * 0.05;
         Plot.Axes.SetLimitsY(bottom: bottom, top: top);
 
-        if (maxDuration > 0)
-            Plot.Axes.SetLimitsX(left: 0, right: maxDuration);
+        if (duration > 0)
+            Plot.Axes.SetLimitsX(left: 0, right: duration);
 
         Plot.Add.HorizontalLine(0, 1f, Color.FromHex("#dddddd"), LinePattern.Dotted);
 
         // Legend — upper-left corner
-        var range = top - bottom;
-        var frontLegend = Plot.Add.Text("Front", 0, top);
-        frontLegend.LabelFontColor = FrontColor;
-        frontLegend.LabelFontSize = 12;
-        frontLegend.LabelAlignment = Alignment.UpperLeft;
-        frontLegend.LabelOffsetX = 6;
-        frontLegend.LabelOffsetY = 6;
+        var legend = Plot.Add.Text(label, 0, top);
+        legend.LabelFontColor = color;
+        legend.LabelFontSize = 12;
+        legend.LabelAlignment = Alignment.UpperLeft;
+        legend.LabelOffsetX = 6;
+        legend.LabelOffsetY = 6;
 
-        var rearLegend = Plot.Add.Text("Rear", 0, top - range * 0.08);
-        rearLegend.LabelFontColor = RearColor;
-        rearLegend.LabelFontSize = 12;
-        rearLegend.LabelAlignment = Alignment.UpperLeft;
-        rearLegend.LabelOffsetX = 6;
-        rearLegend.LabelOffsetY = 6;
-
-        // Stats readouts (max/min/rms) — upper-right per side, stacked
-        var rightX = maxDuration > 0 ? maxDuration : 1.0;
-
-        static string N(double val) => val.ToString("F1").PadLeft(5).Replace(' ', ' ');
-
-        void AddStats((double Max, double Min, double Rms) s, Color color, double anchorY, Alignment alignment, int offsetY)
-        {
-            var text =
-                $"max: {N(s.Max)}\n" +
-                $"min: {N(s.Min)}\n" +
-                $"rms: {N(s.Rms)}";
-            var label = Plot.Add.Text(text, rightX, anchorY);
-            label.LabelFontColor = color;
-            label.LabelFontSize = 9;
-            label.LabelFontName = "Menlo";
-            label.LabelAlignment = alignment;
-            label.LabelOffsetX = -10;
-            label.LabelOffsetY = offsetY;
-            label.LabelBold = true;
-            label.LabelBackgroundColor = Color.FromHex("#15191C").WithAlpha(220);
-            label.LabelBorderColor = color.WithAlpha(80);
-            label.LabelBorderWidth = 1;
-            label.LabelPadding = 5;
-        }
-
-        if (frontStats is not null)
-            AddStats(frontStats.Value, FrontColor, top, Alignment.UpperRight, 6);
-        if (rearStats is not null)
-            AddStats(rearStats.Value, RearColor, bottom, Alignment.LowerRight, -6);
+        // Stats readout (max/min/rms) — upper-right. Values formatted to a fixed-width
+        // 7-char field so digits stay right-aligned across rows in the monospace font.
+        var rightX = duration > 0 ? duration : 1.0;
+        static string N(double val) => string.Format(System.Globalization.CultureInfo.InvariantCulture, "{0,7:F1}", val);
+        var text =
+            $"max: {N(stats.Max)}\n" +
+            $"min: {N(stats.Min)}\n" +
+            $"rms: {N(stats.Rms)}";
+        var statsLabel = Plot.Add.Text(text, rightX, top);
+        statsLabel.LabelFontColor = color;
+        statsLabel.LabelFontSize = 9;
+        statsLabel.LabelFontName = "Menlo";
+        statsLabel.LabelAlignment = Alignment.UpperRight;
+        statsLabel.LabelOffsetX = -10;
+        statsLabel.LabelOffsetY = 6;
+        statsLabel.LabelBold = true;
+        statsLabel.LabelBackgroundColor = Color.FromHex("#15191C").WithAlpha(220);
+        statsLabel.LabelBorderColor = color.WithAlpha(80);
+        statsLabel.LabelBorderWidth = 1;
+        statsLabel.LabelPadding = 5;
     }
 }

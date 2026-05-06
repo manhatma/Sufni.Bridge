@@ -244,7 +244,8 @@ public class SqLiteDatabaseService : IDatabaseService
         await AddColumnIfMissing("travel_time_history");
         await AddColumnIfMissing("travel_time_cropped");
         await AddColumnIfMissing("velocity_time_cropped");
-        await AddColumnIfMissing("acceleration_time_cropped");
+        await AddColumnIfMissing("front_acceleration_time_cropped");
+        await AddColumnIfMissing("rear_acceleration_time_cropped");
         await AddColumnIfMissing("front_travel_time_cropped");
         await AddColumnIfMissing("rear_travel_time_cropped");
         await AddColumnIfMissing("front_velocity_time_cropped");
@@ -253,6 +254,12 @@ public class SqLiteDatabaseService : IDatabaseService
         await AddColumnIfMissing("combined_travel_fft_high");
         await AddColumnIfMissing("combined_velocity_fft");
         await AddColumnIfMissing("balance_metrics_json");
+        await AddColumnIfMissing("front_wheel_force_time");
+        await AddColumnIfMissing("rear_wheel_force_time");
+        await AddColumnIfMissing("front_damper_curve");
+        await AddColumnIfMissing("rear_damper_curve");
+        await AddColumnIfMissing("front_spring_curve");
+        await AddColumnIfMissing("rear_spring_curve");
     }
 
     private class TableInfoRecord
