@@ -17,6 +17,11 @@ public class ForceData
     /// (i.e. <c>F_damper,shock · dShock/dWheel</c>). Signed: positive on compression, negative on rebound.
     /// </summary>
     public double[] DamperForce { get; init; } = [];
+    /// <summary>
+    /// Sample-aligned mask of detected wheel detachment phases (true = airborne / no
+    /// ground reaction possible). Computed by the estimator's contact-state model.
+    /// </summary>
+    public bool[] DetachmentMask { get; init; } = [];
     /// <summary>Static wheel load at sag in Newton. Used as the reference for normalised metrics.</summary>
     public double StaticForce { get; init; }
     /// <summary>

@@ -135,6 +135,8 @@ public record BalanceMetrics(
     double? FrontDynamicRangeFactor = null,
     double? RearDynamicRangeFactor = null,
     double? DynamicRangeDifference = null,
+    double? FrontAirtimeFractionPct = null,
+    double? RearAirtimeFractionPct = null,
     // Schema marker for cached metrics. Bump when computation logic changes in a way that
     // invalidates older cached results (e.g. airtime-aware unloading, threshold tuning).
     // Caches with a lower version trigger a background recompute on session open.
@@ -167,7 +169,9 @@ public class TelemetryData
     //       periods (rest at trailhead, lift, breaks) excluded from unloading metrics
     //   v9: idle mask removed — the Sufni recorder doesn't sample during rest periods,
     //       so the filter was based on a wrong assumption and the cache must be invalidated
-    public const int CurrentBalanceMetricsSchemaVersion = 9;
+    //   v10: wheel force estimator clamps F_ground >= 0 with detachment hysteresis; adds
+    //        per-axle detachment airtime-fraction metrics
+    public const int CurrentBalanceMetricsSchemaVersion = 10;
 
     #region Public properties
 
@@ -1604,6 +1608,7 @@ public class TelemetryData
         int? fUnloadEvents = null, rUnloadEvents = null;
         double? lowLoadM = null, midLoadM = null, wheelLoadM = null, highLoadM = null;
         double? fDynRangeFactor = null, rDynRangeFactor = null, dynRangeDiff = null;
+        double? fAirtimeFractionPct = null, rAirtimeFractionPct = null;
 
         var maxF = Linkage?.MaxFrontTravel ?? 0;
         var maxR = Linkage?.MaxRearTravel ?? 0;
@@ -1765,6 +1770,7 @@ public class TelemetryData
                 fUnloadPct = pct;
                 fUnloadEvents = ev;
                 fDynRangeFactor = DynamicRangeFactor(fForce.WheelForce, fForce.StaticForce);
+                fAirtimeFractionPct = FractionTruePercent(fForce.DetachmentMask);
             }
             if (rForce is not null && rForce.WheelForce.Length > 0 && rForce.StaticForce > 0)
             {
@@ -1777,6 +1783,7 @@ public class TelemetryData
                 rUnloadPct = pct;
                 rUnloadEvents = ev;
                 rDynRangeFactor = DynamicRangeFactor(rForce.WheelForce, rForce.StaticForce);
+                rAirtimeFractionPct = FractionTruePercent(rForce.DetachmentMask);
             }
             if (fUnloadPct.HasValue && rUnloadPct.HasValue)
                 unloadDiff = Math.Abs(fUnloadPct.Value - rUnloadPct.Value);
@@ -1820,6 +1827,7 @@ public class TelemetryData
             WheelLoadMichelson: wheelLoadM, HighLoadMichelson: highLoadM,
             FrontDynamicRangeFactor: fDynRangeFactor, RearDynamicRangeFactor: rDynRangeFactor,
             DynamicRangeDifference: dynRangeDiff,
+            FrontAirtimeFractionPct: fAirtimeFractionPct, RearAirtimeFractionPct: rAirtimeFractionPct,
             WheelLoadSchemaVersion: CurrentBalanceMetricsSchemaVersion);
     }
 
@@ -2000,6 +2008,15 @@ public class TelemetryData
             if (force[i] > max) max = force[i];
         }
         return (max - min) / staticForce;
+    }
+
+    private static double? FractionTruePercent(bool[]? mask)
+    {
+        if (mask is null || mask.Length == 0) return null;
+        int count = 0;
+        for (int i = 0; i < mask.Length; i++)
+            if (mask[i]) count++;
+        return 100.0 * count / mask.Length;
     }
 
     /// <summary>

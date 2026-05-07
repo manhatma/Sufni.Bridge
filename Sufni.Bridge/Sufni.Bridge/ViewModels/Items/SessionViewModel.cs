@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 154;
+    private const int CurrentPlotVersion = 161;
 
     // Limits concurrent plot generation tasks to reduce peak memory on iOS.
     private static readonly SemaphoreSlim s_plotSemaphore = new(3, 3);
@@ -192,6 +192,8 @@ public partial class SessionViewModel : ItemViewModelBase
                 var combinedVelFftTask  = Task.Run(() => SvgToSource(cache.CombinedVelocityFft));
                 var frontWheelForceTask = Task.Run(() => SvgToSource(cache.FrontWheelForceTime));
                 var rearWheelForceTask  = Task.Run(() => SvgToSource(cache.RearWheelForceTime));
+                var frontSpringDamperTask = Task.Run(() => SvgToSource(cache.FrontSpringDamperTime));
+                var rearSpringDamperTask  = Task.Run(() => SvgToSource(cache.RearSpringDamperTime));
                 var frontDamperCurveTask = Task.Run(() => SvgToSource(cache.FrontDamperCurve));
                 var rearDamperCurveTask  = Task.Run(() => SvgToSource(cache.RearDamperCurve));
                 var frontSpringCurveTask = Task.Run(() => SvgToSource(cache.FrontSpringCurve));
@@ -203,6 +205,7 @@ public partial class SessionViewModel : ItemViewModelBase
                     frontTravelCropTask, rearTravelCropTask, frontVelCropTask, rearVelCropTask,
                     frontAccelCropTask, rearAccelCropTask,
                     combinedFftTask, combinedFftHighTask, frontWheelForceTask, rearWheelForceTask,
+                    frontSpringDamperTask, rearSpringDamperTask,
                     frontDamperCurveTask, rearDamperCurveTask,
                     frontSpringCurveTask, rearSpringCurveTask);
 
@@ -247,8 +250,10 @@ public partial class SessionViewModel : ItemViewModelBase
                         BalancePage.CombinedTravelFft     = SourceToImage(combinedFftTask.Result);
                         BalancePage.CombinedTravelFftHigh = SourceToImage(combinedFftHighTask.Result);
                         BalancePage.CombinedVelocityFft   = SourceToImage(combinedVelFftTask.Result);
-                        BalancePage.FrontWheelForceTime   = SourceToImage(frontWheelForceTask.Result);
-                        BalancePage.RearWheelForceTime    = SourceToImage(rearWheelForceTask.Result);
+                        BalancePage.FrontWheelForceTime         = SourceToImage(frontWheelForceTask.Result);
+                        BalancePage.RearWheelForceTime          = SourceToImage(rearWheelForceTask.Result);
+                        BalancePage.FrontSpringDamperTime       = SourceToImage(frontSpringDamperTask.Result);
+                        BalancePage.RearSpringDamperTime        = SourceToImage(rearSpringDamperTask.Result);
                         if (cache.BalanceMetricsJson is not null)
                         {
                             try
@@ -709,11 +714,18 @@ public partial class SessionViewModel : ItemViewModelBase
                 try
                 {
                     var plot = new WheelForceTimePlot(new Plot(), SuspensionType.Front);
-                    plot.SetForceData(fForce.WheelForce, fForce.StaticForce, fForce.SpringForce, fForce.DamperForce);
+                    plot.SetForceData(fForce.WheelForce, fForce.StaticForce);
                     plot.LoadTelemetryData(telemetryData);
                     sessionCache.FrontWheelForceTime = plot.Plot.GetSvgXml(width, height);
                     var src = SvgToSource(sessionCache.FrontWheelForceTime);
                     Dispatcher.UIThread.Post(() => BalancePage.FrontWheelForceTime = SourceToImage(src));
+
+                    var compPlot = new SpringDamperForceTimePlot(new Plot(), SuspensionType.Front);
+                    compPlot.SetForceData(fForce.StaticForce, fForce.SpringForce, fForce.DamperForce);
+                    compPlot.LoadTelemetryData(telemetryData);
+                    sessionCache.FrontSpringDamperTime = compPlot.Plot.GetSvgXml(width, height);
+                    var compSrc = SvgToSource(sessionCache.FrontSpringDamperTime);
+                    Dispatcher.UIThread.Post(() => BalancePage.FrontSpringDamperTime = SourceToImage(compSrc));
                 }
                 finally { s_plotSemaphore.Release(); }
             }));
@@ -731,11 +743,18 @@ public partial class SessionViewModel : ItemViewModelBase
                 try
                 {
                     var plot = new WheelForceTimePlot(new Plot(), SuspensionType.Rear);
-                    plot.SetForceData(rForce.WheelForce, rForce.StaticForce, rForce.SpringForce, rForce.DamperForce);
+                    plot.SetForceData(rForce.WheelForce, rForce.StaticForce);
                     plot.LoadTelemetryData(telemetryData);
                     sessionCache.RearWheelForceTime = plot.Plot.GetSvgXml(width, height);
                     var src = SvgToSource(sessionCache.RearWheelForceTime);
                     Dispatcher.UIThread.Post(() => BalancePage.RearWheelForceTime = SourceToImage(src));
+
+                    var compPlot = new SpringDamperForceTimePlot(new Plot(), SuspensionType.Rear);
+                    compPlot.SetForceData(rForce.StaticForce, rForce.SpringForce, rForce.DamperForce);
+                    compPlot.LoadTelemetryData(telemetryData);
+                    sessionCache.RearSpringDamperTime = compPlot.Plot.GetSvgXml(width, height);
+                    var compSrc = SvgToSource(sessionCache.RearSpringDamperTime);
+                    Dispatcher.UIThread.Post(() => BalancePage.RearSpringDamperTime = SourceToImage(compSrc));
                 }
                 finally { s_plotSemaphore.Release(); }
             }));

@@ -82,6 +82,8 @@ public partial class BalanceMetricsViewModel : ObservableObject
     public BalanceMetricRow FrontDynRange    { get; } = new() { Label = "Front dynamic range",   Target = "≈ 2.0–7.0×" };
     public BalanceMetricRow RearDynRange     { get; } = new() { Label = "Rear dynamic range",    Target = "≈ 2.0–7.0×" };
     public BalanceMetricRow DynRangeDiff     { get; } = new() { Label = "DynRange-Diff |F−R|",   Target = "≤ 0.5×" };
+    public BalanceMetricRow FrontAirtimeFrac { get; } = new() { Label = "Front detachment time", Target = "≈ 0–5 %" };
+    public BalanceMetricRow RearAirtimeFrac  { get; } = new() { Label = "Rear detachment time",  Target = "≈ 0–5 %" };
     // Statically-normalised Michelson load index per frequency band, range [-1, +1].
     // 0 = both axes oscillate equally relative to their static load. Positive = front-biased.
     // Low/Mid bands favour a slight front bias (front grip preferred for braking and
@@ -176,6 +178,8 @@ public partial class BalanceMetricsViewModel : ObservableObject
         // F-R difference of the dynamic-range factors. ≤ 0.5× balanced, ≤ 1.0× acceptable.
         // Above that, one axle swings noticeably more than the other (setup mismatch).
         SetThreshold(DynRangeDiff, m.DynamicRangeDifference, "{0:0.00}×", 0.5, 1.0, lowerIsBetter: true);
+        SetThreshold(FrontAirtimeFrac, m.FrontAirtimeFractionPct, "{0:0.0} %", 5.0, 10.0, lowerIsBetter: true);
+        SetThreshold(RearAirtimeFrac,  m.RearAirtimeFractionPct,  "{0:0.0} %", 5.0, 10.0, lowerIsBetter: true);
         // Asymmetric Michelson bands for low/mid: a slight positive (front-biased) value is
         // desirable — front grip aids braking and line-tracking. Wheel/High remain symmetric:
         // unsprung-mass dynamics are tied to tire/rim properties, not to which axle they're on.
@@ -418,6 +422,10 @@ public partial class BalancePageViewModel() : PageViewModelBase("Balance")
     [ObservableProperty] private SvgImage? combinedVelocityFft;
     [ObservableProperty] private SvgImage? frontWheelForceTime;
     [ObservableProperty] private SvgImage? rearWheelForceTime;
+    [ObservableProperty] private SvgImage? frontWheelForceEnvelopeTime;
+    [ObservableProperty] private SvgImage? rearWheelForceEnvelopeTime;
+    [ObservableProperty] private SvgImage? frontSpringDamperTime;
+    [ObservableProperty] private SvgImage? rearSpringDamperTime;
 
     public BalanceMetricsViewModel Metrics { get; } = new();
 }

@@ -47,6 +47,10 @@ public class SessionCache
     [Column("balance_metrics_json")] public string? BalanceMetricsJson { get; set; }
     [Column("front_wheel_force_time")] public string? FrontWheelForceTime { get; set; }
     [Column("rear_wheel_force_time")] public string? RearWheelForceTime { get; set; }
+    [Column("front_wheel_force_envelope_time")] public string? FrontWheelForceEnvelopeTime { get; set; }
+    [Column("rear_wheel_force_envelope_time")] public string? RearWheelForceEnvelopeTime { get; set; }
+    [Column("front_spring_damper_time")] public string? FrontSpringDamperTime { get; set; }
+    [Column("rear_spring_damper_time")] public string? RearSpringDamperTime { get; set; }
     [Column("front_damper_curve")] public string? FrontDamperCurve { get; set; }
     [Column("rear_damper_curve")] public string? RearDamperCurve { get; set; }
     [Column("front_spring_curve")] public string? FrontSpringCurve { get; set; }

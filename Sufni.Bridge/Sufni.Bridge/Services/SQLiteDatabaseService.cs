@@ -256,6 +256,10 @@ public class SqLiteDatabaseService : IDatabaseService
         await AddColumnIfMissing("balance_metrics_json");
         await AddColumnIfMissing("front_wheel_force_time");
         await AddColumnIfMissing("rear_wheel_force_time");
+        await AddColumnIfMissing("front_wheel_force_envelope_time");
+        await AddColumnIfMissing("rear_wheel_force_envelope_time");
+        await AddColumnIfMissing("front_spring_damper_time");
+        await AddColumnIfMissing("rear_spring_damper_time");
         await AddColumnIfMissing("front_damper_curve");
         await AddColumnIfMissing("rear_damper_curve");
         await AddColumnIfMissing("front_spring_curve");

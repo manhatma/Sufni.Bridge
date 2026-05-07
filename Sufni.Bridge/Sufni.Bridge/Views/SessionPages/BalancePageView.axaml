@@ -228,6 +228,16 @@
                         <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.DynRangeDiff.Target}" />
                     </Grid>
                     <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.FrontAirtimeFrac.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.FrontAirtimeFrac.Value}"  Foreground="{Binding Metrics.FrontAirtimeFrac.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.FrontAirtimeFrac.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.RearAirtimeFrac.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.RearAirtimeFrac.Value}"  Foreground="{Binding Metrics.RearAirtimeFrac.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.RearAirtimeFrac.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
                         <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.LowLoadMichelson.Label}" />
                         <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.LowLoadMichelson.Value}"  Foreground="{Binding Metrics.LowLoadMichelson.ValueBrush}" />
                         <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.LowLoadMichelson.Target}" />
@@ -252,6 +262,8 @@
 
             <Image IsVisible="{Binding FrontWheelForceTime, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontWheelForceTime}" />
             <Image IsVisible="{Binding RearWheelForceTime,  Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearWheelForceTime}" />
+            <Image IsVisible="{Binding FrontSpringDamperTime, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontSpringDamperTime}" />
+            <Image IsVisible="{Binding RearSpringDamperTime,  Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearSpringDamperTime}" />
             <Image IsVisible="{Binding CombinedBalance, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CombinedBalance}" />
             <Image IsVisible="{Binding ReboundBalance, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding ReboundBalance}" />
             <Image IsVisible="{Binding CompressionBalance, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CompressionBalance}" />

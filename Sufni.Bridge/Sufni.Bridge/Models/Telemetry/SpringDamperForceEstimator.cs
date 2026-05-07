@@ -95,6 +95,7 @@ public class SpringDamperForceEstimator : IForceEstimator
 
         int n = sus.Travel.Length;
         var forces = new double[n];
+        var rawForces = new double[n];
         var springForces = new double[n];
         var damperForces = new double[n];
         for (int i = 0; i < n; i++)
@@ -124,7 +125,30 @@ public class SpringDamperForceEstimator : IForceEstimator
             var fDamper = damper?.EvaluateForce(shockVel, clicks) ?? 0.0;
             springForces[i] = fSpring * dShockDWheel;
             damperForces[i] = fDamper * dShockDWheel;
-            forces[i] = springForces[i] + damperForces[i];
+            rawForces[i] = springForces[i] + damperForces[i];
+        }
+
+        // V1 contact-state model (Variant B):
+        // 1) force floor at 0 N (ground cannot pull),
+        // 2) Schmitt-like detachment state with extension-gated entry and trim-based exit.
+        // Sign convention in this codebase: velocity < 0 means extension / rebound.
+        var detachmentMask = new bool[n];
+        var baseline = new double[n];
+        for (int i = 0; i < n; i++) baseline[i] = Math.Max(0.0, rawForces[i]);
+        var trimForce = Median(baseline);
+        var reattachThreshold = 0.05 * trimForce;
+        bool inAir = false;
+        for (int i = 0; i < n; i++)
+        {
+            var fRaw = rawForces[i];
+            var wheelVel = sus.Velocity[i];
+            if (inAir && fRaw > reattachThreshold)
+                inAir = false;
+            else if (!inAir && fRaw < 0.0 && wheelVel < 0.0)
+                inAir = true;
+
+            detachmentMask[i] = inAir;
+            forces[i] = inAir ? 0.0 : Math.Max(0.0, fRaw);
         }
 
         var staticForce = Median(forces);
@@ -145,6 +169,7 @@ public class SpringDamperForceEstimator : IForceEstimator
             WheelForce = forces,
             SpringForce = springForces,
             DamperForce = damperForces,
+            DetachmentMask = detachmentMask,
             StaticForce = staticForce,
             StaticForceFlat = flatRef,
         };
