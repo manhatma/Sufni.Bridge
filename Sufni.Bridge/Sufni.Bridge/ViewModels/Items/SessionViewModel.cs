@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 161;
+    private const int CurrentPlotVersion = 170;
 
     // Limits concurrent plot generation tasks to reduce peak memory on iOS.
     private static readonly SemaphoreSlim s_plotSemaphore = new(3, 3);
@@ -192,8 +192,10 @@ public partial class SessionViewModel : ItemViewModelBase
                 var combinedVelFftTask  = Task.Run(() => SvgToSource(cache.CombinedVelocityFft));
                 var frontWheelForceTask = Task.Run(() => SvgToSource(cache.FrontWheelForceTime));
                 var rearWheelForceTask  = Task.Run(() => SvgToSource(cache.RearWheelForceTime));
-                var frontSpringDamperTask = Task.Run(() => SvgToSource(cache.FrontSpringDamperTime));
-                var rearSpringDamperTask  = Task.Run(() => SvgToSource(cache.RearSpringDamperTime));
+                var frontSpringForceTask = Task.Run(() => SvgToSource(cache.FrontSpringForceTime));
+                var rearSpringForceTask  = Task.Run(() => SvgToSource(cache.RearSpringForceTime));
+                var frontDamperForceTask = Task.Run(() => SvgToSource(cache.FrontDamperForceTime));
+                var rearDamperForceTask  = Task.Run(() => SvgToSource(cache.RearDamperForceTime));
                 var frontDamperCurveTask = Task.Run(() => SvgToSource(cache.FrontDamperCurve));
                 var rearDamperCurveTask  = Task.Run(() => SvgToSource(cache.RearDamperCurve));
                 var frontSpringCurveTask = Task.Run(() => SvgToSource(cache.FrontSpringCurve));
@@ -205,7 +207,8 @@ public partial class SessionViewModel : ItemViewModelBase
                     frontTravelCropTask, rearTravelCropTask, frontVelCropTask, rearVelCropTask,
                     frontAccelCropTask, rearAccelCropTask,
                     combinedFftTask, combinedFftHighTask, frontWheelForceTask, rearWheelForceTask,
-                    frontSpringDamperTask, rearSpringDamperTask,
+                    frontSpringForceTask, rearSpringForceTask,
+                    frontDamperForceTask, rearDamperForceTask,
                     frontDamperCurveTask, rearDamperCurveTask,
                     frontSpringCurveTask, rearSpringCurveTask);
 
@@ -252,8 +255,10 @@ public partial class SessionViewModel : ItemViewModelBase
                         BalancePage.CombinedVelocityFft   = SourceToImage(combinedVelFftTask.Result);
                         BalancePage.FrontWheelForceTime         = SourceToImage(frontWheelForceTask.Result);
                         BalancePage.RearWheelForceTime          = SourceToImage(rearWheelForceTask.Result);
-                        BalancePage.FrontSpringDamperTime       = SourceToImage(frontSpringDamperTask.Result);
-                        BalancePage.RearSpringDamperTime        = SourceToImage(rearSpringDamperTask.Result);
+                        BalancePage.FrontSpringForceTime        = SourceToImage(frontSpringForceTask.Result);
+                        BalancePage.RearSpringForceTime         = SourceToImage(rearSpringForceTask.Result);
+                        BalancePage.FrontDamperForceTime        = SourceToImage(frontDamperForceTask.Result);
+                        BalancePage.RearDamperForceTime         = SourceToImage(rearDamperForceTask.Result);
                         if (cache.BalanceMetricsJson is not null)
                         {
                             try
@@ -719,13 +724,6 @@ public partial class SessionViewModel : ItemViewModelBase
                     sessionCache.FrontWheelForceTime = plot.Plot.GetSvgXml(width, height);
                     var src = SvgToSource(sessionCache.FrontWheelForceTime);
                     Dispatcher.UIThread.Post(() => BalancePage.FrontWheelForceTime = SourceToImage(src));
-
-                    var compPlot = new SpringDamperForceTimePlot(new Plot(), SuspensionType.Front);
-                    compPlot.SetForceData(fForce.StaticForce, fForce.SpringForce, fForce.DamperForce);
-                    compPlot.LoadTelemetryData(telemetryData);
-                    sessionCache.FrontSpringDamperTime = compPlot.Plot.GetSvgXml(width, height);
-                    var compSrc = SvgToSource(sessionCache.FrontSpringDamperTime);
-                    Dispatcher.UIThread.Post(() => BalancePage.FrontSpringDamperTime = SourceToImage(compSrc));
                 }
                 finally { s_plotSemaphore.Release(); }
             }));
@@ -748,13 +746,117 @@ public partial class SessionViewModel : ItemViewModelBase
                     sessionCache.RearWheelForceTime = plot.Plot.GetSvgXml(width, height);
                     var src = SvgToSource(sessionCache.RearWheelForceTime);
                     Dispatcher.UIThread.Post(() => BalancePage.RearWheelForceTime = SourceToImage(src));
+                }
+                finally { s_plotSemaphore.Release(); }
+            }));
 
-                    var compPlot = new SpringDamperForceTimePlot(new Plot(), SuspensionType.Rear);
-                    compPlot.SetForceData(rForce.StaticForce, rForce.SpringForce, rForce.DamperForce);
-                    compPlot.LoadTelemetryData(telemetryData);
-                    sessionCache.RearSpringDamperTime = compPlot.Plot.GetSvgXml(width, height);
-                    var compSrc = SvgToSource(sessionCache.RearSpringDamperTime);
-                    Dispatcher.UIThread.Post(() => BalancePage.RearSpringDamperTime = SourceToImage(compSrc));
+            // Spring + damper force over time, 4 plots (Front spring/damper, Rear spring/damper).
+            // Heights are sized proportionally to each plot's effective Y-range so all four share
+            // the same N-per-pixel scale, making curves visually comparable across axles.
+            tasks.Add(Task.Run(async () =>
+            {
+                var setup = await GetSessionSetupAsync();
+                var estimator = App.Current?.Services?.GetService<IForceEstimator>();
+                if (setup is null || estimator is null) return;
+                ForceData? fForce = null, rForce = null;
+                try { fForce = estimator.Estimate(SuspensionType.Front, telemetryData, setup, session); } catch { }
+                try { rForce = estimator.Estimate(SuspensionType.Rear,  telemetryData, setup, session); } catch { }
+                if (fForce is null && rForce is null) return;
+
+                // For each curve: data span (max - min). Equal Y-scale across plots means the
+                // pixel-per-N factor `k` is the same for all 4. To always fit the title overlay
+                // (≈ 32 px tall above the curve), every plot reserves a fixed pixel count for the
+                // top margin instead of a percentage of the (possibly small) span. With this:
+                //   data_height_i = span_i * 1.05 * k + titlePx
+                //   sum(data_height_i) = 1.05 * k * sum(span_i) + titlePx * count
+                //   ⇒ k = (totalDataHeight - titlePx * count) / (1.05 * sum_spans)
+                static (double min, double max, double span) Stats(double[]? arr)
+                {
+                    if (arr is null || arr.Length == 0) return (0, 0, 0);
+                    double mn = double.PositiveInfinity, mx = double.NegativeInfinity;
+                    for (int i = 0; i < arr.Length; i++)
+                    {
+                        if (arr[i] < mn) mn = arr[i];
+                        if (arr[i] > mx) mx = arr[i];
+                    }
+                    return (mn, mx, Math.Max(mx - mn, 1.0));
+                }
+                var fSpring = Stats(fForce?.SpringForce);
+                var fDamper = Stats(fForce?.DamperForce);
+                var rSpring = Stats(rForce?.SpringForce);
+                var rDamper = Stats(rForce?.DamperForce);
+
+                bool fSpringPresent = fForce?.SpringForce is { Length: > 0 };
+                bool fDamperPresent = fForce?.DamperForce is { Length: > 0 };
+                bool rSpringPresent = rForce?.SpringForce is { Length: > 0 };
+                bool rDamperPresent = rForce?.DamperForce is { Length: > 0 };
+                int presentCount = (fSpringPresent ? 1 : 0) + (fDamperPresent ? 1 : 0)
+                                 + (rSpringPresent ? 1 : 0) + (rDamperPresent ? 1 : 0);
+                if (presentCount == 0) return;
+
+                const int chromeTop = 14;     // top: 7 + bottom: 7
+                const int chromeBottom = 57;  // top: 7 + bottom: 50 (X-axis label + ticks)
+                const int titlePx = 32;       // pixels reserved above curve for the overlay title
+                var sumSpans = (fSpringPresent ? fSpring.span : 0) + (fDamperPresent ? fDamper.span : 0)
+                             + (rSpringPresent ? rSpring.span : 0) + (rDamperPresent ? rDamper.span : 0);
+                var totalChrome = chromeTop * (presentCount - 1) + chromeBottom;
+                var totalDataHeight = Math.Max(2 * height - totalChrome, 100);
+                var k = (totalDataHeight - titlePx * presentCount) / Math.Max(sumSpans * 1.05, 1.0);
+                if (k <= 0) k = totalDataHeight / Math.Max(sumSpans * 1.25, 1.0); // fallback
+
+                // titlePx pixels in N units — used as fixed top margin for every plot.
+                var titleN = titlePx / k;
+
+                int Height((double min, double max, double span) s, bool bottom)
+                {
+                    var dataH = (int)Math.Round(s.span * 1.05 * k + titlePx);
+                    return Math.Max(40, dataH + (bottom ? chromeBottom : chromeTop));
+                }
+
+                await s_plotSemaphore.WaitAsync();
+                try
+                {
+                    if (fSpringPresent)
+                    {
+                        var p = new SpringForceTimePlot(new Plot(), SuspensionType.Front, showBottomAxis: false);
+                        p.SetForceData(fForce!.SpringForce);
+                        p.SetYRange(fSpring.min - fSpring.span * 0.05, fSpring.max + titleN);
+                        p.LoadTelemetryData(telemetryData);
+                        sessionCache.FrontSpringForceTime = p.Plot.GetSvgXml(width, Height(fSpring, false));
+                        var s = SvgToSource(sessionCache.FrontSpringForceTime);
+                        Dispatcher.UIThread.Post(() => BalancePage.FrontSpringForceTime = SourceToImage(s));
+                    }
+                    if (fDamperPresent)
+                    {
+                        var p = new DamperForceTimePlot(new Plot(), SuspensionType.Front, showBottomAxis: false);
+                        p.SetForceData(fForce!.DamperForce);
+                        p.SetYRange(fDamper.min - fDamper.span * 0.05, fDamper.max + titleN);
+                        p.LoadTelemetryData(telemetryData);
+                        sessionCache.FrontDamperForceTime = p.Plot.GetSvgXml(width, Height(fDamper, false));
+                        var s = SvgToSource(sessionCache.FrontDamperForceTime);
+                        Dispatcher.UIThread.Post(() => BalancePage.FrontDamperForceTime = SourceToImage(s));
+                    }
+                    if (rSpringPresent)
+                    {
+                        var isBottom = !rDamperPresent;
+                        var p = new SpringForceTimePlot(new Plot(), SuspensionType.Rear, showBottomAxis: isBottom);
+                        p.SetForceData(rForce!.SpringForce);
+                        p.SetYRange(rSpring.min - rSpring.span * 0.05, rSpring.max + titleN);
+                        p.LoadTelemetryData(telemetryData);
+                        sessionCache.RearSpringForceTime = p.Plot.GetSvgXml(width, Height(rSpring, isBottom));
+                        var s = SvgToSource(sessionCache.RearSpringForceTime);
+                        Dispatcher.UIThread.Post(() => BalancePage.RearSpringForceTime = SourceToImage(s));
+                    }
+                    if (rDamperPresent)
+                    {
+                        var p = new DamperForceTimePlot(new Plot(), SuspensionType.Rear, showBottomAxis: true);
+                        p.SetForceData(rForce!.DamperForce);
+                        p.SetYRange(rDamper.min - rDamper.span * 0.05, rDamper.max + titleN);
+                        p.LoadTelemetryData(telemetryData);
+                        sessionCache.RearDamperForceTime = p.Plot.GetSvgXml(width, Height(rDamper, true));
+                        var s = SvgToSource(sessionCache.RearDamperForceTime);
+                        Dispatcher.UIThread.Post(() => BalancePage.RearDamperForceTime = SourceToImage(s));
+                    }
                 }
                 finally { s_plotSemaphore.Release(); }
             }));

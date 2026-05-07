@@ -262,8 +262,10 @@
 
             <Image IsVisible="{Binding FrontWheelForceTime, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontWheelForceTime}" />
             <Image IsVisible="{Binding RearWheelForceTime,  Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearWheelForceTime}" />
-            <Image IsVisible="{Binding FrontSpringDamperTime, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontSpringDamperTime}" />
-            <Image IsVisible="{Binding RearSpringDamperTime,  Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearSpringDamperTime}" />
+            <Image Margin="0,35,0,0" IsVisible="{Binding FrontSpringForceTime, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontSpringForceTime}" />
+            <Image IsVisible="{Binding FrontDamperForceTime, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontDamperForceTime}" />
+            <Image IsVisible="{Binding RearSpringForceTime,  Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearSpringForceTime}" />
+            <Image IsVisible="{Binding RearDamperForceTime,  Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearDamperForceTime}" />
             <Image IsVisible="{Binding CombinedBalance, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CombinedBalance}" />
             <Image IsVisible="{Binding ReboundBalance, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding ReboundBalance}" />
             <Image IsVisible="{Binding CompressionBalance, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CompressionBalance}" />

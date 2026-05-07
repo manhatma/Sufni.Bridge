@@ -133,12 +133,13 @@ public class WheelForceTimePlot(Plot plot, SuspensionType type, bool envelope = 
         };
 
         Plot.Legend.IsVisible = true;
-        Plot.Legend.Alignment = Alignment.MiddleRight;
-        Plot.Legend.BackgroundColor = Color.FromHex("#15191C").WithAlpha(220);
+        Plot.Legend.Alignment = Alignment.UpperRight;
+        Plot.Legend.BackgroundColor = Color.FromHex("#15191C").WithAlpha(182);
         Plot.Legend.OutlineColor = Color.FromHex("#505558");
         Plot.Legend.OutlineWidth = 1;
         Plot.Legend.FontSize = 10;
-        Plot.Legend.Padding = new PixelPadding(6);
+        // +3 px top so the single legend line sits vertically centred in the box.
+        Plot.Legend.Padding = new PixelPadding(6, 6, 6, 9);
         Plot.Legend.SymbolWidth = 0;
         Plot.Legend.SymbolPadding = 0;
         Plot.Legend.DisplayPlottableLegendItems = false;

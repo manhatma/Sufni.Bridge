@@ -424,8 +424,10 @@ public partial class BalancePageViewModel() : PageViewModelBase("Balance")
     [ObservableProperty] private SvgImage? rearWheelForceTime;
     [ObservableProperty] private SvgImage? frontWheelForceEnvelopeTime;
     [ObservableProperty] private SvgImage? rearWheelForceEnvelopeTime;
-    [ObservableProperty] private SvgImage? frontSpringDamperTime;
-    [ObservableProperty] private SvgImage? rearSpringDamperTime;
+    [ObservableProperty] private SvgImage? frontSpringForceTime;
+    [ObservableProperty] private SvgImage? rearSpringForceTime;
+    [ObservableProperty] private SvgImage? frontDamperForceTime;
+    [ObservableProperty] private SvgImage? rearDamperForceTime;
 
     public BalanceMetricsViewModel Metrics { get; } = new();
 }
