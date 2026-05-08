@@ -55,6 +55,14 @@ public static class SstTcpClient
         return buffer;
     }
 
+    public static async Task SendFinish(IPEndPoint ipEndPoint)
+    {
+        using Socket client = new(ipEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
+        await client.ConnectAsync(ipEndPoint);
+        // STATUS_FINISHED = 6: server tears down listening socket and returns to IDLE.
+        await client.SendAsync(new byte[] { 0x06, 0x00, 0x00, 0x00 }, SocketFlags.None);
+    }
+
     public static async Task SendTime(IPEndPoint ipEndPoint, long epochUtc)
     {
         using Socket client = new(ipEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);

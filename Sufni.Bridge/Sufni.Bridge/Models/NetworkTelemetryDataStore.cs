@@ -47,6 +47,8 @@ public class NetworkTelemetryDataStore : ITelemetryDataStore
         return files.OrderByDescending(f => f.StartTime).ToList();
     }
 
+    public Task Finish() => SstTcpClient.SendFinish(ipEndPoint);
+
     public NetworkTelemetryDataStore(IPAddress address, int port, int protocolVersion = 1)
     {
         ipEndPoint = new IPEndPoint(address, port);

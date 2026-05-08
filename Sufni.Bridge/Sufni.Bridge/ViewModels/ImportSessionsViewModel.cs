@@ -327,6 +327,22 @@ public partial class ImportSessionsViewModel : ViewModelBase
             await telemetryFile.OnTrashed();
         }
 
+        if (SelectedDataStore is NetworkTelemetryDataStore networkStore)
+        {
+            try
+            {
+                await networkStore.Finish();
+            }
+            catch (Exception e)
+            {
+                Debug.WriteLine($"Server finish for {networkStore.Name} failed: {e.Message}");
+            }
+            // Skip refresh — server is shutting down; the data store will disappear via mDNS.
+            Dispatcher.UIThread.Post(() => TelemetryFiles.Clear());
+            ImportInProgress = false;
+            return;
+        }
+
         var files = await SelectedDataStore.GetFiles();
         await ApplyImportDefaults(files);
         TelemetryFiles.Clear();
