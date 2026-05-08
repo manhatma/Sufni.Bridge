@@ -69,6 +69,7 @@ public class Linkage : Synchronizable
 
     [Ignore]
     [JsonIgnore]
+    [IgnoreMember]
     public double MaxFrontTravel
     {
         get
@@ -81,6 +82,7 @@ public class Linkage : Synchronizable
 
     [Ignore]
     [JsonIgnore]
+    [IgnoreMember]
     public double MaxRearTravel
     {
         get
@@ -93,12 +95,21 @@ public class Linkage : Synchronizable
 
     [Ignore]
     [JsonIgnore]
+    [IgnoreMember]
     public double[] ShockWheelCoeffs
     {
         get
         {
-            shockWheelCoeffs ??= Fit.Polynomial(LeverageRatioData?.ShockTravel.ToArray(),
-                LeverageRatioData?.WheelTravel.ToArray(), 3);
+            if (shockWheelCoeffs is null)
+            {
+                shockWheelCoeffs = Fit.Polynomial(LeverageRatioData?.ShockTravel.ToArray(),
+                    LeverageRatioData?.WheelTravel.ToArray(), 3);
+                // Force the shock→wheel polynomial through (0,0): unconstrained
+                // least-squares leaves a non-zero constant term that biases every
+                // rear-travel sample, so the signal never returns to 0 even when
+                // the shock is fully extended (airtime).
+                if (shockWheelCoeffs.Length > 0) shockWheelCoeffs[0] = 0;
+            }
             return shockWheelCoeffs;
 
         }
@@ -152,9 +163,28 @@ public class Linkage : Synchronizable
                 var csv = $"Wheel_T,Leverage_R\n{RawData}";
                 leverageRatioData = new LeverageRatioData(new StringReader(csv));
             }
+            else if (leverageRatioData is null && leverageRatio is not null)
+            {
+                // After MessagePack roundtrip RawData is gone (IgnoreMember), but the
+                // leverageRatio field carries the [wheel, lr] pairs.
+                leverageRatioData = new LeverageRatioData(leverageRatio);
+            }
 
             return leverageRatioData;
         }
+    }
+
+    /// <summary>
+    /// Constant offset of the unconstrained shock→wheel polynomial fit at shock=0.
+    /// Used once to bias-correct rear-travel samples that were baked with the old
+    /// (pre-fix) polynomial. Returns 0 if leverage data is unavailable.
+    /// </summary>
+    public double LegacyRearTravelBias()
+    {
+        var lr = LeverageRatioData;
+        if (lr is null || lr.ShockTravel.Count < 4) return 0;
+        var coeffs = Fit.Polynomial(lr.ShockTravel.ToArray(), lr.WheelTravel.ToArray(), 3);
+        return coeffs.Length > 0 ? coeffs[0] : 0;
     }
 }
 
@@ -251,10 +281,25 @@ public class LeverageRatioData
         LeverageRatio = new List<double>(data.Length);
         ShockTravel = new List<double>(data.Length);
 
+        var shock = 0.0;
+        double? prevWheel = null;
+        double? prevLeverage = null;
         foreach (var d in data)
         {
-            WheelTravel.Add(d[0]);
-            LeverageRatio.Add(d[1]);
+            var wheel = d[0];
+            var leverage = d[1];
+
+            if (prevWheel.HasValue && prevLeverage is > 0)
+            {
+                shock += (wheel - prevWheel.Value) / prevLeverage.Value;
+            }
+
+            WheelTravel.Add(wheel);
+            LeverageRatio.Add(leverage);
+            ShockTravel.Add(shock);
+
+            prevWheel = wheel;
+            prevLeverage = leverage;
         }
     }
 

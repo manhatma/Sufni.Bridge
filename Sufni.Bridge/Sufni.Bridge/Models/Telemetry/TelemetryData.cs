@@ -121,7 +121,7 @@ public class TelemetryData
 
     // Increment when velocity processing parameters change (e.g. smoother lambda).
     // Blobs with a lower version are automatically re-processed from Travel arrays on load.
-    public const int CurrentProcessingVersion = 4;
+    public const int CurrentProcessingVersion = 5;
 
     #region Public properties
 
@@ -429,6 +429,28 @@ public class TelemetryData
     /// </summary>
     public byte[] ReprocessVelocity()
     {
+        var oldVersion = ProcessingVersion;
+
+        // One-time correction for sessions imported before v5. The unconstrained
+        // shock→wheel polynomial fit had a non-zero constant term that biased every
+        // rear-travel sample, so the signal never returned to 0 even during airtime.
+        // The bias is exactly coeffs[0] of the old fit; subtract it from each cached
+        // sample and clamp. New imports use the corrected fit and skip this branch.
+        if (oldVersion < 5 && Rear.Present && Rear.Travel is { Length: > 0 })
+        {
+            var bias = Linkage.LegacyRearTravelBias();
+            if (bias != 0)
+            {
+                Linkage.MaxRearTravel = Linkage.Polynomial.Evaluate(Linkage.MaxRearStroke ?? 0);
+                var maxRear = Linkage.MaxRearTravel;
+                for (var i = 0; i < Rear.Travel.Length; i++)
+                {
+                    var t = Rear.Travel[i] - bias;
+                    Rear.Travel[i] = Math.Max(0, Math.Min(t, maxRear));
+                }
+            }
+        }
+
         var smoother = new WhittakerHendersonSmoother(2, 5);
 
         if (Front.Present)
