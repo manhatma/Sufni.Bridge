@@ -98,8 +98,11 @@ internal class TelemetryDataStoreService : ITelemetryDataStoreService
 
         lock (DataStoreLock)
         {
-            var toRemove = DataStores.First(x => x.Name == name);
-            DataStores.Remove(toRemove);
+            var toRemove = DataStores.FirstOrDefault(x => x.Name == name);
+            if (toRemove is not null)
+            {
+                DataStores.Remove(toRemove);
+            }
         }
     }
 
@@ -108,13 +111,23 @@ internal class TelemetryDataStoreService : ITelemetryDataStoreService
         var ipAddress = e.Announcement.Address;
         var port = e.Announcement.Port;
         var protocolVersion = e.Announcement.ProtocolVersion;
+        var name = $"gosst://{ipAddress}:{port}";
 
         var ds = new NetworkTelemetryDataStore(ipAddress, port, protocolVersion);
         await ds.Initialization;
 
         lock (DataStoreLock)
         {
-            DataStores.Add(ds);
+            var existing = DataStores.FirstOrDefault(x => x.Name == name);
+            if (existing is not null)
+            {
+                var index = DataStores.IndexOf(existing);
+                DataStores[index] = ds;
+            }
+            else
+            {
+                DataStores.Add(ds);
+            }
         }
     }
 
