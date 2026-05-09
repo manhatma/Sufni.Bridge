@@ -128,7 +128,7 @@ public class TelemetryData
 
     // Increment when velocity processing parameters change (e.g. smoother lambda).
     // Blobs with a lower version are automatically re-processed from Travel arrays on load.
-    public const int CurrentProcessingVersion = 13;
+    public const int CurrentProcessingVersion = 14;
 
     #region Public properties
 
@@ -302,11 +302,7 @@ public class TelemetryData
     /// </summary>
     private double[] SmoothedRearWheelTravel(double[] shockTravel, WhittakerHendersonSmoother smoother)
     {
-        // Pre-process the raw shock signal: replace LSB plateaus with linear ramps so
-        // the WH smoother and the central-difference derivative see continuous slow motion
-        // instead of staircase quantisation that would emit v=0 plateaus.
-        var dithered = PlateauInterpolator.Interpolate(shockTravel);
-        var smoothedShock = smoother.Smooth(dithered);
+        var smoothedShock = smoother.Smooth(shockTravel);
         var n = smoothedShock.Length;
         var smoothedWheel = new double[n];
         var maxRear = Linkage.MaxRearTravel;
@@ -422,7 +418,7 @@ public class TelemetryData
             var dt = Digitize(Front.Travel, tbins);
             Front.TravelBins = tbins;
 
-            var v = ComputeVelocity(smoother.Smooth(PlateauInterpolator.Interpolate(Front.Travel)), SampleRate);
+            var v = ComputeVelocity(smoother.Smooth(Front.Travel), SampleRate);
             Front.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             Front.VelocityBins = vbins;
@@ -526,7 +522,7 @@ public class TelemetryData
             var dt = Digitize(Front.Travel, tbins);
             Front.TravelBins = tbins;
 
-            var v = ComputeVelocity(smoother.Smooth(PlateauInterpolator.Interpolate(Front.Travel)), SampleRate);
+            var v = ComputeVelocity(smoother.Smooth(Front.Travel), SampleRate);
             Front.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             Front.VelocityBins = vbins;
@@ -636,7 +632,7 @@ public class TelemetryData
             var dt = Digitize(cropped.Front.Travel, tbins);
             cropped.Front.TravelBins = tbins;
 
-            var v = ComputeVelocity(smoother.Smooth(PlateauInterpolator.Interpolate(cropped.Front.Travel)), SampleRate);
+            var v = ComputeVelocity(smoother.Smooth(cropped.Front.Travel), SampleRate);
             cropped.Front.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             cropped.Front.VelocityBins = vbins;
@@ -729,7 +725,7 @@ public class TelemetryData
             combined.Front.TravelBins = tbins;
 
             // Re-derive velocity from combined travel to avoid discontinuities at session boundaries
-            var v = ComputeVelocity(smoother.Smooth(PlateauInterpolator.Interpolate(combined.Front.Travel)), first.SampleRate);
+            var v = ComputeVelocity(smoother.Smooth(combined.Front.Travel), first.SampleRate);
             combined.Front.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             combined.Front.VelocityBins = vbins;

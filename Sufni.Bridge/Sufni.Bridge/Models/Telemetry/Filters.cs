@@ -1,63 +1,6 @@
 using System;
-using System.Collections.Generic;
 
 namespace Sufni.Bridge.Models.Telemetry;
-
-/// <summary>
-/// Replaces ADC-quantisation plateaus (consecutive identical samples that occur when
-/// the underlying motion is slower than 1 LSB per sample) with a linear ramp between
-/// the LSB transitions that bracket the plateau. This eliminates the "v ≈ 0 horizontal
-/// segments" that the central-difference derivative produces from staircase position
-/// data without affecting fast motion (no plateaus → input passes through unchanged).
-///
-/// A plateau is only interpolated when the closing transition step |x[t1] − x[t0]| is
-/// below maxStepMm. Real quantisation steps are ≤ 1–2 LSB (~3–15 µm depending on sensor),
-/// so the default 0.1 mm threshold accepts them with comfortable margin while rejecting
-/// large jumps such as airtime→landing transitions (multi-mm) — those plateaus stay
-/// untouched and airtime detection / phantom-velocity issues are avoided regardless of
-/// plateau length.
-/// </summary>
-public static class PlateauInterpolator
-{
-    public static double[] Interpolate(double[] x, double maxStepMm = 0.1)
-    {
-        var n = x.Length;
-        if (n < 2) return (double[])x.Clone();
-
-        var y = (double[])x.Clone();
-
-        // Indices where x[i] differs from x[i-1]; bracketed by sentinels at 0 and n.
-        var transitions = new List<int> { 0 };
-        for (var i = 1; i < n; i++)
-        {
-            if (x[i] != x[i - 1])
-                transitions.Add(i);
-        }
-        transitions.Add(n);
-
-        for (var k = 0; k < transitions.Count - 1; k++)
-        {
-            var t0 = transitions[k];
-            var t1 = transitions[k + 1];
-            if (t1 >= n) break;             // last segment has no closing transition
-            var plateauLen = t1 - t0;
-            if (plateauLen <= 1) continue;  // single sample, nothing to interpolate
-
-            var v0 = x[t0];
-            var v1 = x[t1];
-            if (Math.Abs(v1 - v0) > maxStepMm) continue;  // large jump → not quantisation
-
-            var span = (double)plateauLen;
-            for (var j = t0 + 1; j < t1; j++)
-            {
-                var frac = (j - t0) / span;
-                y[j] = v0 + frac * (v1 - v0);
-            }
-        }
-
-        return y;
-    }
-}
 
 public class WhittakerHendersonSmoother
 {
