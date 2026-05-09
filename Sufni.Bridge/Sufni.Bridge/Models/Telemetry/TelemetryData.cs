@@ -32,6 +32,13 @@ public class Suspension
     public double[] TravelBins { get; set; }
     public double[] VelocityBins { get; set; }
     public double[] FineVelocityBins { get; set; }
+
+    // Raw shock/damper travel before the leverage polynomial. Only populated for the rear
+    // suspension; null for front (where the head-angle factor is linear). Used to smooth
+    // on the finer-quantised shock signal (~2.84 µm/LSB) instead of the polynomial-mapped
+    // wheel travel (~7 µm/LSB). Older sessions deserialise it as null and Reprocess
+    // reconstructs it via Linkage.WheelToDamperTravel.
+    public double[]? ShockTravel { get; set; }
 };
 
 public record HistogramData(List<double> Bins, List<double> Values);
@@ -121,7 +128,7 @@ public class TelemetryData
 
     // Increment when velocity processing parameters change (e.g. smoother lambda).
     // Blobs with a lower version are automatically re-processed from Travel arrays on load.
-    public const int CurrentProcessingVersion = 5;
+    public const int CurrentProcessingVersion = 13;
 
     #region Public properties
 
@@ -286,16 +293,74 @@ public class TelemetryData
         Airtimes = [.. airtimes];
     }
 
+    /// <summary>
+    /// Smooths the rear shock-travel signal with WH (where ADS1115 quantisation is ~2.84 µm/LSB
+    /// for an ELPM75 versus ~7 µm/LSB after the leverage polynomial), then maps the smoothed shock
+    /// signal through the polynomial to obtain wheel travel for differentiation. Compared to
+    /// smoothing already-mapped wheel travel, this gives the WH filter ~2.5× finer input
+    /// resolution, which shortens the LSB plateaus that cause the v≈0 horizontal artefacts.
+    /// </summary>
+    private double[] SmoothedRearWheelTravel(double[] shockTravel, WhittakerHendersonSmoother smoother)
+    {
+        // Pre-process the raw shock signal: replace LSB plateaus with linear ramps so
+        // the WH smoother and the central-difference derivative see continuous slow motion
+        // instead of staircase quantisation that would emit v=0 plateaus.
+        var dithered = PlateauInterpolator.Interpolate(shockTravel);
+        var smoothedShock = smoother.Smooth(dithered);
+        var n = smoothedShock.Length;
+        var smoothedWheel = new double[n];
+        var maxRear = Linkage.MaxRearTravel;
+        for (var i = 0; i < n; i++)
+        {
+            var w = Linkage.Polynomial.Evaluate(smoothedShock[i]);
+            if (w < 0) w = 0;
+            if (w > maxRear) w = maxRear;
+            smoothedWheel[i] = w;
+        }
+        return smoothedWheel;
+    }
+
+    /// <summary>
+    /// Reconstructs rear shock travel from previously stored wheel travel via numerical
+    /// inversion of the leverage polynomial. Used during Reprocess of older sessions
+    /// that were imported before ShockTravel was persisted.
+    /// </summary>
+    private double[] ReconstructShockTravel(double[] wheelTravel)
+    {
+        var n = wheelTravel.Length;
+        var shock = new double[n];
+        for (var i = 0; i < n; i++)
+        {
+            shock[i] = Linkage.WheelToDamperTravel(wheelTravel[i]);
+        }
+        return shock;
+    }
+
     private static double[] ComputeVelocity(double[] travel, int sampleRate)
     {
         var n = travel.Length;
         var v = new double[n];
 
+        if (n == 0)
+            return v;
+        if (n == 1)
+            return v;
+
+        // Forward at start, 3-tap one sample in, 5-tap interior, 3-tap one before end, backward at end.
+        // 5-tap central difference (4th-order accurate): v[i] = (-x[i-2] - 8 x[i-1] + 8 x[i+1] + x[i+2]) / (12 dt).
+        // Wider aperture bridges the LSB plateaus that occur during slow motion (< ~6 mm/s),
+        // where consecutive samples sit on the same ADC code and the 3-tap derivative would emit zeros.
         v[0] = (travel[1] - travel[0]) * sampleRate;
-        for (var i = 1; i < n - 1; i++)
+        if (n >= 3)
+            v[1] = (travel[2] - travel[0]) * sampleRate / 2.0;
+
+        for (var i = 2; i < n - 2; i++)
         {
-            v[i] = (travel[i + 1] - travel[i - 1]) * sampleRate / 2.0;
+            v[i] = (-travel[i - 2] - 8.0 * travel[i - 1] + 8.0 * travel[i + 1] + travel[i + 2]) * sampleRate / 12.0;
         }
+
+        if (n >= 3)
+            v[n - 2] = (travel[n - 1] - travel[n - 3]) * sampleRate / 2.0;
         v[n - 1] = (travel[n - 1] - travel[n - 2]) * sampleRate;
 
         return v;
@@ -332,7 +397,7 @@ public class TelemetryData
         }
 
         // Create Whittaker-Henderson smoother for velocity smoothing
-        var smoother = new WhittakerHendersonSmoother(2, 5);
+        var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambda);
 
         if (Front.Present)
         {
@@ -357,7 +422,7 @@ public class TelemetryData
             var dt = Digitize(Front.Travel, tbins);
             Front.TravelBins = tbins;
 
-            var v = ComputeVelocity(smoother.Smooth(Front.Travel), SampleRate);
+            var v = ComputeVelocity(smoother.Smooth(PlateauInterpolator.Interpolate(Front.Travel)), SampleRate);
             Front.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             Front.VelocityBins = vbins;
@@ -379,6 +444,7 @@ public class TelemetryData
         if (Rear.Present)
         {
             Rear.Travel = new double[rc];
+            Rear.ShockTravel = new double[rc];
 
             for (var i = 0; i < rear.Length; i++)
             {
@@ -386,8 +452,9 @@ public class TelemetryData
                 //  a) inaccurately measured leverage ratio
                 //  b) inaccuracies introduced by polynomial fitting
                 // So we just cap it at calculated maximum.
-                var travel = Rear.Calibration!.Evaluate(rear[i]);
-                var x = Linkage.Polynomial.Evaluate(travel);
+                var shock = Rear.Calibration!.Evaluate(rear[i]);
+                Rear.ShockTravel[i] = shock;
+                var x = Linkage.Polynomial.Evaluate(shock);
                 x = Math.Max(0, x);
                 x = Math.Min(x, Linkage.MaxRearTravel);
                 Rear.Travel[i] = x;
@@ -397,7 +464,7 @@ public class TelemetryData
             var dt = Digitize(Rear.Travel, tbins);
             Rear.TravelBins = tbins;
 
-            var v = ComputeVelocity(smoother.Smooth(Rear.Travel), SampleRate);
+            var v = ComputeVelocity(SmoothedRearWheelTravel(Rear.ShockTravel, smoother), SampleRate);
             Rear.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             Rear.VelocityBins = vbins;
@@ -451,7 +518,7 @@ public class TelemetryData
             }
         }
 
-        var smoother = new WhittakerHendersonSmoother(2, 5);
+        var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambda);
 
         if (Front.Present)
         {
@@ -459,7 +526,7 @@ public class TelemetryData
             var dt = Digitize(Front.Travel, tbins);
             Front.TravelBins = tbins;
 
-            var v = ComputeVelocity(smoother.Smooth(Front.Travel), SampleRate);
+            var v = ComputeVelocity(smoother.Smooth(PlateauInterpolator.Interpolate(Front.Travel)), SampleRate);
             Front.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             Front.VelocityBins = vbins;
@@ -477,11 +544,17 @@ public class TelemetryData
 
         if (Rear.Present)
         {
+            // Sessions imported before ShockTravel was persisted reconstruct it from the
+            // stored wheel travel via numerical inversion of the polynomial. After Reprocess
+            // the array is cached so subsequent loads skip the reconstruction cost.
+            if (Rear.ShockTravel is null || Rear.ShockTravel.Length != Rear.Travel.Length)
+                Rear.ShockTravel = ReconstructShockTravel(Rear.Travel);
+
             var tbins = Linspace(0, Linkage.MaxRearTravel, Parameters.TravelHistBins + 1);
             var dt = Digitize(Rear.Travel, tbins);
             Rear.TravelBins = tbins;
 
-            var v = ComputeVelocity(smoother.Smooth(Rear.Travel), SampleRate);
+            var v = ComputeVelocity(SmoothedRearWheelTravel(Rear.ShockTravel, smoother), SampleRate);
             Rear.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             Rear.VelocityBins = vbins;
@@ -551,7 +624,7 @@ public class TelemetryData
             Rear  = new Suspension { Present = Rear.Present,  Calibration = Rear.Calibration,  Strokes = new Strokes() }
         };
 
-        var smoother = new WhittakerHendersonSmoother(2, 5);
+        var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambda);
 
         if (Front.Present && Front.Travel.Length > 0)
         {
@@ -563,7 +636,7 @@ public class TelemetryData
             var dt = Digitize(cropped.Front.Travel, tbins);
             cropped.Front.TravelBins = tbins;
 
-            var v = ComputeVelocity(smoother.Smooth(cropped.Front.Travel), SampleRate);
+            var v = ComputeVelocity(smoother.Smooth(PlateauInterpolator.Interpolate(cropped.Front.Travel)), SampleRate);
             cropped.Front.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             cropped.Front.VelocityBins = vbins;
@@ -584,11 +657,18 @@ public class TelemetryData
             var e = Math.Max(s + 1, Math.Min(endSample, Rear.Travel.Length));
             cropped.Rear.Travel = Rear.Travel[s..e];
 
+            // Slice (or reconstruct) ShockTravel to the same window so the smoother sees
+            // the finer-quantised shock signal instead of polynomial-mapped wheel travel.
+            if (Rear.ShockTravel is { Length: > 0 } && Rear.ShockTravel.Length == Rear.Travel.Length)
+                cropped.Rear.ShockTravel = Rear.ShockTravel[s..e];
+            else
+                cropped.Rear.ShockTravel = ReconstructShockTravel(cropped.Rear.Travel);
+
             var tbins = Linspace(0, Linkage.MaxRearTravel, Parameters.TravelHistBins + 1);
             var dt = Digitize(cropped.Rear.Travel, tbins);
             cropped.Rear.TravelBins = tbins;
 
-            var v = ComputeVelocity(smoother.Smooth(cropped.Rear.Travel), SampleRate);
+            var v = ComputeVelocity(SmoothedRearWheelTravel(cropped.Rear.ShockTravel, smoother), SampleRate);
             cropped.Rear.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             cropped.Rear.VelocityBins = vbins;
@@ -636,7 +716,7 @@ public class TelemetryData
             Rear = new Suspension { Present = hasRear, Strokes = new Strokes() }
         };
 
-        var smoother = new WhittakerHendersonSmoother(2, 5);
+        var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambda);
 
         if (hasFront)
         {
@@ -649,7 +729,7 @@ public class TelemetryData
             combined.Front.TravelBins = tbins;
 
             // Re-derive velocity from combined travel to avoid discontinuities at session boundaries
-            var v = ComputeVelocity(smoother.Smooth(combined.Front.Travel), first.SampleRate);
+            var v = ComputeVelocity(smoother.Smooth(PlateauInterpolator.Interpolate(combined.Front.Travel)), first.SampleRate);
             combined.Front.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             combined.Front.VelocityBins = vbins;
@@ -671,12 +751,21 @@ public class TelemetryData
                 sessions.Select(s => s.Rear.Travel).ToList(), first.SampleRate);
             combined.Rear.Calibration = first.Rear.Calibration;
 
+            // Concatenate per-session ShockTravel using the same transition logic, falling back
+            // to numerical inversion of the polynomial for any session that pre-dates ShockTravel
+            // persistence.
+            var shockArrays = sessions.Select(s =>
+                s.Rear.ShockTravel is { Length: > 0 } && s.Rear.ShockTravel.Length == s.Rear.Travel.Length
+                    ? s.Rear.ShockTravel
+                    : first.ReconstructShockTravel(s.Rear.Travel)).ToList();
+            combined.Rear.ShockTravel = ConcatenateTravelWithTransitions(shockArrays, first.SampleRate);
+
             var tbins = Linspace(0, first.Linkage.MaxRearTravel, Parameters.TravelHistBins + 1);
             var dt = Digitize(combined.Rear.Travel, tbins);
             combined.Rear.TravelBins = tbins;
 
             // Re-derive velocity from combined travel to avoid discontinuities at session boundaries
-            var v = ComputeVelocity(smoother.Smooth(combined.Rear.Travel), first.SampleRate);
+            var v = ComputeVelocity(first.SmoothedRearWheelTravel(combined.Rear.ShockTravel, smoother), first.SampleRate);
             combined.Rear.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             combined.Rear.VelocityBins = vbins;
@@ -1187,6 +1276,13 @@ public class TelemetryData
             hsr * totalPercentage);
     }
 
+    // Gap threshold (in samples) between two strokes for inserting a NaN break in
+    // phase-portrait plots. Strokes closer than this stay visually connected so a
+    // compression → rebound transition through v=0 is drawn as one continuous loop.
+    // Above the threshold we assume an unrelated event (long idle, restart) and break.
+    // 10 samples ≈ 12 ms at 860 SPS.
+    private const int PhasePortraitStrokeGapThreshold = 10;
+
     public PositionVelocityData CalculatePositionVelocityData(SuspensionType type)
     {
         var suspension = type == SuspensionType.Front ? Front : Rear;
@@ -1194,14 +1290,26 @@ public class TelemetryData
         var travel = new List<double>();
         var velocity = new List<double>();
 
-        foreach (var s in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
+        var allStrokes = suspension.Strokes.Compressions
+            .Concat(suspension.Strokes.Rebounds)
+            .OrderBy(s => s.Start)
+            .ToList();
+
+        var lastEnd = int.MinValue;
+        foreach (var s in allStrokes)
         {
             if (s.End < s.Start || s.Start < 0 || s.End >= arrayLen) continue;
+            if (lastEnd != int.MinValue && s.Start - lastEnd > PhasePortraitStrokeGapThreshold)
+            {
+                travel.Add(double.NaN);
+                velocity.Add(double.NaN);
+            }
             for (var i = s.Start; i <= s.End; i++)
             {
                 travel.Add(suspension.Travel[i]);
                 velocity.Add(suspension.Velocity[i]);
             }
+            lastEnd = s.End;
         }
 
         return new PositionVelocityData(travel.ToArray(), velocity.ToArray());
@@ -1213,14 +1321,26 @@ public class TelemetryData
         var travel = new List<double>();
         var velocity = new List<double>();
 
-        foreach (var s in Rear.Strokes.Compressions.Concat(Rear.Strokes.Rebounds))
+        var allStrokes = Rear.Strokes.Compressions
+            .Concat(Rear.Strokes.Rebounds)
+            .OrderBy(s => s.Start)
+            .ToList();
+
+        var lastEnd = int.MinValue;
+        foreach (var s in allStrokes)
         {
             if (s.End < s.Start || s.Start < 0 || s.End >= arrayLen) continue;
+            if (lastEnd != int.MinValue && s.Start - lastEnd > PhasePortraitStrokeGapThreshold)
+            {
+                travel.Add(double.NaN);
+                velocity.Add(double.NaN);
+            }
             for (var i = s.Start; i <= s.End; i++)
             {
                 travel.Add(Linkage.WheelToDamperTravel(Rear.Travel[i]));
                 velocity.Add(Rear.Velocity[i]);
             }
+            lastEnd = s.End;
         }
 
         return new PositionVelocityData(travel.ToArray(), velocity.ToArray());
@@ -1233,14 +1353,26 @@ public class TelemetryData
         var travel = new List<double>();
         var velocity = new List<double>();
 
-        foreach (var s in Front.Strokes.Compressions.Concat(Front.Strokes.Rebounds))
+        var allStrokes = Front.Strokes.Compressions
+            .Concat(Front.Strokes.Rebounds)
+            .OrderBy(s => s.Start)
+            .ToList();
+
+        var lastEnd = int.MinValue;
+        foreach (var s in allStrokes)
         {
             if (s.End < s.Start || s.Start < 0 || s.End >= arrayLen) continue;
+            if (lastEnd != int.MinValue && s.Start - lastEnd > PhasePortraitStrokeGapThreshold)
+            {
+                travel.Add(double.NaN);
+                velocity.Add(double.NaN);
+            }
             for (var i = s.Start; i <= s.End; i++)
             {
                 travel.Add(sinHeadAngle > 0 ? Front.Travel[i] / sinHeadAngle : 0);
                 velocity.Add(Front.Velocity[i]);
             }
+            lastEnd = s.End;
         }
 
         return new PositionVelocityData(travel.ToArray(), velocity.ToArray());

@@ -37,4 +37,15 @@ public static class Parameters
 
     // number of travel histogram bins
     public const int TravelHistBins = 20;
+
+    // Whittaker-Henderson smoother for travel→velocity differentiation.
+    // Setup: ADS1115 PGA 4.096V, sensor swing 0–3.3V → 26400 usable codes (log2 = 14.6883).
+    // VLP200 fork: 7.58 µm/LSB, sub-LSB threshold 6.5 mm/s.
+    // ELPM75 shock: 2.84 µm/LSB on shock travel, 2.4 mm/s sub-LSB threshold (rear pipeline
+    // smooths shock travel before the leverage polynomial to keep this finer quantisation).
+    // f_c/f_s ≈ (1/2π)·λ^(−1/2p): order 3, λ 11 → −3 dB at ~80 Hz @ 860 SPS, steeper roll-off
+    // than the previous (2, 5) at the same cutoff so the central-difference noise gain
+    // above f_s/4 is suppressed without sacrificing impulse fidelity on rock/square-edge hits.
+    public const int WhOrder = 3;
+    public const double WhLambda = 11.0;
 }
