@@ -48,4 +48,12 @@ public static class Parameters
     // above f_s/4 is suppressed without sacrificing impulse fidelity on rock/square-edge hits.
     public const int WhOrder = 3;
     public const double WhLambda = 11.0;
+
+    // Single-sample velocity spike rejection. Real shock motion has finite mass and
+    // acceleration, so a sample whose magnitude dwarfs both immediate neighbours is
+    // non-physical (ADC glitch, broken contact). Multi-sample fast events survive
+    // because each member of the burst is supported by at least one same-burst neighbour.
+    // Trigger: |v[i]| > Factor * max(|v[i-1]|,|v[i+1]|) + Floor  (mm/s)
+    public const double SpikeRejectionFactor = 3.0;
+    public const double SpikeRejectionFloor = 2000.0;
 }

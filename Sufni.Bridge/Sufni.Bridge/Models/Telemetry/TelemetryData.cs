@@ -128,7 +128,7 @@ public class TelemetryData
 
     // Increment when velocity processing parameters change (e.g. smoother lambda).
     // Blobs with a lower version are automatically re-processed from Travel arrays on load.
-    public const int CurrentProcessingVersion = 14;
+    public const int CurrentProcessingVersion = 15;
 
     #region Public properties
 
@@ -359,7 +359,27 @@ public class TelemetryData
             v[n - 2] = (travel[n - 1] - travel[n - 3]) * sampleRate / 2.0;
         v[n - 1] = (travel[n - 1] - travel[n - 2]) * sampleRate;
 
+        RejectSingleSampleSpikes(v);
         return v;
+    }
+
+    // Replace isolated 1-sample velocity outliers with the linear mean of their neighbours.
+    // A real shock motion cannot change magnitude by orders of magnitude within a single
+    // sample, so a center sample that exceeds k·max(|v[i-1]|,|v[i+1]|) + floor is noise.
+    // Multi-sample fast events survive because each burst sample finds support in a peer.
+    private static void RejectSingleSampleSpikes(double[] v)
+    {
+        if (v.Length < 3) return;
+        var k = Parameters.SpikeRejectionFactor;
+        var floor = Parameters.SpikeRejectionFloor;
+        for (var i = 1; i < v.Length - 1; i++)
+        {
+            var prev = v[i - 1];
+            var next = v[i + 1];
+            var neighborMax = Math.Max(Math.Abs(prev), Math.Abs(next));
+            if (Math.Abs(v[i]) > k * neighborMax + floor)
+                v[i] = 0.5 * (prev + next);
+        }
     }
 
     private static (double[], int[]) DigitizeVelocity(double[] v, double step)
