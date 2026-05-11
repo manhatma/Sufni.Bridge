@@ -26,8 +26,9 @@ public class AccelerationTimeCroppedPlot(Plot plot) : TelemetryPlot(plot)
 
         // Velocity-tuned WH (order 3, λ=11) leaves enough 30–93 Hz residue that a naive
         // 2nd differentiation produces unphysical g-peaks. Pre-smooth velocity with a
-        // stronger WH (cutoff ≈43 Hz @ 860 SPS) before the central difference. Acts only
-        // on the acceleration display; Velocity, Strokes, histograms are unaffected.
+        // stronger WH (cutoff ≈29 Hz @ 860 SPS, just below mechanical bandwidth) before
+        // the central difference. Acts only on the acceleration display; Velocity, Strokes
+        // and histograms are unaffected.
         var accelSmoother = new WhittakerHendersonSmoother(Parameters.WhAccelOrder, Parameters.WhAccelLambda);
 
         double[] ToAcceleration(double[] v)

@@ -24,14 +24,20 @@ public class TravelTimeCroppedPlot(Plot plot, SuspensionType type, bool isCroppe
         var period = 1.0 / sampleRate;
         var color = type == SuspensionType.Front ? FrontColor : RearColor;
 
-        var sig = Plot.Add.Signal(side.Travel, period);
+        // Display the WH-smoothed travel (same parameters as the velocity pipeline) so the
+        // curve matches what differentiation actually sees. The raw, LSB-quantised signal
+        // remains visible in the crop dialog (TravelTimeHistoryPlot) for sensor diagnostics.
+        var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambda);
+        var smoothed = smoother.Smooth(side.Travel);
+
+        var sig = Plot.Add.Signal(smoothed, period);
         sig.Color = color;
         sig.LineWidth = 1;
-        var maxDuration = side.Travel.Length * period;
+        var maxDuration = smoothed.Length * period;
 
         double actualMax = 0;
-        for (int i = 0; i < side.Travel.Length; i++)
-            if (side.Travel[i] > actualMax) actualMax = side.Travel[i];
+        for (int i = 0; i < smoothed.Length; i++)
+            if (smoothed[i] > actualMax) actualMax = smoothed[i];
 
         var bottom = actualMax > 0 ? actualMax * 1.05 : 1.0;
         var top    = 0.0;

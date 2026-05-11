@@ -49,21 +49,34 @@ public static class Parameters
     public const int WhOrder = 3;
     public const double WhLambda = 11.0;
 
-    // Single-sample velocity spike rejection. Real shock motion has finite mass and
-    // acceleration, so a sample whose magnitude dwarfs both immediate neighbours is
-    // non-physical (ADC glitch, broken contact). Multi-sample fast events survive
-    // because each member of the burst is supported by at least one same-burst neighbour.
-    // Trigger: |v[i]| > Factor * max(|v[i-1]|,|v[i+1]|) + Floor  (mm/s)
-    public const double SpikeRejectionFactor = 3.0;
-    public const double SpikeRejectionFloor = 2000.0;
+    // Single-sample velocity spike rejection — deviation-from-linear-interpolation test.
+    // The Taylor expansion of a smooth signal f(t) gives
+    //   |f[i] − (f[i-1]+f[i+1])/2|  ≈  ½·dt²·|f''(t)|
+    // Since the filter operates on the VELOCITY array, f''(t) is d²v/dt² = jerk (rate
+    // of change of acceleration), not acceleration itself. The test
+    //   |v[i] − (v[i-1]+v[i+1])/2|  >  ½·dt²·SpikeJerkLimit
+    // therefore reads "implied instantaneous jerk exceeds the physical bound", and the
+    // local velocity gradient drops out of the Taylor expansion so legitimate fast
+    // transitions (steep rising/falling edges of real impacts) pass without any heuristic
+    // span-tolerance term. The dt² scaling makes the filter sample-rate invariant.
+    //
+    // Raw-signal verification (SST file 00121, peak event at t=46.47 s) showed real
+    // multi-sample compression peaks producing 5-tap-CD wheel velocities of ~14 m/s with
+    // a per-sample deviation of ~1440 mm/s around the peak. SpikeJerkLimit = 2·10⁹
+    // (floor 1353 mm/s @ 860 SPS) was therefore borderline-clipping real impact peaks.
+    // 5·10⁹ mm/s³ (floor 3382 mm/s @ 860 SPS) sits ~2× above the strongest observed real
+    // deviation and still catches isolated 1-sample ADC glitches (implied jerks orders
+    // of magnitude higher than physical mechanics).
+    public const double SpikeJerkLimit = 5.0e9;     // mm/s³ ≈ 510 000 g/s
 
     // Whittaker-Henderson smoother used as a pre-filter for the acceleration plot.
     // Acceleration is the second derivative of travel; its noise gain ∝ ω². The
-    // velocity-tuned WH (order 3, λ=11) leaves 30–93 Hz content that, when differentiated
-    // a second time, produces unphysical g-peaks. A stronger pre-smoothing of velocity
-    // shifts the effective cutoff down to ≈43 Hz @ 860 SPS — still above the suspension's
-    // mechanical bandwidth (~30–40 Hz), but enough to bring acceleration noise gain
-    // back into a physically plausible range.
+    // velocity-tuned WH (order 3, λ=11) leaves enough 30–93 Hz content that, when
+    // differentiated a second time, produces unphysical g-peaks (~95 g rear in active
+    // riding). Pre-smoothing the velocity with this stronger WH (cutoff ≈29 Hz @ 860 SPS)
+    // places the effective bandwidth just below the suspension's mechanical response
+    // (~30–40 Hz) — preserves real impact peaks (10–25 Hz fundamental) while suppressing
+    // residual differentiation noise.
     public const int WhAccelOrder = 3;
-    public const double WhAccelLambda = 1000.0;
+    public const double WhAccelLambda = 10000.0;
 }

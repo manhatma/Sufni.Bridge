@@ -128,7 +128,7 @@ public class TelemetryData
 
     // Increment when velocity processing parameters change (e.g. smoother lambda).
     // Blobs with a lower version are automatically re-processed from Travel arrays on load.
-    public const int CurrentProcessingVersion = 15;
+    public const int CurrentProcessingVersion = 19;
 
     #region Public properties
 
@@ -359,26 +359,27 @@ public class TelemetryData
             v[n - 2] = (travel[n - 1] - travel[n - 3]) * sampleRate / 2.0;
         v[n - 1] = (travel[n - 1] - travel[n - 2]) * sampleRate;
 
-        RejectSingleSampleSpikes(v);
+        RejectSingleSampleSpikes(v, sampleRate);
         return v;
     }
 
-    // Replace isolated 1-sample velocity outliers with the linear mean of their neighbours.
-    // A real shock motion cannot change magnitude by orders of magnitude within a single
-    // sample, so a center sample that exceeds k·max(|v[i-1]|,|v[i+1]|) + floor is noise.
-    // Multi-sample fast events survive because each burst sample finds support in a peer.
-    private static void RejectSingleSampleSpikes(double[] v)
+    // Reject isolated 1-sample velocity outliers. Taylor expansion of a smooth signal v(t):
+    //   v[i] − ½(v[i-1]+v[i+1])  =  −½·dt²·v''(t) + O(dt⁴)
+    // For the velocity signal v(t), v''(t) is d²v/dt² = jerk (NOT acceleration — that
+    // would be the case for the position signal). So the deviation equals ½·dt²·|jerk|,
+    // and exceeding ½·dt²·SpikeJerkLimit means the implied per-sample jerk is non-physical.
+    // The local velocity gradient drops out of the Taylor expansion, so legitimate fast
+    // transitions pass naturally without any heuristic span-tolerance term.
+    private static void RejectSingleSampleSpikes(double[] v, int sampleRate)
     {
         if (v.Length < 3) return;
-        var k = Parameters.SpikeRejectionFactor;
-        var floor = Parameters.SpikeRejectionFloor;
+        var dt = 1.0 / sampleRate;
+        var floor = 0.5 * Parameters.SpikeJerkLimit * dt * dt;
         for (var i = 1; i < v.Length - 1; i++)
         {
-            var prev = v[i - 1];
-            var next = v[i + 1];
-            var neighborMax = Math.Max(Math.Abs(prev), Math.Abs(next));
-            if (Math.Abs(v[i]) > k * neighborMax + floor)
-                v[i] = 0.5 * (prev + next);
+            var expected = 0.5 * (v[i - 1] + v[i + 1]);
+            if (Math.Abs(v[i] - expected) > floor)
+                v[i] = expected;
         }
     }
 
