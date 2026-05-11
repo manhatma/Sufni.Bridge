@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 161;
+    private const int CurrentPlotVersion = 162;
 
     // Limits concurrent plot generation tasks to reduce peak memory on iOS.
     private static readonly SemaphoreSlim s_plotSemaphore = new(3, 3);
@@ -669,14 +669,14 @@ public partial class SessionViewModel : ItemViewModelBase
     private sealed record SuspensionSummaryStats(
         double MaxTravel,
         double AvgTravel,
-        double P95Travel,
+        double P98Travel,
         int Bottomouts,
         double AvgCompression,
         double MaxCompression,
-        double Comp95th,
+        double Comp98th,
         double AvgRebound,
         double MaxRebound,
-        double Reb95th);
+        double Reb98th);
 
     private sealed record CachedSummaryData(
         string[][] RunDataRows,
@@ -783,14 +783,14 @@ public partial class SessionViewModel : ItemViewModelBase
         return new SuspensionSummaryStats(
             travelStats.Max,
             travelStats.Average,
-            detailedTravel.P95,
+            detailedTravel.P98,
             travelStats.Bottomouts,
             velocityStats.AverageCompression,
             velocityStats.MaxCompression,
-            compressionVels.Count > 0 ? compressionVels.Percentile(95) : 0.0,
+            compressionVels.Count > 0 ? compressionVels.Percentile(98) : 0.0,
             velocityStats.AverageRebound,
             velocityStats.MaxRebound,
-            reboundVels.Count > 0 ? -reboundVels.Percentile(95) : 0.0);
+            reboundVels.Count > 0 ? -reboundVels.Percentile(98) : 0.0);
     }
 
     private static SuspensionSummaryStats? BuildForkStats(TelemetryData telemetryData)
@@ -887,14 +887,14 @@ public partial class SessionViewModel : ItemViewModelBase
         return new SuspensionSummaryStats(
             travelMax,
             travelSum / travelCount,
-            travelValues.Count > 0 ? travelValues.Percentile(95) : 0.0,
+            travelValues.Count > 0 ? travelValues.Percentile(98) : 0.0,
             bottomouts,
             compressionCount > 0 ? compressionSum / compressionCount : 0.0,
             compressionMax,
-            compressionVels.Count > 0 ? compressionVels.Percentile(95) : 0.0,
+            compressionVels.Count > 0 ? compressionVels.Percentile(98) : 0.0,
             reboundCount > 0 ? reboundSum / reboundCount : 0.0,
             reboundMax,
-            reboundVels.Count > 0 ? -reboundVels.Percentile(95) : 0.0);
+            reboundVels.Count > 0 ? -reboundVels.Percentile(98) : 0.0);
     }
 
     private static SuspensionSummaryStats? BuildShockStats(TelemetryData telemetryData)
@@ -1005,14 +1005,14 @@ public partial class SessionViewModel : ItemViewModelBase
         return new SuspensionSummaryStats(
             travelMax,
             travelSum / travelCount,
-            travelValues.Count > 0 ? travelValues.Percentile(95) : 0.0,
+            travelValues.Count > 0 ? travelValues.Percentile(98) : 0.0,
             bottomouts,
             compressionCount > 0 ? compressionSum / compressionCount : 0.0,
             compressionMax,
-            compressionVels.Count > 0 ? compressionVels.Percentile(95) : 0.0,
+            compressionVels.Count > 0 ? compressionVels.Percentile(98) : 0.0,
             reboundCount > 0 ? reboundSum / reboundCount : 0.0,
             reboundMax,
-            reboundVels.Count > 0 ? -reboundVels.Percentile(95) : 0.0);
+            reboundVels.Count > 0 ? -reboundVels.Percentile(98) : 0.0);
     }
 
     private Task<CachedSummaryData> PopulateSummary(TelemetryData telemetryData) =>
@@ -1061,9 +1061,9 @@ public partial class SessionViewModel : ItemViewModelBase
             new SummaryComparisonRow("Pos [AVG]",
                 forkStats is null ? "-" : FormatTravel(forkStats.AvgTravel, telemetryData.Linkage.MaxFrontStroke ?? 0),
                 shockStats is null ? "-" : FormatTravel(shockStats.AvgTravel, telemetryData.Linkage.MaxRearStroke ?? 0)),
-            new SummaryComparisonRow("Pos [95th]",
-                forkStats is null ? "-" : FormatTravel(forkStats.P95Travel, telemetryData.Linkage.MaxFrontStroke ?? 0),
-                shockStats is null ? "-" : FormatTravel(shockStats.P95Travel, telemetryData.Linkage.MaxRearStroke ?? 0)),
+            new SummaryComparisonRow("Pos [98th]",
+                forkStats is null ? "-" : FormatTravel(forkStats.P98Travel, telemetryData.Linkage.MaxFrontStroke ?? 0),
+                shockStats is null ? "-" : FormatTravel(shockStats.P98Travel, telemetryData.Linkage.MaxRearStroke ?? 0)),
             new SummaryComparisonRow("Pos [MAX]",
                 forkStats is null ? "-" : FormatTravel(forkStats.MaxTravel, telemetryData.Linkage.MaxFrontStroke ?? 0),
                 shockStats is null ? "-" : FormatTravel(shockStats.MaxTravel, telemetryData.Linkage.MaxRearStroke ?? 0)),
@@ -1076,12 +1076,12 @@ public partial class SessionViewModel : ItemViewModelBase
             new SummaryComparisonRow("Reb [AVG]",
                 forkStats is null ? "-" : FormatVelocity(forkStats.AvgRebound),
                 shockStats is null ? "-" : FormatVelocity(shockStats.AvgRebound)),
-            new SummaryComparisonRow("Comp [95th]",
-                forkStats is null ? "-" : FormatVelocity(forkStats.Comp95th),
-                shockStats is null ? "-" : FormatVelocity(shockStats.Comp95th)),
-            new SummaryComparisonRow("Reb [95th]",
-                forkStats is null ? "-" : FormatVelocity(forkStats.Reb95th),
-                shockStats is null ? "-" : FormatVelocity(shockStats.Reb95th)),
+            new SummaryComparisonRow("Comp [98th]",
+                forkStats is null ? "-" : FormatVelocity(forkStats.Comp98th),
+                shockStats is null ? "-" : FormatVelocity(shockStats.Comp98th)),
+            new SummaryComparisonRow("Reb [98th]",
+                forkStats is null ? "-" : FormatVelocity(forkStats.Reb98th),
+                shockStats is null ? "-" : FormatVelocity(shockStats.Reb98th)),
             new SummaryComparisonRow("Comp [MAX]",
                 forkStats is null ? "-" : FormatVelocity(forkStats.MaxCompression),
                 shockStats is null ? "-" : FormatVelocity(shockStats.MaxCompression)),
@@ -1095,9 +1095,9 @@ public partial class SessionViewModel : ItemViewModelBase
             new SummaryComparisonRow("Pos [AVG]",
                 frontWheelStats is null ? "-" : FormatTravel(frontWheelStats.AvgTravel, telemetryData.Linkage.MaxFrontTravel),
                 rearWheelStats is null ? "-" : FormatTravel(rearWheelStats.AvgTravel, telemetryData.Linkage.MaxRearTravel)),
-            new SummaryComparisonRow("Pos [95th]",
-                frontWheelStats is null ? "-" : FormatTravel(frontWheelStats.P95Travel, telemetryData.Linkage.MaxFrontTravel),
-                rearWheelStats is null ? "-" : FormatTravel(rearWheelStats.P95Travel, telemetryData.Linkage.MaxRearTravel)),
+            new SummaryComparisonRow("Pos [98th]",
+                frontWheelStats is null ? "-" : FormatTravel(frontWheelStats.P98Travel, telemetryData.Linkage.MaxFrontTravel),
+                rearWheelStats is null ? "-" : FormatTravel(rearWheelStats.P98Travel, telemetryData.Linkage.MaxRearTravel)),
             new SummaryComparisonRow("Pos [MAX]",
                 frontWheelStats is null ? "-" : FormatTravel(frontWheelStats.MaxTravel, telemetryData.Linkage.MaxFrontTravel),
                 rearWheelStats is null ? "-" : FormatTravel(rearWheelStats.MaxTravel, telemetryData.Linkage.MaxRearTravel)),
@@ -1110,12 +1110,12 @@ public partial class SessionViewModel : ItemViewModelBase
             new SummaryComparisonRow("Reb [AVG]",
                 frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.AvgRebound),
                 rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.AvgRebound)),
-            new SummaryComparisonRow("Comp [95th]",
-                frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.Comp95th),
-                rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.Comp95th)),
-            new SummaryComparisonRow("Reb [95th]",
-                frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.Reb95th),
-                rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.Reb95th)),
+            new SummaryComparisonRow("Comp [98th]",
+                frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.Comp98th),
+                rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.Comp98th)),
+            new SummaryComparisonRow("Reb [98th]",
+                frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.Reb98th),
+                rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.Reb98th)),
             new SummaryComparisonRow("Comp [MAX]",
                 frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.MaxCompression),
                 rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.MaxCompression)),

@@ -32,15 +32,15 @@ public class TravelHistogramPlot(Plot plot, SuspensionType type) : TelemetryPlot
             : telemetryData.Linkage.MaxRearTravel;
         var avgPercentage = mx > 0 ? statistics.Average / mx * 100.0 : 0.0;
         var maxPercentage = mx > 0 ? statistics.Max / mx * 100.0 : 0.0;
-        var p95Percentage = mx > 0 ? statistics.P95 / mx * 100.0 : 0.0;
+        var p98Percentage = mx > 0 ? statistics.P98 / mx * 100.0 : 0.0;
 
         Plot.Add.VerticalLine(statistics.Average, 2f, StatColor, LinePattern.Dashed);
         Plot.Add.VerticalLine(statistics.Max, 2f, StatColor, LinePattern.Dashed);
-        Plot.Add.VerticalLine(statistics.P95, 2f, StatColor, LinePattern.Dashed);
+        Plot.Add.VerticalLine(statistics.P98, 2f, StatColor, LinePattern.Dashed);
 
         AddSmallLabel("avg", statistics.Average, yRangeTop * 0.95, -8, 0, Alignment.MiddleRight);
         AddSmallLabel("max", statistics.Max, yRangeTop * 0.95, -8, 0, Alignment.MiddleRight);
-        AddSmallLabel("95th", statistics.P95, yRangeTop * 0.95, -8, 0, Alignment.MiddleRight);
+        AddSmallLabel("98th", statistics.P98, yRangeTop * 0.95, -8, 0, Alignment.MiddleRight);
 
         // Tabular layout with monospace font — use non-breaking spaces (\u00A0) to prevent
         // SVG whitespace normalization from collapsing leading padding spaces
@@ -53,7 +53,7 @@ public class TravelHistogramPlot(Plot plot, SuspensionType type) : TelemetryPlot
         var boLine = $"Bottom\u00A0outs:\u00A0{statistics.Bottomouts}";
         var statsText =
             $"Avg:\u00A0\u00A0{N(statistics.Average)}\u00A0mm\u00A0({N(avgPercentage, 4)}%)\n" +
-            $"95th:\u00A0{N(statistics.P95)}\u00A0mm\u00A0({N(p95Percentage, 4)}%)\n" +
+            $"98th:\u00A0{N(statistics.P98)}\u00A0mm\u00A0({N(p98Percentage, 4)}%)\n" +
             $"Max:\u00A0\u00A0{N(statistics.Max)}\u00A0mm\u00A0({N(maxPercentage, 4)}%)\n" +
             boLine.PadRight(lineWidth, '\u00A0');
 

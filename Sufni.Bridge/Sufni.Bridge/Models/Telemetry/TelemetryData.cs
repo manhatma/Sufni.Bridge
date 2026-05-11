@@ -45,7 +45,7 @@ public record HistogramData(List<double> Bins, List<double> Values);
 public record StackedHistogramData(List<double> Bins, List<double[]> Values);
 
 public record TravelStatistics(double Max, double Average, int Bottomouts);
-public record DetailedTravelStatistics(double Max, double Average, double P95, int Bottomouts);
+public record DetailedTravelStatistics(double Max, double Average, double P98, int Bottomouts);
 public record DetailedTravelHistogramData(
     List<double> TravelMidsMm,
     List<double> TravelMidsPercentage,
@@ -99,8 +99,8 @@ public record BalanceMetrics(
     double? FrontSagPct,
     double? RearSagPct,
     double? SagDifferencePp,
-    double? FrontP95Pct,
-    double? RearP95Pct,
+    double? FrontP98Pct,
+    double? RearP98Pct,
     int? FrontBottomouts,
     int? RearBottomouts,
     double? CompressionVelocityRatio,
@@ -1191,9 +1191,9 @@ public class TelemetryData
 
         var average = travelValues.Average();
         var max = travelValues.Max();
-        var p95 = travelValues.Percentile(95);
+        var p98 = travelValues.Percentile(98);
 
-        return new DetailedTravelStatistics(max, average, p95, bottomouts);
+        return new DetailedTravelStatistics(max, average, p98, bottomouts);
     }
 
     public VelocityStatistics CalculateVelocityStatistics(SuspensionType type)
@@ -1707,7 +1707,7 @@ public class TelemetryData
     public BalanceMetrics CalculateBalanceMetrics(Discipline? discipline = null)
     {
         double? fSag = null, rSag = null, sagDiff = null;
-        double? fP95Pct = null, rP95Pct = null;
+        double? fP98Pct = null, rP98Pct = null;
         int? fBO = null, rBO = null;
         double? compRatio = null, rebRatio = null;
         double? compMsd = null, rebMsd = null;
@@ -1726,7 +1726,7 @@ public class TelemetryData
             if (maxF > 0)
             {
                 fSag = ts.Average / maxF * 100.0;
-                fP95Pct = ts.P95 / maxF * 100.0;
+                fP98Pct = ts.P98 / maxF * 100.0;
             }
             fBO = ts.Bottomouts;
         }
@@ -1736,7 +1736,7 @@ public class TelemetryData
             if (maxR > 0)
             {
                 rSag = ts.Average / maxR * 100.0;
-                rP95Pct = ts.P95 / maxR * 100.0;
+                rP98Pct = ts.P98 / maxR * 100.0;
             }
             rBO = ts.Bottomouts;
         }
@@ -1839,7 +1839,7 @@ public class TelemetryData
 
         return new BalanceMetrics(
             fSag, rSag, sagDiff,
-            fP95Pct, rP95Pct,
+            fP98Pct, rP98Pct,
             fBO, rBO,
             compRatio, rebRatio,
             compMsd, rebMsd,

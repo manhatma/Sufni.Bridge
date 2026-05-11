@@ -20,13 +20,13 @@ public class TravelHistogramComparisonPlot(Plot plot) : TelemetryPlot(plot)
         if (mx <= 0) return;
 
         var avgPct = stats.Average / mx * 100.0;
-        var p95Pct = stats.P95 / mx * 100.0;
+        var p98Pct = stats.P98 / mx * 100.0;
         var maxPct = stats.Max / mx * 100.0;
 
         var color = type == SuspensionType.Front ? FrontColor : RearColor;
 
         Plot.Add.VerticalLine(avgPct, 2f, color, LinePattern.Dashed);
-        Plot.Add.VerticalLine(p95Pct, 2f, color, LinePattern.Dashed);
+        Plot.Add.VerticalLine(p98Pct, 2f, color, LinePattern.Dashed);
         Plot.Add.VerticalLine(maxPct, 2f, color, LinePattern.Dashed);
 
         // Front labels: left of line (UpperRight alignment = text ends at the x position)
@@ -49,7 +49,7 @@ public class TravelHistogramComparisonPlot(Plot plot) : TelemetryPlot(plot)
         }
 
         AddLabel("avg", avgPct);
-        AddLabel("95th", p95Pct);
+        AddLabel("98th", p98Pct);
         AddLabel("max", maxPct);
     }
 

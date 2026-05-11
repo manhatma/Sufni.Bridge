@@ -18,23 +18,23 @@ public class PositionDistributionPlot(Plot plot, SuspensionType type) : Telemetr
             : telemetryData.Linkage.MaxRearTravel;
         var avgPercentage = mx > 0 ? statistics.Average / mx * 100.0 : 0.0;
         var maxPercentage = mx > 0 ? statistics.Max / mx * 100.0 : 0.0;
-        var p95Percentage = mx > 0 ? statistics.P95 / mx * 100.0 : 0.0;
+        var p98Percentage = mx > 0 ? statistics.P98 / mx * 100.0 : 0.0;
 
         Plot.Add.VerticalLine(statistics.Average, 2f, Color.FromHex("#FFD700"), LinePattern.Dashed);
         Plot.Add.VerticalLine(statistics.Max, 2f, Color.FromHex("#FFD700"), LinePattern.Dashed);
-        Plot.Add.VerticalLine(statistics.P95, 2f, Color.FromHex("#FFD700"), LinePattern.Dashed);
+        Plot.Add.VerticalLine(statistics.P98, 2f, Color.FromHex("#FFD700"), LinePattern.Dashed);
 
         AddLabel("avg", statistics.Average, yRangeTop * 0.95, -8, 0, Alignment.MiddleRight);
         AddLabel("max", statistics.Max, yRangeTop * 0.95, -8, 0, Alignment.MiddleRight);
-        AddLabel("95th", statistics.P95, yRangeTop * 0.95, -8, 0, Alignment.MiddleRight);
+        AddLabel("98th", statistics.P98, yRangeTop * 0.95, -8, 0, Alignment.MiddleRight);
 
         var avgString = $"Avg:  {statistics.Average:F1} mm ({avgPercentage:F1}%)";
-        var p95String = $"95th: {statistics.P95:F1} mm ({p95Percentage:F1}%)";
+        var p98String = $"98th: {statistics.P98:F1} mm ({p98Percentage:F1}%)";
         var maxString = $"Max:  {statistics.Max:F1} mm ({maxPercentage:F1}%)";
         var boString = $"#BO:  {statistics.Bottomouts}";
 
         var statsLabel = Plot.Add.Text(
-            $"{avgString}\n\n{p95String}\n\n{maxString}\n\n{boString}",
+            $"{avgString}\n\n{p98String}\n\n{maxString}\n\n{boString}",
             mx,
             yRangeTop);
         statsLabel.LabelFontColor = Color.FromHex("#FFD700");
