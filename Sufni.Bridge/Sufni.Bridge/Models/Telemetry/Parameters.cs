@@ -56,4 +56,14 @@ public static class Parameters
     // Trigger: |v[i]| > Factor * max(|v[i-1]|,|v[i+1]|) + Floor  (mm/s)
     public const double SpikeRejectionFactor = 3.0;
     public const double SpikeRejectionFloor = 2000.0;
+
+    // Whittaker-Henderson smoother used as a pre-filter for the acceleration plot.
+    // Acceleration is the second derivative of travel; its noise gain ∝ ω². The
+    // velocity-tuned WH (order 3, λ=11) leaves 30–93 Hz content that, when differentiated
+    // a second time, produces unphysical g-peaks. A stronger pre-smoothing of velocity
+    // shifts the effective cutoff down to ≈43 Hz @ 860 SPS — still above the suspension's
+    // mechanical bandwidth (~30–40 Hz), but enough to bring acceleration noise gain
+    // back into a physically plausible range.
+    public const int WhAccelOrder = 3;
+    public const double WhAccelLambda = 1000.0;
 }

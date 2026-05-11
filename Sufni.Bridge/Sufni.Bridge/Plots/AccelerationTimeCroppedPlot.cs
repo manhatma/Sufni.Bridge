@@ -24,15 +24,22 @@ public class AccelerationTimeCroppedPlot(Plot plot) : TelemetryPlot(plot)
         double aMax = double.NegativeInfinity;
         double aMin = double.PositiveInfinity;
 
+        // Velocity-tuned WH (order 3, λ=11) leaves enough 30–93 Hz residue that a naive
+        // 2nd differentiation produces unphysical g-peaks. Pre-smooth velocity with a
+        // stronger WH (cutoff ≈43 Hz @ 860 SPS) before the central difference. Acts only
+        // on the acceleration display; Velocity, Strokes, histograms are unaffected.
+        var accelSmoother = new WhittakerHendersonSmoother(Parameters.WhAccelOrder, Parameters.WhAccelLambda);
+
         double[] ToAcceleration(double[] v)
         {
             var n = v.Length;
             var a = new double[n];
             if (n < 2) return a;
-            a[0] = (v[1] - v[0]) * sampleRate / GravityMmPerS2;
+            var vs = accelSmoother.Smooth(v);
+            a[0] = (vs[1] - vs[0]) * sampleRate / GravityMmPerS2;
             for (int i = 1; i < n - 1; i++)
-                a[i] = (v[i + 1] - v[i - 1]) * sampleRate / 2.0 / GravityMmPerS2;
-            a[n - 1] = (v[n - 1] - v[n - 2]) * sampleRate / GravityMmPerS2;
+                a[i] = (vs[i + 1] - vs[i - 1]) * sampleRate / 2.0 / GravityMmPerS2;
+            a[n - 1] = (vs[n - 1] - vs[n - 2]) * sampleRate / GravityMmPerS2;
             return a;
         }
 
