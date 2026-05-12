@@ -25,7 +25,12 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 162;
+    private const int CurrentPlotVersion = 171;
+
+    // Approximate rendered height of the VelocityBandView control (margin + title text +
+    // 44 px band grid). Used to size the low-speed velocity histograms so the
+    // histogram+bands pair matches a full normal histogram.
+    private const int VelocityBandViewHeight = 70;
 
     // Limits concurrent plot generation tasks to reduce peak memory on iOS.
     private static readonly SemaphoreSlim s_plotSemaphore = new(3, 3);
@@ -185,7 +190,8 @@ public partial class SessionViewModel : ItemViewModelBase
                 var rearTravelCropTask  = Task.Run(() => SvgToSource(cache.RearTravelTimeCropped));
                 var frontVelCropTask    = Task.Run(() => SvgToSource(cache.FrontVelocityTimeCropped));
                 var rearVelCropTask     = Task.Run(() => SvgToSource(cache.RearVelocityTimeCropped));
-                var accelCropTask       = Task.Run(() => SvgToSource(cache.AccelerationTimeCropped));
+                var frontAccelCropTask  = Task.Run(() => SvgToSource(cache.FrontAccelerationTimeCropped));
+                var rearAccelCropTask   = Task.Run(() => SvgToSource(cache.RearAccelerationTimeCropped));
                 var combinedFftTask     = Task.Run(() => SvgToSource(cache.CombinedTravelFft));
                 var combinedFftHighTask = Task.Run(() => SvgToSource(cache.CombinedTravelFftHigh));
                 var combinedVelFftTask  = Task.Run(() => SvgToSource(cache.CombinedVelocityFft));
@@ -193,7 +199,8 @@ public partial class SessionViewModel : ItemViewModelBase
                 await Task.WhenAll(frontVelHistTask, frontLsVelHistTask, rearVelHistTask, rearLsVelHistTask,
                     combBalTask, compBalTask, rebBalTask,
                     velDistCompTask, posVelCompTask, frontPosVelTask, rearPosVelTask,
-                    frontTravelCropTask, rearTravelCropTask, frontVelCropTask, rearVelCropTask, accelCropTask,
+                    frontTravelCropTask, rearTravelCropTask, frontVelCropTask, rearVelCropTask,
+                    frontAccelCropTask, rearAccelCropTask,
                     combinedFftTask, combinedFftHighTask);
 
                 var frontVelHistSrc   = frontVelHistTask.Result;
@@ -257,10 +264,11 @@ public partial class SessionViewModel : ItemViewModelBase
                     SpringPage.RearTravelTimeCropped          = SourceToImage(rearTravelCropTask.Result);
                     DamperPage.FrontVelocityTimeCropped       = SourceToImage(frontVelCropTask.Result);
                     DamperPage.RearVelocityTimeCropped        = SourceToImage(rearVelCropTask.Result);
-                    MiscPage.AccelerationTimeCropped          = SourceToImage(accelCropTask.Result);
                     MiscPage.PositionVelocityComparison       = SourceToImage(posVelCompSrc);
                     MiscPage.FrontPositionVelocity            = SourceToImage(frontPosVelSrc);
                     MiscPage.RearPositionVelocity             = SourceToImage(rearPosVelSrc);
+                    MiscPage.FrontAccelerationTimeCropped     = SourceToImage(frontAccelCropTask.Result);
+                    MiscPage.RearAccelerationTimeCropped      = SourceToImage(rearAccelCropTask.Result);
                 });
             });
         }
@@ -402,7 +410,10 @@ public partial class SessionViewModel : ItemViewModelBase
             {
                 var flsvh = new LowSpeedVelocityHistogramPlot(new Plot(), SuspensionType.Front);
                 flsvh.LoadTelemetryData(telemetryData);
-                sessionCache.FrontLowSpeedVelocityHistogram = flsvh.Plot.GetSvgXml(width, height);
+                // The low-speed histogram is stacked on top of a fixed-height VelocityBandView
+                // (zone breakdown). Subtract that band-view height so that one (histogram +
+                // bands) pair fills the same vertical space as one full normal histogram.
+                sessionCache.FrontLowSpeedVelocityHistogram = flsvh.Plot.GetSvgXml(width, height - VelocityBandViewHeight);
                 var frontLsVelHistSrc = SvgToSource(sessionCache.FrontLowSpeedVelocityHistogram);
                 Dispatcher.UIThread.Post(() => { DamperPage.FrontLowSpeedVelocityHistogram = SourceToImage(frontLsVelHistSrc); });
             }));
@@ -451,7 +462,8 @@ public partial class SessionViewModel : ItemViewModelBase
             {
                 var rlsvh = new LowSpeedVelocityHistogramPlot(new Plot(), SuspensionType.Rear);
                 rlsvh.LoadTelemetryData(telemetryData);
-                sessionCache.RearLowSpeedVelocityHistogram = rlsvh.Plot.GetSvgXml(width, height);
+                // See Front counterpart for the height-minus-band-view rationale.
+                sessionCache.RearLowSpeedVelocityHistogram = rlsvh.Plot.GetSvgXml(width, height - VelocityBandViewHeight);
                 var rearLsVelHistSrc = SvgToSource(sessionCache.RearLowSpeedVelocityHistogram);
                 Dispatcher.UIThread.Post(() => { DamperPage.RearLowSpeedVelocityHistogram = SourceToImage(rearLsVelHistSrc); });
             }));
@@ -603,14 +615,29 @@ public partial class SessionViewModel : ItemViewModelBase
             }));
         }
 
-        tasks.Add(ThrottledPlotTask(() =>
+        if (telemetryData.Front.Present)
         {
-            var atc = new AccelerationTimeCroppedPlot(new Plot());
-            atc.LoadTelemetryData(telemetryData);
-            sessionCache.AccelerationTimeCropped = atc.Plot.GetSvgXml(width, height);
-            var accelCropSrc = SvgToSource(sessionCache.AccelerationTimeCropped);
-            Dispatcher.UIThread.Post(() => { MiscPage.AccelerationTimeCropped = SourceToImage(accelCropSrc); });
-        }));
+            tasks.Add(ThrottledPlotTask(() =>
+            {
+                var atc = new AccelerationTimeCroppedPlot(new Plot(), SuspensionType.Front);
+                atc.LoadTelemetryData(telemetryData);
+                sessionCache.FrontAccelerationTimeCropped = atc.Plot.GetSvgXml(width, height);
+                var src = SvgToSource(sessionCache.FrontAccelerationTimeCropped);
+                Dispatcher.UIThread.Post(() => { MiscPage.FrontAccelerationTimeCropped = SourceToImage(src); });
+            }));
+        }
+
+        if (telemetryData.Rear.Present)
+        {
+            tasks.Add(ThrottledPlotTask(() =>
+            {
+                var atc = new AccelerationTimeCroppedPlot(new Plot(), SuspensionType.Rear);
+                atc.LoadTelemetryData(telemetryData);
+                sessionCache.RearAccelerationTimeCropped = atc.Plot.GetSvgXml(width, height);
+                var src = SvgToSource(sessionCache.RearAccelerationTimeCropped);
+                Dispatcher.UIThread.Post(() => { MiscPage.RearAccelerationTimeCropped = SourceToImage(src); });
+            }));
+        }
 
         tasks.Add(ThrottledPlotTask(() =>
         {
@@ -1677,10 +1704,11 @@ public partial class SessionViewModel : ItemViewModelBase
             svgEntries.Add(cache.RearTravelTimeCropped);
             svgEntries.Add(cache.FrontVelocityTimeCropped);
             svgEntries.Add(cache.RearVelocityTimeCropped);
-            svgEntries.Add(cache.AccelerationTimeCropped);
             svgEntries.Add(cache.PositionVelocityComparison);
             svgEntries.Add(cache.FrontPositionVelocity);
             svgEntries.Add(cache.RearPositionVelocity);
+            svgEntries.Add(cache.FrontAccelerationTimeCropped);
+            svgEntries.Add(cache.RearAccelerationTimeCropped);
 
             var validSvgs = svgEntries.Where(s => s is not null).Cast<string>().ToList();
             if (validSvgs.Count == 0)

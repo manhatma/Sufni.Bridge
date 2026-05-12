@@ -21,9 +21,14 @@
             <Image IsVisible="{Binding VelocityDistributionComparison, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding VelocityDistributionComparison}" />
 
             <!--  Front velocity histogram  -->
-            <StackPanel IsVisible="{Binding FrontVelocityHistogram, Converter={x:Static ObjectConverters.IsNotNull}}">
-                <Image Source="{Binding FrontVelocityHistogram}" />
-                <Image IsVisible="{Binding FrontLowSpeedVelocityHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontLowSpeedVelocityHistogram}" />
+            <Image IsVisible="{Binding FrontVelocityHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontVelocityHistogram}" />
+
+            <!--  Rear velocity histogram  -->
+            <Image IsVisible="{Binding RearVelocityHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearVelocityHistogram}" />
+
+            <!--  Front low-speed velocity histogram with zone breakdown  -->
+            <StackPanel IsVisible="{Binding FrontLowSpeedVelocityHistogram, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <Image Source="{Binding FrontLowSpeedVelocityHistogram}" />
                 <plots:VelocityBandView
                     Margin="50,0,20,0"
                     Title="Front Zone %"
@@ -33,10 +38,9 @@
                     LsrPercentage="{Binding FrontLsrPercentage}" />
             </StackPanel>
 
-            <!--  Rear velocity histogram  -->
-            <StackPanel IsVisible="{Binding RearVelocityHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Margin="0,24,0,0">
-                <Image Source="{Binding RearVelocityHistogram}" />
-                <Image IsVisible="{Binding RearLowSpeedVelocityHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearLowSpeedVelocityHistogram}" />
+            <!--  Rear low-speed velocity histogram with zone breakdown  -->
+            <StackPanel IsVisible="{Binding RearLowSpeedVelocityHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Margin="0,16,0,0">
+                <Image Source="{Binding RearLowSpeedVelocityHistogram}" />
                 <plots:VelocityBandView
                     Margin="50,0,20,0"
                     Title="Rear Zone %"
@@ -46,7 +50,7 @@
                     LsrPercentage="{Binding RearLsrPercentage}" />
             </StackPanel>
 
-            <Image IsVisible="{Binding FrontVelocityTimeCropped, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontVelocityTimeCropped}" />
+            <Image IsVisible="{Binding FrontVelocityTimeCropped, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontVelocityTimeCropped}" Margin="0,24,0,0" />
             <Image IsVisible="{Binding RearVelocityTimeCropped, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearVelocityTimeCropped}" />
 
         </StackPanel>

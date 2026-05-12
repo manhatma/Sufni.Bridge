@@ -18,7 +18,7 @@ public class PositionVelocityPlot(Plot plot, SuspensionType type) : TelemetryPlo
         var useDamperTravel = type == SuspensionType.Rear;
         var useForkTravel = type == SuspensionType.Front;
         Plot.Axes.Bottom.Label.Text = useDamperTravel ? "Damper travel (mm)" : "Fork travel (mm)";
-        Plot.Axes.Left.Label.Text = "Velocity (mm/s)";
+        Plot.Axes.Left.Label.Text = useDamperTravel ? "Damper velocity (mm/s)" : "Fork velocity (mm/s)";
 
         var data = useDamperTravel
             ? telemetryData.CalculateDamperPositionVelocityData()

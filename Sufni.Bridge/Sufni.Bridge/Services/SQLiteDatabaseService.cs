@@ -227,7 +227,8 @@ public class SqLiteDatabaseService : IDatabaseService
         await AddColumnIfMissing("travel_time_history");
         await AddColumnIfMissing("travel_time_cropped");
         await AddColumnIfMissing("velocity_time_cropped");
-        await AddColumnIfMissing("acceleration_time_cropped");
+        await AddColumnIfMissing("front_acceleration_time_cropped");
+        await AddColumnIfMissing("rear_acceleration_time_cropped");
         await AddColumnIfMissing("front_travel_time_cropped");
         await AddColumnIfMissing("rear_travel_time_cropped");
         await AddColumnIfMissing("front_velocity_time_cropped");

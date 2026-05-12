@@ -1335,8 +1335,14 @@ public class TelemetryData
     public PositionVelocityData CalculateDamperPositionVelocityData()
     {
         var arrayLen = Math.Min(Rear.Travel.Length, Rear.Velocity.Length);
+        if (Rear.ShockTravel is not null)
+            arrayLen = Math.Min(arrayLen, Rear.ShockTravel.Length);
         var travel = new List<double>();
         var velocity = new List<double>();
+
+        // Local leverage = dWheel/dShock — converts stored wheel velocity into the
+        // shock/damper-domain velocity that matches the X axis.
+        var dPolynomial = Linkage.Polynomial.Differentiate();
 
         var allStrokes = Rear.Strokes.Compressions
             .Concat(Rear.Strokes.Rebounds)
@@ -1354,8 +1360,10 @@ public class TelemetryData
             }
             for (var i = s.Start; i <= s.End; i++)
             {
-                travel.Add(Linkage.WheelToDamperTravel(Rear.Travel[i]));
-                velocity.Add(Rear.Velocity[i]);
+                var shockPos = Rear.ShockTravel?[i] ?? Linkage.WheelToDamperTravel(Rear.Travel[i]);
+                var leverage = dPolynomial.Evaluate(shockPos);
+                travel.Add(shockPos);
+                velocity.Add(leverage > 0 ? Rear.Velocity[i] / leverage : 0);
             }
             lastEnd = s.End;
         }
@@ -1384,10 +1392,13 @@ public class TelemetryData
                 travel.Add(double.NaN);
                 velocity.Add(double.NaN);
             }
+            // Fork-domain velocity = wheel-domain / sin(HA), same constant scale as the
+            // travel conversion. Stored Front.Travel is travel·sin(HA) and Front.Velocity
+            // is its derivative, so both undo by the same factor.
             for (var i = s.Start; i <= s.End; i++)
             {
                 travel.Add(sinHeadAngle > 0 ? Front.Travel[i] / sinHeadAngle : 0);
-                velocity.Add(Front.Velocity[i]);
+                velocity.Add(sinHeadAngle > 0 ? Front.Velocity[i] / sinHeadAngle : 0);
             }
             lastEnd = s.End;
         }
