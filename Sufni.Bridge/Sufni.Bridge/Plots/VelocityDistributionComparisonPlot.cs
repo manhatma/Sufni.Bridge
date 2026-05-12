@@ -29,10 +29,10 @@ public class VelocityDistributionComparisonPlot(Plot plot) : TelemetryPlot(plot)
             var rv = sus.Strokes.Rebounds
                 .SelectMany(x => sus.Velocity[x.Start..(x.End + 1)].Select(Math.Abs)).ToList();
             return (s.AverageCompression,
-                    cv.Count > 0 ? cv.Percentile(98) : 0.0,
+                    cv.Count > 0 ? cv.Percentile(99) : 0.0,
                     s.MaxCompression,
                     s.AverageRebound,
-                    rv.Count > 0 ? -rv.Percentile(98) : 0.0,
+                    rv.Count > 0 ? -rv.Percentile(99) : 0.0,
                     s.MaxRebound);
         }
 
@@ -46,8 +46,8 @@ public class VelocityDistributionComparisonPlot(Plot plot) : TelemetryPlot(plot)
                 $"mm/s\u00A0\u00A0\u00A0\u00A0\u00A0Front\u00A0\u00A0\u00A0\u00A0\u00A0Rear\n" +
                 $"C\u00A0avg:{N(fac)}\u00A0{N(rac)}\n" +
                 $"R\u00A0avg:{N(far)}\u00A0{N(rar)}\n" +
-                $"C\u00A098th:{N(fp5c)}\u00A0{N(rp5c)}\n" +
-                $"R\u00A098th:{N(fp5r)}\u00A0{N(rp5r)}\n" +
+                $"C\u00A099th:{N(fp5c)}\u00A0{N(rp5c)}\n" +
+                $"R\u00A099th:{N(fp5r)}\u00A0{N(rp5r)}\n" +
                 $"C\u00A0max:{N(fmc)}\u00A0{N(rmc)}\n" +
                 $"R\u00A0max:{N(fmr)}\u00A0{N(rmr)}";
         }
@@ -59,8 +59,8 @@ public class VelocityDistributionComparisonPlot(Plot plot) : TelemetryPlot(plot)
                 $"mm/s\n" +
                 $"C\u00A0avg:{N(ac)}\n" +
                 $"R\u00A0avg:{N(ar)}\n" +
-                $"C\u00A098th:{N(p5c)}\n" +
-                $"R\u00A098th:{N(p5r)}\n" +
+                $"C\u00A099th:{N(p5c)}\n" +
+                $"R\u00A099th:{N(p5r)}\n" +
                 $"C\u00A0max:{N(mc)}\n" +
                 $"R\u00A0max:{N(mr)}";
         }
