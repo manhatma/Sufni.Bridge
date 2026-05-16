@@ -30,13 +30,14 @@ public class Linkage : Synchronizable
     // Uninitialized non-nullable property warnings are suppressed with null! initializer.
     public Linkage() { }
 
-    public Linkage(Guid id, string name, double headAngle, double? maxFrontStroke, double? maxRearStroke, string? rawData)
+    public Linkage(Guid id, string name, double headAngle, double? maxFrontStroke, double? maxRearStroke, double? wheelbase, string? rawData)
     {
         Id = id;
         Name = name;
         HeadAngle = headAngle;
         MaxFrontStroke = maxFrontStroke;
         MaxRearStroke = maxRearStroke;
+        Wheelbase = wheelbase;
         RawData = rawData;
     }
 
@@ -61,6 +62,10 @@ public class Linkage : Synchronizable
     [JsonPropertyName("rear_stroke")]
     [Column("rear_stroke")]
     public double? MaxRearStroke { get; set; }
+
+    [JsonPropertyName("wheelbase")]
+    [Column("wheelbase")]
+    public double? Wheelbase { get; set; }
 
     [JsonPropertyName("data")]
     [Column("raw_lr_data")]

@@ -142,7 +142,16 @@ public class SqLiteDatabaseService : IDatabaseService
         await EnsureSessionColumns();
         await EnsureSessionCacheColumns();
         await EnsureSetupColumns();
+        await EnsureLinkageColumns();
         await EnsureDefaultCalibrationMethods();
+    }
+
+    private async Task EnsureLinkageColumns()
+    {
+        var tableInfo = await connection.QueryAsync<TableInfoRecord>("PRAGMA table_info(linkage)");
+        var columnNames = tableInfo.Select(column => column.Name).ToHashSet();
+        if (!columnNames.Contains("wheelbase"))
+            await connection.ExecuteAsync("ALTER TABLE linkage ADD COLUMN wheelbase REAL");
     }
 
     private async Task EnsureSetupColumns()

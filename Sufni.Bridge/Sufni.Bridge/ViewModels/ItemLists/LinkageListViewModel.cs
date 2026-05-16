@@ -29,7 +29,7 @@ public partial class LinkageListViewModel : ItemListViewModelBase
 
         try
         {
-            var linkage = new Linkage(Guid.NewGuid(), "new linkage", 65, 180, 65, "");
+            var linkage = new Linkage(Guid.NewGuid(), "new linkage", 65, 180, 65, null, "");
             var lvm = new LinkageViewModel(linkage, false)
             {
                 IsDirty = true

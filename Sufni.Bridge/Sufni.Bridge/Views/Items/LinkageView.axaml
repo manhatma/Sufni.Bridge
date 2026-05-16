@@ -32,7 +32,7 @@
         Margin="20,0,20,10"
         HorizontalAlignment="Stretch"
         ColumnDefinitions="auto *"
-        RowDefinitions="auto auto auto auto auto * auto auto">
+        RowDefinitions="auto auto auto auto auto auto * auto auto">
 
         <!--  Name  -->
         <v:EditableTitle
@@ -90,14 +90,30 @@
             Minimum="0"
             Value="{Binding RearStroke}" />
 
-        <!--  Leverage ratio  -->
+        <!--  Wheelbase  -->
         <Label
             Grid.Row="4"
             Grid.Column="0"
             VerticalAlignment="Center"
+            Content="Wheelbase (mm): " />
+        <NumericUpDown
+            Grid.Row="4"
+            Grid.Column="1"
+            Margin="2"
+            HorizontalAlignment="Stretch"
+            Increment="5"
+            Maximum="1400"
+            Minimum="900"
+            Value="{Binding Wheelbase}" />
+
+        <!--  Leverage ratio  -->
+        <Label
+            Grid.Row="5"
+            Grid.Column="0"
+            VerticalAlignment="Center"
             Content="Leverage data: " />
         <Button
-            Grid.Row="4"
+            Grid.Row="5"
             Grid.Column="1"
             Height="39"
             Margin="1,0,1,0"
@@ -107,7 +123,7 @@
             Command="{Binding OpenLeverageRatioFileCommand}"
             Content="..." />
         <plots:LeverageRatioPlotView
-            Grid.Row="5"
+            Grid.Row="6"
             Grid.Column="0"
             Grid.ColumnSpan="2"
             IsHitTestVisible="False"
@@ -115,14 +131,14 @@
 
         <!--  Error messages for Linkage instance  -->
         <v:ErrorMessagesBar
-            Grid.Row="6"
+            Grid.Row="7"
             Grid.Column="0"
             Grid.ColumnSpan="2"
             Margin="0,5,0,0" />
 
         <!--  Back, Save, Reset and Delete buttons  -->
         <v:CommonButtonLine
-            Grid.Row="7"
+            Grid.Row="8"
             Grid.Column="0"
             Grid.ColumnSpan="2" />
     </Grid>

@@ -36,6 +36,7 @@ public partial class BalanceMetricsViewModel : ObservableObject
     public BalanceMetricRow FrontP98      { get; } = new() { Label = "Front 98th",       Target = "> 60 %" };
     public BalanceMetricRow RearP98       { get; } = new() { Label = "Rear 98th",        Target = "> 60 %" };
     public BalanceMetricRow P98Diff       { get; } = new() { Label = "98th-Diff |F−R|",  Target = "≤ 5 pp" };
+    public BalanceMetricRow EffectiveHeadAngle { get; } = new() { Label = "Eff. Head Angle", Target = "" };
     public BalanceMetricRow FrontBO       { get; } = new() { Label = "Front Bottom-out", Target = "≈ 0" };
     public BalanceMetricRow RearBO        { get; } = new() { Label = "Rear Bottom-out",  Target = "≈ 0" };
     public BalanceMetricRow CompVelRatio  { get; } = new() { Label = "Comp Vel F/R",     Target = "−0.08 … +0.07" };
@@ -81,6 +82,7 @@ public partial class BalanceMetricsViewModel : ObservableObject
             ? (double?)Math.Abs(m.FrontP98Pct.Value - m.RearP98Pct.Value)
             : null;
         SetThreshold(P98Diff, p98Diff, "{0:0.0} pp", 5.0, 10.0, lowerIsBetter: true);
+        SetHeadAngle(EffectiveHeadAngle, m.HeadAngleStaticDeg, m.HeadAngleShiftDeg);
         SetCount(FrontBO, m.FrontBottomouts);
         SetCount(RearBO,  m.RearBottomouts);
         // Michelson index (F-R)/(F+R): bands derived from old ratio bands 0.85–1.15 (good)
@@ -202,6 +204,20 @@ public partial class BalanceMetricsViewModel : ObservableObject
         row.Status = value.Value == 0 ? BalanceStatus.Good
             : value.Value <= 5        ? BalanceStatus.Acceptable
             :                           BalanceStatus.Critical;
+    }
+
+    private static void SetHeadAngle(BalanceMetricRow row, double? staticDeg, double? shiftDeg)
+    {
+        if (!staticDeg.HasValue || !shiftDeg.HasValue)
+        {
+            row.Value = "—";
+            row.Target = "";
+            row.Status = BalanceStatus.Unknown;
+            return;
+        }
+        row.Value = string.Format(CultureInfo.InvariantCulture, "{0:0.0}°", staticDeg.Value + shiftDeg.Value);
+        row.Target = string.Format(CultureInfo.InvariantCulture, "{0:0.0}°", staticDeg.Value);
+        row.Status = BalanceStatus.Unknown;
     }
 
     // Michelson-style imbalance index centered on 0; positive = front, negative = rear.

@@ -119,7 +119,9 @@ public record BalanceMetrics(
     double? MidCoherence,
     double? WheelCoherence,
     double? HighCoherence,
-    double? FrequencySplitHz);
+    double? FrequencySplitHz,
+    double? HeadAngleStaticDeg,
+    double? HeadAngleShiftDeg);
 
 [MessagePackObject(keyAsPropertyName: true)]
 public class TelemetryData
@@ -1726,6 +1728,7 @@ public class TelemetryData
         double? freqDiff = null, ampRatio = null;
         double? lowEnergyDb = null, midEnergyDb = null, wheelEnergyDb = null, highEnergyDb = null;
         double? lowCoh = null, midCoh = null, wheelCoh = null, highCoh = null;
+        double? haStaticDeg = null, haShiftDeg = null;
         double fSplit = FrequencySplitFor(discipline);
 
         var maxF = Linkage?.MaxFrontTravel ?? 0;
@@ -1753,6 +1756,20 @@ public class TelemetryData
         }
         if (fSag.HasValue && rSag.HasValue)
             sagDiff = Math.Abs(fSag.Value - rSag.Value);
+
+        // Effective head angle under mean dynamic sag. Pitch (nose-down positive)
+        // tips the front of the chassis down → head angle becomes steeper, so the
+        // signed shift is −φ in degrees.
+        if (Linkage is { Wheelbase: > 0 } && Linkage.MaxFrontStroke is > 0
+            && maxR > 0 && fSag.HasValue && rSag.HasValue)
+        {
+            var haRad = Linkage.HeadAngle * Math.PI / 180.0;
+            var sf = fSag.Value / 100.0 * Linkage.MaxFrontStroke.Value;
+            var sr = rSag.Value / 100.0 * maxR;
+            var phi = Math.Atan2(sr - sf * Math.Sin(haRad), Linkage.Wheelbase.Value);
+            haStaticDeg = Linkage.HeadAngle;
+            haShiftDeg = -phi * 180.0 / Math.PI;
+        }
 
         if (Front.Present && Rear.Present)
         {
@@ -1858,7 +1875,8 @@ public class TelemetryData
             freqDiff, ampRatio,
             lowEnergyDb, midEnergyDb, wheelEnergyDb, highEnergyDb,
             lowCoh, midCoh, wheelCoh, highCoh,
-            fSplit);
+            fSplit,
+            haStaticDeg, haShiftDeg);
     }
 
     #endregion

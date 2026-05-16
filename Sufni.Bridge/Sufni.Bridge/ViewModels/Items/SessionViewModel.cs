@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 171;
+    private const int CurrentPlotVersion = 175;
 
     // Approximate rendered height of the VelocityBandView control (margin + title text +
     // 44 px band grid). Used to size the low-speed velocity histograms so the
@@ -609,6 +609,19 @@ public partial class SessionViewModel : ItemViewModelBase
             tasks.Add(Task.Run(async () =>
             {
                 var discipline = await GetSessionDisciplineAsync();
+                // Refresh Wheelbase from the live linkage row — the Linkage carried
+                // in telemetryData comes from the MessagePack blob, whose Id is
+                // [IgnoreMember] and is regenerated on deserialization. Resolve the
+                // real linkage via session.Setup → Setup.LinkageId.
+                if (telemetryData.Linkage is { } lk && lk.Wheelbase is null or 0 && session.Setup.HasValue)
+                {
+                    var setup = await databaseService.GetSetupAsync(session.Setup.Value);
+                    if (setup is not null)
+                    {
+                        var liveLinkage = await databaseService.GetLinkageAsync(setup.LinkageId);
+                        if (liveLinkage?.Wheelbase is > 0) lk.Wheelbase = liveLinkage.Wheelbase;
+                    }
+                }
                 var metrics = telemetryData.CalculateBalanceMetrics(discipline);
                 sessionCache.BalanceMetricsJson = JsonSerializer.Serialize(metrics);
                 Dispatcher.UIThread.Post(() => BalancePage.Metrics.Apply(metrics, discipline));

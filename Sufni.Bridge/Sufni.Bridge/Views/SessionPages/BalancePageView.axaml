@@ -78,6 +78,11 @@
                         <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.P98Diff.Target}" />
                     </Grid>
                     <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.EffectiveHeadAngle.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.EffectiveHeadAngle.Value}"  Foreground="{Binding Metrics.EffectiveHeadAngle.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.EffectiveHeadAngle.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
                         <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.FrontBO.Label}" />
                         <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.FrontBO.Value}"  Foreground="{Binding Metrics.FrontBO.ValueBrush}" />
                         <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.FrontBO.Target}" />

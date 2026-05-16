@@ -37,6 +37,11 @@ public partial class LinkageViewModel : ItemViewModelBase
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
     [NotifyCanExecuteChangedFor(nameof(ResetCommand))]
+    private double? wheelbase;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SaveCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ResetCommand))]
     private LeverageRatioData? leverageRatioData;
 
     #endregion
@@ -71,6 +76,7 @@ public partial class LinkageViewModel : ItemViewModelBase
             Math.Abs(HeadAngle - linkage.HeadAngle) > 0.00001 ||
             Math.Abs((FrontStroke ?? 0.0) - (linkage.MaxFrontStroke ?? 0.0)) > 0.00001 ||
             Math.Abs((RearStroke ?? 0.0) - (linkage.MaxRearStroke ?? 0.0)) > 0.00001 ||
+            Math.Abs((Wheelbase ?? 0.0) - (linkage.Wheelbase ?? 0.0)) > 0.00001 ||
             LeverageRatioData == null || !LeverageRatioData.Equals(linkage.LeverageRatioData);
     }
 
@@ -87,6 +93,7 @@ public partial class LinkageViewModel : ItemViewModelBase
                 HeadAngle,
                 FrontStroke,
                 RearStroke,
+                Wheelbase,
                 LeverageRatioData!.ToString());
             Id = await databaseService.PutLinkageAsync(newLinkage);
             linkage = newLinkage;
@@ -117,6 +124,7 @@ public partial class LinkageViewModel : ItemViewModelBase
         HeadAngle = linkage.HeadAngle;
         FrontStroke = linkage.MaxFrontStroke;
         RearStroke = linkage.MaxRearStroke;
+        Wheelbase = linkage.Wheelbase;
         LeverageRatioData = linkage.LeverageRatioData;
 
         return Task.CompletedTask;
