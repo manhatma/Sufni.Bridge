@@ -51,7 +51,7 @@
 
     <ScrollViewer Width="{Binding $parent[ScrollViewer].Bounds.Width}" Height="{Binding $parent[ScrollViewer].Bounds.Height}" IsScrollChainingEnabled="False">
         <StackPanel Margin="0,0,0,10" Orientation="Vertical" Spacing="12">
-            <Grid RowDefinitions="auto auto auto auto" ColumnDefinitions="*">
+            <Grid RowDefinitions="auto auto auto auto auto" ColumnDefinitions="*">
                 <TextBlock Grid.Row="0" Classes="summary-title" Text="RUN DATA" />
                 <ItemsControl Grid.Row="1" ItemsSource="{Binding RunDataRows}">
                     <ItemsControl.ItemTemplate>
@@ -117,6 +117,15 @@
                     </Border>
                     <Border Grid.Column="1" Classes="summary-cell">
                         <TextBlock HorizontalAlignment="Right" Text="{Binding SelectedSetup.SelectedDiscipline}" />
+                    </Border>
+                </Grid>
+                <Grid Grid.Row="4" ColumnDefinitions="110,*">
+                    <Border Grid.Column="0" Classes="summary-cell">
+                        <TextBlock Text="{Binding EffectiveHeadAngle.Label}" />
+                    </Border>
+                    <Border Grid.Column="1" Classes="summary-cell">
+                        <TextBlock HorizontalAlignment="Right"
+                                   Text="{Binding EffectiveHeadAngle.Value}" />
                     </Border>
                 </Grid>
             </Grid>

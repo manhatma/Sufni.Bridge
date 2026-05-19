@@ -13,6 +13,7 @@ public partial class SummaryPageViewModel() : PageViewModelBase("Summary")
     [ObservableProperty] private SetupViewModel? selectedSetup;
     [ObservableProperty] private IAsyncRelayCommand? changeSetupCommand;
     [ObservableProperty] private bool isEditingSetup;
+    [ObservableProperty] private BalanceMetricRow effectiveHeadAngle = new() { Label = "Eff. Head Angle" };
     public ObservableCollection<SetupViewModel> AvailableSetups { get; } = [];
 
     [RelayCommand]

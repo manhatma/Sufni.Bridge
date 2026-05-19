@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 175;
+    private const int CurrentPlotVersion = 178;
 
     // Approximate rendered height of the VelocityBandView control (margin + title text +
     // 44 px band grid). Used to size the low-speed velocity histograms so the
@@ -47,6 +47,9 @@ public partial class SessionViewModel : ItemViewModelBase
     private BalancePageViewModel BalancePage { get; } = new();
     private MiscPageViewModel MiscPage { get; } = new();
     private SummaryPageViewModel SummaryPage { get; } = new();
+
+    private void ShareBalanceMetricsWithSummary() =>
+        SummaryPage.EffectiveHeadAngle = BalancePage.Metrics.EffectiveHeadAngle;
     public CropPageViewModel CropPage { get; } = new();
     private NotesPageViewModel NotesPage { get; } = new();
     public ObservableCollection<PageViewModelBase> Pages { get; }
@@ -1065,7 +1068,7 @@ public partial class SessionViewModel : ItemViewModelBase
         Task<VelocityBands?> frontBandsTask,
         Task<VelocityBands?> rearBandsTask)
     {
-        var date = (Timestamp ?? DateTime.UnixEpoch).ToString("yyyy-MM-dd");
+        var date = (Timestamp ?? DateTime.UnixEpoch).ToString("dd-MM-yyyy");
         var time = (Timestamp ?? DateTime.UnixEpoch).ToString("HH:mm");
         var sampleCount = Math.Max(telemetryData.Front.Travel?.Length ?? 0, telemetryData.Rear.Travel?.Length ?? 0);
         var duration = telemetryData.SampleRate > 0
@@ -1199,6 +1202,7 @@ public partial class SessionViewModel : ItemViewModelBase
         IsInDatabase = false;
         Pages = [SummaryPage, SpringPage, DamperPage, BalancePage, MiscPage, NotesPage];
         SummaryPage.ChangeSetupCommand = new AsyncRelayCommand(HandleSetupReassign);
+        ShareBalanceMetricsWithSummary();
         CropPage.ApplyCropCommand = new AsyncRelayCommand(HandleApplyCrop);
         CropPage.ResetCropCommand = new AsyncRelayCommand(HandleResetCrop);
     }
@@ -1209,6 +1213,7 @@ public partial class SessionViewModel : ItemViewModelBase
         IsInDatabase = fromDatabase;
         Pages = [SummaryPage, SpringPage, DamperPage, BalancePage, MiscPage, NotesPage];
         SummaryPage.ChangeSetupCommand = new AsyncRelayCommand(HandleSetupReassign);
+        ShareBalanceMetricsWithSummary();
         CropPage.ApplyCropCommand = new AsyncRelayCommand(HandleApplyCrop);
         CropPage.ResetCropCommand = new AsyncRelayCommand(HandleResetCrop);
 

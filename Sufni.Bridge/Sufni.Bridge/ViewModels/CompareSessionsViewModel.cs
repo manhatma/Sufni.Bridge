@@ -58,6 +58,8 @@ public partial class CompareSessionsViewModel : ViewModelBase
     [ObservableProperty] private SvgImage? balanceSvg;
     [ObservableProperty] private SvgImage? reboundBalanceSvg;
     [ObservableProperty] private SvgImage? compressionBalanceSvg;
+    [ObservableProperty] private SvgImage? frontVelocityHistogramSvg;
+    [ObservableProperty] private SvgImage? rearVelocityHistogramSvg;
     [ObservableProperty] private SvgImage? frontLowSpeedSvg;
     [ObservableProperty] private SvgImage? rearLowSpeedSvg;
     [ObservableProperty] private SvgImage? frontVelocitySpectrumSvg;
@@ -82,6 +84,8 @@ public partial class CompareSessionsViewModel : ViewModelBase
     private string? _balanceXml;
     private string? _reboundBalanceXml;
     private string? _compressionBalanceXml;
+    private string? _frontVelocityHistogramXml;
+    private string? _rearVelocityHistogramXml;
     private string? _frontLowSpeedXml;
     private string? _rearLowSpeedXml;
     private string? _frontVelocitySpectrumXml;
@@ -301,7 +305,29 @@ public partial class CompareSessionsViewModel : ViewModelBase
             Dispatcher.UIThread.Post(() => CompressionBalanceSvg = SourceToImage(src));
         }));
 
-        // 7. Front Low-Speed Velocity
+        // 7. Front Velocity Histogram (±2 m/s)
+        tasks.Add(Task.Run(() =>
+        {
+            var p = new CompareVelocityHistogramPlot(new Plot(), SuspensionType.Front);
+            p.LoadMultipleSessions(sessionData);
+            var svg = p.Plot.GetSvgXml(width, height);
+            _frontVelocityHistogramXml = svg;
+            var src = SvgToSource(svg);
+            Dispatcher.UIThread.Post(() => FrontVelocityHistogramSvg = SourceToImage(src));
+        }));
+
+        // 8. Rear Velocity Histogram (±2 m/s)
+        tasks.Add(Task.Run(() =>
+        {
+            var p = new CompareVelocityHistogramPlot(new Plot(), SuspensionType.Rear);
+            p.LoadMultipleSessions(sessionData);
+            var svg = p.Plot.GetSvgXml(width, height);
+            _rearVelocityHistogramXml = svg;
+            var src = SvgToSource(svg);
+            Dispatcher.UIThread.Post(() => RearVelocityHistogramSvg = SourceToImage(src));
+        }));
+
+        // 9. Front Low-Speed Velocity
         tasks.Add(Task.Run(() =>
         {
             var p = new CompareLowSpeedVelocityPlot(new Plot(), SuspensionType.Front);
@@ -438,6 +464,7 @@ public partial class CompareSessionsViewModel : ViewModelBase
         (_frontTravelHistogramXml is not null || _rearTravelHistogramXml is not null ||
          _frontRearTravelXml is not null || _balanceXml is not null ||
          _reboundBalanceXml is not null || _compressionBalanceXml is not null ||
+         _frontVelocityHistogramXml is not null || _rearVelocityHistogramXml is not null ||
          _frontLowSpeedXml is not null || _rearLowSpeedXml is not null ||
          _frontVelocitySpectrumXml is not null || _rearVelocitySpectrumXml is not null ||
          _frontTravelSpectrumLowXml is not null || _rearTravelSpectrumLowXml is not null ||
@@ -453,6 +480,7 @@ public partial class CompareSessionsViewModel : ViewModelBase
                 _frontTravelHistogramXml, _rearTravelHistogramXml,
                 _frontRearTravelXml,
                 _balanceXml, _reboundBalanceXml, _compressionBalanceXml,
+                _frontVelocityHistogramXml, _rearVelocityHistogramXml,
                 _frontLowSpeedXml, _rearLowSpeedXml,
                 _frontVelocitySpectrumXml, _rearVelocitySpectrumXml,
                 _frontTravelSpectrumLowXml, _rearTravelSpectrumLowXml,

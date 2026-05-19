@@ -103,6 +103,14 @@
                 <Image IsVisible="{Binding CompressionBalanceSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
                        Source="{Binding CompressionBalanceSvg}" />
 
+                <!-- Front Velocity Histogram -->
+                <Image IsVisible="{Binding FrontVelocityHistogramSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Source="{Binding FrontVelocityHistogramSvg}" />
+
+                <!-- Rear Velocity Histogram -->
+                <Image IsVisible="{Binding RearVelocityHistogramSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Source="{Binding RearVelocityHistogramSvg}" />
+
                 <!-- Front Low-Speed Velocity -->
                 <Image IsVisible="{Binding FrontLowSpeedSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
                        Source="{Binding FrontLowSpeedSvg}" />
