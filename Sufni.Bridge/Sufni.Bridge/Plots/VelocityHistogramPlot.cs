@@ -29,7 +29,7 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
     private static readonly Color StatColor = Color.FromHex("#FFD700");
 
     /// <summary>
-    /// Stats box with avg/98th/max in mm/s — placed in the top padding area just below the title.
+    /// Stats box with avg/95th/max in mm/s — placed in the top padding area just below the title.
     /// </summary>
     private void AddStatsBox(TelemetryData telemetryData, double yRangeTop)
     {
@@ -43,8 +43,8 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
             .SelectMany(s => suspension.Velocity[s.Start..(s.End + 1)].Select(System.Math.Abs))
             .ToList();
 
-        var p98Comp = compVels.Count > 0 ? compVels.Percentile(98) : 0.0;
-        var p98Reb  = rebVels.Count  > 0 ? rebVels.Percentile(98)  : 0.0;
+        var p95Comp = compVels.Count > 0 ? compVels.Percentile(95) : 0.0;
+        var p95Reb  = rebVels.Count  > 0 ? rebVels.Percentile(95)  : 0.0;
 
         // Non-breaking spaces keep columns aligned in ScottPlot SVG rendering
         static string N(double v, int w = 7) =>
@@ -52,10 +52,10 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
 
         var statsText =
             $"Comp\u00A0avg:\u00A0\u00A0{N(stats.AverageCompression)}\u00A0mm/s\n" +
-            $"Comp\u00A098th:\u00A0{N(p98Comp)}\u00A0mm/s\n" +
+            $"Comp\u00A095th:\u00A0{N(p95Comp)}\u00A0mm/s\n" +
             $"Comp\u00A0max:\u00A0\u00A0{N(stats.MaxCompression)}\u00A0mm/s\n" +
             $"Reb\u00A0max:\u00A0\u00A0\u00A0{N(stats.MaxRebound)}\u00A0mm/s\n" +
-            $"Reb\u00A098th:\u00A0\u00A0{N(-p98Reb)}\u00A0mm/s\n" +
+            $"Reb\u00A095th:\u00A0\u00A0{N(-p95Reb)}\u00A0mm/s\n" +
             $"Reb\u00A0avg:\u00A0\u00A0\u00A0{N(stats.AverageRebound)}\u00A0mm/s";
 
         var box = Plot.Add.Text(statsText, VelocityLimitMs, yRangeTop * 0.97);

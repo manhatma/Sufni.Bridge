@@ -33,9 +33,9 @@ public partial class BalanceMetricsViewModel : ObservableObject
     public BalanceMetricRow FrontSag      { get; } = new() { Label = "Front SAG (dyn.)", Target = "23–28 %" };
     public BalanceMetricRow RearSag       { get; } = new() { Label = "Rear SAG (dyn.)",  Target = "28–33 %" };
     public BalanceMetricRow SagDiff       { get; } = new() { Label = "Sag-Diff |F−R|",   Target = "≤ 5 pp" };
-    public BalanceMetricRow FrontP98      { get; } = new() { Label = "Front 98th",       Target = "> 60 %" };
-    public BalanceMetricRow RearP98       { get; } = new() { Label = "Rear 98th",        Target = "> 60 %" };
-    public BalanceMetricRow P98Diff       { get; } = new() { Label = "98th-Diff |F−R|",  Target = "≤ 5 pp" };
+    public BalanceMetricRow FrontP95      { get; } = new() { Label = "Front 95th",       Target = "> 55 %" };
+    public BalanceMetricRow RearP95       { get; } = new() { Label = "Rear 95th",        Target = "> 55 %" };
+    public BalanceMetricRow P95Diff       { get; } = new() { Label = "95th-Diff |F−R|",  Target = "≤ 5 pp" };
     public BalanceMetricRow EffectiveHeadAngle { get; } = new() { Label = "Eff. Head Angle", Target = "" };
     public BalanceMetricRow FrontBO       { get; } = new() { Label = "Front Bottom-out", Target = "≈ 0" };
     public BalanceMetricRow RearBO        { get; } = new() { Label = "Rear Bottom-out",  Target = "≈ 0" };
@@ -76,12 +76,12 @@ public partial class BalanceMetricsViewModel : ObservableObject
         SetSagBand(FrontSag, m.FrontSagPct, 23, 28);
         SetSagBand(RearSag,  m.RearSagPct,  28, 33);
         SetThreshold(SagDiff, m.SagDifferencePp, "{0:0.0} pp", 5.0, 8.0, lowerIsBetter: true);
-        SetThreshold(FrontP98, m.FrontP98Pct, "{0:0.0} %", 60.0, 55.0, lowerIsBetter: false);
-        SetThreshold(RearP98,  m.RearP98Pct,  "{0:0.0} %", 60.0, 55.0, lowerIsBetter: false);
-        var p98Diff = (m.FrontP98Pct.HasValue && m.RearP98Pct.HasValue)
-            ? (double?)Math.Abs(m.FrontP98Pct.Value - m.RearP98Pct.Value)
+        SetThreshold(FrontP95, m.FrontP95Pct, "{0:0.0} %", 55.0, 50.0, lowerIsBetter: false);
+        SetThreshold(RearP95,  m.RearP95Pct,  "{0:0.0} %", 55.0, 50.0, lowerIsBetter: false);
+        var p95Diff = (m.FrontP95Pct.HasValue && m.RearP95Pct.HasValue)
+            ? (double?)Math.Abs(m.FrontP95Pct.Value - m.RearP95Pct.Value)
             : null;
-        SetThreshold(P98Diff, p98Diff, "{0:0.0} pp", 5.0, 10.0, lowerIsBetter: true);
+        SetThreshold(P95Diff, p95Diff, "{0:0.0} pp", 5.0, 10.0, lowerIsBetter: true);
         SetHeadAngle(EffectiveHeadAngle, m.HeadAngleStaticDeg, m.HeadAngleShiftDeg);
         SetCount(FrontBO, m.FrontBottomouts);
         SetCount(RearBO,  m.RearBottomouts);

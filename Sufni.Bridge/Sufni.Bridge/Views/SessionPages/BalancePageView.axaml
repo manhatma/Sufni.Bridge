@@ -63,19 +63,19 @@
                         <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.SagDiff.Target}" />
                     </Grid>
                     <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
-                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.FrontP98.Label}" />
-                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.FrontP98.Value}"  Foreground="{Binding Metrics.FrontP98.ValueBrush}" />
-                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.FrontP98.Target}" />
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.FrontP95.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.FrontP95.Value}"  Foreground="{Binding Metrics.FrontP95.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.FrontP95.Target}" />
                     </Grid>
                     <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
-                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.RearP98.Label}" />
-                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.RearP98.Value}"  Foreground="{Binding Metrics.RearP98.ValueBrush}" />
-                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.RearP98.Target}" />
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.RearP95.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.RearP95.Value}"  Foreground="{Binding Metrics.RearP95.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.RearP95.Target}" />
                     </Grid>
                     <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
-                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.P98Diff.Label}" />
-                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.P98Diff.Value}"  Foreground="{Binding Metrics.P98Diff.ValueBrush}" />
-                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.P98Diff.Target}" />
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.P95Diff.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.P95Diff.Value}"  Foreground="{Binding Metrics.P95Diff.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.P95Diff.Target}" />
                     </Grid>
                     <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
                         <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.EffectiveHeadAngle.Label}" />

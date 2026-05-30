@@ -60,7 +60,7 @@ public class CompareTravelHistogramPlot(Plot plot, SuspensionType type) : SufniP
         var yRangeTop = Math.Max(1.0, globalMaxTime) * HistogramRangeMultiplier;
         Plot.Axes.SetLimits(left: 0, right: globalMaxTravel, bottom: 0, top: yRangeTop);
 
-        // Stat lines: avg, 98th, max per session
+        // Stat lines: avg, 95th, max per session
         var labelYBase = yRangeTop * 0.92;
         var labelYStep = yRangeTop * 0.08;
         for (var i = 0; i < sessions.Count; i++)
@@ -71,7 +71,7 @@ public class CompareTravelHistogramPlot(Plot plot, SuspensionType type) : SufniP
 
             var stats = data.CalculateDetailedTravelStatistics(type);
             Plot.Add.VerticalLine(stats.Average, 2f, color, LinePattern.Dashed);
-            Plot.Add.VerticalLine(stats.P98, 2f, color, LinePattern.Dashed);
+            Plot.Add.VerticalLine(stats.P95, 2f, color, LinePattern.Dashed);
             Plot.Add.VerticalLine(stats.Max, 2f, color, LinePattern.Dashed);
 
             var labelY = labelYBase - i * labelYStep;
@@ -87,7 +87,7 @@ public class CompareTravelHistogramPlot(Plot plot, SuspensionType type) : SufniP
             }
 
             AddLabel("avg", stats.Average);
-            AddLabel("98th", stats.P98);
+            AddLabel("95th", stats.P95);
             AddLabel("max", stats.Max);
         }
 

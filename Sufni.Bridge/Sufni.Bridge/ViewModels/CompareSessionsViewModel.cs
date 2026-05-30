@@ -126,8 +126,8 @@ public partial class CompareSessionsViewModel : ViewModelBase
     private sealed record SessionStats(
         DetailedTravelStatistics Travel,
         VelocityStatistics Velocity,
-        double Comp98th,
-        double Reb98th,
+        double Comp95th,
+        double Reb95th,
         double MaxTravel,
         VelocityBands? Bands);
 
@@ -150,8 +150,8 @@ public partial class CompareSessionsViewModel : ViewModelBase
 
         return new SessionStats(
             travel, velocity,
-            compVels.Count > 0 ? compVels.Percentile(98) : 0.0,
-            rebVels.Count > 0 ? -rebVels.Percentile(98) : 0.0,
+            compVels.Count > 0 ? compVels.Percentile(95) : 0.0,
+            rebVels.Count > 0 ? -rebVels.Percentile(95) : 0.0,
             maxTravel, bands);
     }
 
@@ -190,13 +190,13 @@ public partial class CompareSessionsViewModel : ViewModelBase
                 return val.HasValue ? val.Value.ToString() : "-";
             }).ToList()),
             new("Pos [AVG, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.Average, s.MaxTravel)).ToList()),
-            new("Pos [98th, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.P98, s.MaxTravel)).ToList()),
+            new("Pos [95th, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.P95, s.MaxTravel)).ToList()),
             new("Pos [MAX, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.Max, s.MaxTravel)).ToList()),
             new("Bottom out [times]", statsList.Select(s => s is null ? "-" : FormatBottomouts(s.Travel.Bottomouts)).ToList()),
             new("Comp [AVG, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Velocity.AverageCompression)).ToList()),
             new("Reb [AVG, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Velocity.AverageRebound)).ToList()),
-            new("Comp [98th, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Comp98th)).ToList()),
-            new("Reb [98th, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Reb98th)).ToList()),
+            new("Comp [95th, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Comp95th)).ToList()),
+            new("Reb [95th, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Reb95th)).ToList()),
             new("Comp [MAX, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Velocity.MaxCompression)).ToList()),
             new("Reb [MAX, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Velocity.MaxRebound)).ToList()),
             new("HSR [%]", statsList.Select(s => s?.Bands is null ? "-" : FormatPercent(s.Bands.HighSpeedRebound)).ToList()),
