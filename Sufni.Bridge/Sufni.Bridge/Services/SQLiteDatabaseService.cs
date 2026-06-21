@@ -588,11 +588,66 @@ public class SqLiteDatabaseService : IDatabaseService
         var td = MessagePackSerializer.Deserialize<TelemetryData>(sessions[0].ProcessedData);
         if (td.ProcessingVersion < TelemetryData.CurrentProcessingVersion)
         {
+            // Combined sessions can't be migrated by ReprocessVelocity: their stored travel
+            // already contains the synthetic transition ramps, so reprocessing would run the
+            // global (non-segmented) stroke detection over them and re-introduce ramp strokes.
+            // They must be rebuilt from their source sessions via CombineSessions, which masks
+            // the ramps. Falls back to a plain reprocess if the rebuild isn't possible.
+            var sourceIds = await GetCombinedSourcesAsync(id);
+            if (sourceIds.Count > 0)
+            {
+                var rebuilt = await RebuildCombinedSessionAsync(id, td.Name, sourceIds);
+                if (rebuilt is not null) return rebuilt;
+            }
+
             var updatedBlob = td.ReprocessVelocity();
             await connection.ExecuteAsync("UPDATE session SET data=? WHERE id=?", [updatedBlob, id]);
         }
 
         return td;
+    }
+
+    /// <summary>
+    /// Rebuilds a combined session from its (recursively migrated) source sessions so that
+    /// current processing — including transition-ramp masking — is applied. Persists the
+    /// rebuilt blob and invalidates the plot cache so it re-renders. Returns null if the
+    /// session can't be faithfully reconstructed (a source is missing, or the combine fails),
+    /// letting the caller fall back to a plain reprocess.
+    /// </summary>
+    private async Task<TelemetryData?> RebuildCombinedSessionAsync(Guid combinedId, string name, List<Guid> sourceIds)
+    {
+        try
+        {
+            var parts = new List<TelemetryData>(sourceIds.Count);
+            foreach (var sourceId in sourceIds)
+            {
+                // Recursive: a source may itself be an outdated combined session.
+                var src = await GetSessionPsstAsync(sourceId);
+                if (src is null) return null; // source deleted/missing → can't rebuild faithfully
+
+                // Apply the source's crop, exactly as the original combine did.
+                var srcRow = await connection.Table<Session>()
+                    .Where(s => s.Id == sourceId && s.Deleted == null)
+                    .FirstOrDefaultAsync();
+                if (srcRow?.CropStartSample is { } cs && srcRow.CropEndSample is { } ce)
+                    src = src.CreateCroppedCopy(cs, ce);
+
+                parts.Add(src);
+            }
+
+            if (parts.Count < 2) return null;
+
+            var rebuilt = TelemetryData.CombineSessions(parts, name);
+            var blob = MessagePackSerializer.Serialize(rebuilt);
+            await connection.ExecuteAsync("UPDATE session SET data=? WHERE id=?", [blob, combinedId]);
+            // Invalidate cached plots so they re-render from the corrected data.
+            await connection.ExecuteAsync("DELETE FROM session_cache WHERE session_id=?", combinedId);
+            return rebuilt;
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public async Task<byte[]?> GetSessionRawPsstAsync(Guid id)

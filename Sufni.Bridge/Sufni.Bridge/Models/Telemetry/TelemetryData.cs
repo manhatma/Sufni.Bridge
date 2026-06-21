@@ -829,6 +829,7 @@ public class TelemetryData
         }
 
         combined.CalculateAirTimes();
+        combined.ProcessingVersion = CurrentProcessingVersion;
         return combined;
     }
 
