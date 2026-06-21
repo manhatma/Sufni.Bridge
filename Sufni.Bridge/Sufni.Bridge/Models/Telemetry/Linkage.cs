@@ -7,6 +7,7 @@ using System.Text.Json.Serialization;
 using CsvHelper;
 using CsvHelper.Configuration;
 using MathNet.Numerics;
+using MathNet.Numerics.LinearRegression;
 using MessagePack;
 using SQLite;
 
@@ -107,16 +108,31 @@ public class Linkage : Synchronizable
         {
             if (shockWheelCoeffs is null)
             {
-                shockWheelCoeffs = Fit.Polynomial(LeverageRatioData?.ShockTravel.ToArray(),
-                    LeverageRatioData?.WheelTravel.ToArray(), 3);
-                // Force the shock→wheel polynomial through (0,0): unconstrained
-                // least-squares leaves a non-zero constant term that biases every
-                // rear-travel sample, so the signal never returns to 0 even when
-                // the shock is fully extended (airtime).
-                if (shockWheelCoeffs.Length > 0) shockWheelCoeffs[0] = 0;
+                var shock = LeverageRatioData?.ShockTravel;
+                var wheel = LeverageRatioData?.WheelTravel;
+                if (shock is null || wheel is null || shock.Count < 4)
+                {
+                    // Not enough points for a cubic fit — return a no-op polynomial.
+                    shockWheelCoeffs = [0, 0, 0, 0];
+                }
+                else
+                {
+                    // Intercept-free cubic least-squares fit (basis x, x², x³) so the
+                    // shock→wheel curve passes exactly through (0,0). Zeroing the
+                    // constant term of an *unconstrained* fit would instead shift the
+                    // entire curve by c₀, biasing every rear-travel sample across the
+                    // full stroke (the signal would never return to 0 during airtime).
+                    var predictors = new double[shock.Count][];
+                    for (var i = 0; i < shock.Count; i++)
+                    {
+                        var x = shock[i];
+                        predictors[i] = [x, x * x, x * x * x];
+                    }
+                    var c = MultipleRegression.QR(predictors, wheel.ToArray(), intercept: false);
+                    shockWheelCoeffs = [0, c[0], c[1], c[2]];
+                }
             }
             return shockWheelCoeffs;
-
         }
         set => shockWheelCoeffs = value;
     }
@@ -179,18 +195,6 @@ public class Linkage : Synchronizable
         }
     }
 
-    /// <summary>
-    /// Constant offset of the unconstrained shock→wheel polynomial fit at shock=0.
-    /// Used once to bias-correct rear-travel samples that were baked with the old
-    /// (pre-fix) polynomial. Returns 0 if leverage data is unavailable.
-    /// </summary>
-    public double LegacyRearTravelBias()
-    {
-        var lr = LeverageRatioData;
-        if (lr is null || lr.ShockTravel.Count < 4) return 0;
-        var coeffs = Fit.Polynomial(lr.ShockTravel.ToArray(), lr.WheelTravel.ToArray(), 3);
-        return coeffs.Length > 0 ? coeffs[0] : 0;
-    }
 }
 
 public class LeverageRatioData

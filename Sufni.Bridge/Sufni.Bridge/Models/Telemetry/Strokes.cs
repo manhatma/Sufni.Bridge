@@ -43,7 +43,11 @@ public class Stroke
 
         var mv = Length < 0 ? velocity[start..(end + 1)].Min() : velocity[start..(end + 1)].Max();
         var bo = 0;
-        for (var i = start; i < end; i++)
+        // Scan inclusive of the reversal sample (end): a compression's peak — the
+        // bottom-most point where a bottom-out actually occurs — is the end sample.
+        // Excluding it would drop "peak-only" bottom-outs (threshold first crossed at
+        // the reversal point). The inner skip loop stays bounded by travel.Length.
+        for (var i = start; i <= end; i++)
         {
             if (!(travel[i] > maxTravel - Parameters.BottomoutThreshold)) continue;
             bo += 1;

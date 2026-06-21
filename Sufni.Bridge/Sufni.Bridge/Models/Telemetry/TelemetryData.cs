@@ -130,7 +130,7 @@ public class TelemetryData
 
     // Increment when velocity processing parameters change (e.g. smoother lambda).
     // Blobs with a lower version are automatically re-processed from Travel arrays on load.
-    public const int CurrentProcessingVersion = 19;
+    public const int CurrentProcessingVersion = 20;
 
     #region Public properties
 
@@ -515,28 +515,6 @@ public class TelemetryData
     /// </summary>
     public byte[] ReprocessVelocity()
     {
-        var oldVersion = ProcessingVersion;
-
-        // One-time correction for sessions imported before v5. The unconstrained
-        // shock→wheel polynomial fit had a non-zero constant term that biased every
-        // rear-travel sample, so the signal never returned to 0 even during airtime.
-        // The bias is exactly coeffs[0] of the old fit; subtract it from each cached
-        // sample and clamp. New imports use the corrected fit and skip this branch.
-        if (oldVersion < 5 && Rear.Present && Rear.Travel is { Length: > 0 })
-        {
-            var bias = Linkage.LegacyRearTravelBias();
-            if (bias != 0)
-            {
-                Linkage.MaxRearTravel = Linkage.Polynomial.Evaluate(Linkage.MaxRearStroke ?? 0);
-                var maxRear = Linkage.MaxRearTravel;
-                for (var i = 0; i < Rear.Travel.Length; i++)
-                {
-                    var t = Rear.Travel[i] - bias;
-                    Rear.Travel[i] = Math.Max(0, Math.Min(t, maxRear));
-                }
-            }
-        }
-
         var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambda);
 
         if (Front.Present)
@@ -568,6 +546,13 @@ public class TelemetryData
             // the array is cached so subsequent loads skip the reconstruction cost.
             if (Rear.ShockTravel is null || Rear.ShockTravel.Length != Rear.Travel.Length)
                 Rear.ShockTravel = ReconstructShockTravel(Rear.Travel);
+
+            // Re-bake wheel travel from shock travel through the current shock→wheel
+            // polynomial, so the corrected intercept-free fit propagates to existing
+            // sessions (mirrors the bake in ProcessRecording).
+            var maxRear = Linkage.MaxRearTravel;
+            for (var i = 0; i < Rear.ShockTravel.Length; i++)
+                Rear.Travel[i] = Math.Clamp(Linkage.Polynomial.Evaluate(Rear.ShockTravel[i]), 0, maxRear);
 
             var tbins = Linspace(0, Linkage.MaxRearTravel, Parameters.TravelHistBins + 1);
             var dt = Digitize(Rear.Travel, tbins);
@@ -602,12 +587,14 @@ public class TelemetryData
     /// Without the ramp, a step discontinuity in travel (e.g. 50mm → 5mm) produces a massive
     /// velocity spike when differentiated, corrupting stroke statistics.
     /// </summary>
-    private static double[] ConcatenateTravelWithTransitions(List<double[]> travelArrays, int sampleRate)
+    private static double[] ConcatenateTravelWithTransitions(
+        List<double[]> travelArrays, int sampleRate, out List<(int Start, int End)> segments)
     {
         // Transition duration: 0.5s — long enough that even a full-travel ramp
         // stays within normal velocity range (e.g. 200mm / 0.5s = 400 mm/s)
         var transitionSamples = sampleRate / 2;
         var result = new List<double>(travelArrays.Sum(a => a.Length) + transitionSamples * (travelArrays.Count - 1));
+        segments = new List<(int Start, int End)>(travelArrays.Count);
 
         for (var s = 0; s < travelArrays.Count; s++)
         {
@@ -619,10 +606,47 @@ public class TelemetryData
                     result.Add(from + (to - from) * i / transitionSamples);
             }
 
+            // Record the [start, end) span of this real session's samples in the
+            // combined array so stroke detection can skip the synthetic ramps.
+            var start = result.Count;
             result.AddRange(travelArrays[s]);
+            segments.Add((start, result.Count));
         }
 
         return result.ToArray();
+    }
+
+    /// <summary>
+    /// Runs stroke detection per real-session segment (skipping the synthetic transition
+    /// ramps inserted between sessions) and remaps the resulting stroke indices back to the
+    /// combined array. Keeping strokes from ever spanning a ramp removes the ramp samples
+    /// from every (stroke-based) statistic without touching the global time-series arrays.
+    /// </summary>
+    private static Stroke[] FilterStrokesSegmented(
+        double[] velocity, double[] travel, double maxTravel, int sampleRate,
+        List<(int Start, int End)> segments)
+    {
+        var strokes = new List<Stroke>();
+        foreach (var (start, end) in segments)
+        {
+            if (end <= start) continue;
+
+            var segStrokes = Strokes.FilterStrokes(
+                velocity[start..end], travel[start..end], maxTravel, sampleRate);
+
+            foreach (var st in segStrokes)
+            {
+                // Slice-local indices → global combined-array indices. Stat/Length/
+                // Duration were already computed value-based from the slice, so only
+                // Start/End need shifting; the later Digitize() then slices the global
+                // digitized arrays with these global indices.
+                st.Start += start;
+                st.End += start;
+                strokes.Add(st);
+            }
+        }
+
+        return [.. strokes];
     }
 
     /// <summary>
@@ -711,6 +735,10 @@ public class TelemetryData
         if (sessions.Count < 2)
             throw new ArgumentException("At least 2 sessions required to combine.");
 
+        // Defensive: concatenation order must follow time, not caller order, to keep
+        // the combined timeline and Timestamp = sessions.Min(...) consistent.
+        sessions = sessions.OrderBy(s => s.Timestamp).ToList();
+
         var first = sessions[0];
         foreach (var s in sessions.Skip(1))
         {
@@ -740,7 +768,7 @@ public class TelemetryData
         if (hasFront)
         {
             combined.Front.Travel = ConcatenateTravelWithTransitions(
-                sessions.Select(s => s.Front.Travel).ToList(), first.SampleRate);
+                sessions.Select(s => s.Front.Travel).ToList(), first.SampleRate, out var frontSegments);
             combined.Front.Calibration = first.Front.Calibration;
 
             var tbins = Linspace(0, first.Linkage.MaxFrontTravel, Parameters.TravelHistBins + 1);
@@ -755,8 +783,8 @@ public class TelemetryData
             var (vbinsFine, dvFine) = DigitizeVelocity(v, Parameters.VelocityHistStepFine);
             combined.Front.FineVelocityBins = vbinsFine;
 
-            var strokes = Strokes.FilterStrokes(v, combined.Front.Travel,
-                first.Linkage.MaxFrontTravel, first.SampleRate);
+            var strokes = FilterStrokesSegmented(v, combined.Front.Travel,
+                first.Linkage.MaxFrontTravel, first.SampleRate, frontSegments);
             combined.Front.Strokes.Categorize(strokes);
             if (combined.Front.Strokes.Compressions.Length == 0 && combined.Front.Strokes.Rebounds.Length == 0)
                 combined.Front.Present = false;
@@ -767,7 +795,7 @@ public class TelemetryData
         if (hasRear)
         {
             combined.Rear.Travel = ConcatenateTravelWithTransitions(
-                sessions.Select(s => s.Rear.Travel).ToList(), first.SampleRate);
+                sessions.Select(s => s.Rear.Travel).ToList(), first.SampleRate, out var rearSegments);
             combined.Rear.Calibration = first.Rear.Calibration;
 
             // Concatenate per-session ShockTravel using the same transition logic, falling back
@@ -777,7 +805,7 @@ public class TelemetryData
                 s.Rear.ShockTravel is { Length: > 0 } && s.Rear.ShockTravel.Length == s.Rear.Travel.Length
                     ? s.Rear.ShockTravel
                     : first.ReconstructShockTravel(s.Rear.Travel)).ToList();
-            combined.Rear.ShockTravel = ConcatenateTravelWithTransitions(shockArrays, first.SampleRate);
+            combined.Rear.ShockTravel = ConcatenateTravelWithTransitions(shockArrays, first.SampleRate, out _);
 
             var tbins = Linspace(0, first.Linkage.MaxRearTravel, Parameters.TravelHistBins + 1);
             var dt = Digitize(combined.Rear.Travel, tbins);
@@ -791,8 +819,8 @@ public class TelemetryData
             var (vbinsFine, dvFine) = DigitizeVelocity(v, Parameters.VelocityHistStepFine);
             combined.Rear.FineVelocityBins = vbinsFine;
 
-            var strokes = Strokes.FilterStrokes(v, combined.Rear.Travel,
-                first.Linkage.MaxRearTravel, first.SampleRate);
+            var strokes = FilterStrokesSegmented(v, combined.Rear.Travel,
+                first.Linkage.MaxRearTravel, first.SampleRate, rearSegments);
             combined.Rear.Strokes.Categorize(strokes);
             if (combined.Rear.Strokes.Compressions.Length == 0 && combined.Rear.Strokes.Rebounds.Length == 0)
                 combined.Rear.Present = false;
@@ -1149,18 +1177,20 @@ public class TelemetryData
         var sum = 0.0;
         var count = 0.0;
         var mx = 0.0;
-        var bo = 0;
 
         foreach (var stroke in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
         {
             sum += stroke.Stat.SumTravel;
             count += stroke.Stat.Count;
-            bo += stroke.Stat.Bottomouts;
             if (stroke.Stat.MaxTravel > mx)
             {
                 mx = stroke.Stat.MaxTravel;
             }
         }
+
+        // Bottom-outs occur at the peak of a compression; counting them on the
+        // following rebound as well would double the single event at the reversal point.
+        var bo = suspension.Strokes.Compressions.Sum(s => s.Stat.Bottomouts);
 
         return new TravelStatistics(mx, sum / count, bo);
     }
@@ -1170,11 +1200,12 @@ public class TelemetryData
         var suspension = type == SuspensionType.Front ? Front : Rear;
         var travelValues = new List<double>();
 
-        var bottomouts = 0;
+        // Bottom-outs occur at the peak of a compression; counting them on the
+        // following rebound as well would double the single event at the reversal point.
+        var bottomouts = suspension.Strokes.Compressions.Sum(s => s.Stat.Bottomouts);
+
         foreach (var stroke in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
         {
-            bottomouts += stroke.Stat.Bottomouts;
-
             if (stroke.End < stroke.Start || stroke.Start < 0 || stroke.End >= suspension.Travel.Length)
             {
                 continue;
