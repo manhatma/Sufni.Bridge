@@ -130,7 +130,7 @@ public class TelemetryData
 
     // Increment when velocity processing parameters change (e.g. smoother lambda).
     // Blobs with a lower version are automatically re-processed from Travel arrays on load.
-    public const int CurrentProcessingVersion = 20;
+    public const int CurrentProcessingVersion = 21;
 
     #region Public properties
 
@@ -377,10 +377,11 @@ public class TelemetryData
         if (v.Length < 3) return;
         var dt = 1.0 / sampleRate;
         var floor = 0.5 * Parameters.SpikeJerkLimit * dt * dt;
+        var orig = (double[])v.Clone();
         for (var i = 1; i < v.Length - 1; i++)
         {
-            var expected = 0.5 * (v[i - 1] + v[i + 1]);
-            if (Math.Abs(v[i] - expected) > floor)
+            var expected = 0.5 * (orig[i - 1] + orig[i + 1]);
+            if (Math.Abs(orig[i] - expected) > floor)
                 v[i] = expected;
         }
     }
@@ -423,6 +424,8 @@ public class TelemetryData
             Front.Travel = new double[fc];
             var frontCoeff = Math.Sin(Linkage.HeadAngle * Math.PI / 180.0);
 
+            var lastValidFront = 0.0;
+            var sawValidFront = false;
             for (var i = 0; i < front.Length; i++)
             {
                 // Front travel might under/overshoot because of erroneous data
@@ -431,11 +434,24 @@ public class TelemetryData
                 // travel. Errors like these will be obvious on the graphs, and
                 // the affected regions can be filtered by hand.
                 var travel = Front.Calibration!.Evaluate(front[i]);
+                // A NaN (null delegate / failed evaluation) would propagate through the
+                // Cholesky smoother and destroy the entire velocity array. Hold the last
+                // valid sample instead of injecting NaN or an artificial zero-spike.
+                if (double.IsNaN(travel))
+                    travel = lastValidFront;
+                else
+                {
+                    lastValidFront = travel;
+                    sawValidFront = true;
+                }
                 var x = travel * frontCoeff;
                 x = Math.Max(0, x);
                 x = Math.Min(x, Linkage.MaxFrontTravel);
                 Front.Travel[i] = x;
             }
+
+            if (!sawValidFront)
+                throw new Exception("Front calibration produced no valid samples!");
 
             var tbins = Linspace(0, Linkage.MaxFrontTravel, Parameters.TravelHistBins + 1);
             var dt = Digitize(Front.Travel, tbins);
@@ -465,6 +481,8 @@ public class TelemetryData
             Rear.Travel = new double[rc];
             Rear.ShockTravel = new double[rc];
 
+            var lastValidRear = 0.0;
+            var sawValidRear = false;
             for (var i = 0; i < rear.Length; i++)
             {
                 // Rear travel might also overshoot the max because of
@@ -472,12 +490,24 @@ public class TelemetryData
                 //  b) inaccuracies introduced by polynomial fitting
                 // So we just cap it at calculated maximum.
                 var shock = Rear.Calibration!.Evaluate(rear[i]);
+                // Guard NaN before storing: ShockTravel feeds the Cholesky smoother, where
+                // a single NaN would destroy the whole velocity array. Hold last valid.
+                if (double.IsNaN(shock))
+                    shock = lastValidRear;
+                else
+                {
+                    lastValidRear = shock;
+                    sawValidRear = true;
+                }
                 Rear.ShockTravel[i] = shock;
                 var x = Linkage.Polynomial.Evaluate(shock);
                 x = Math.Max(0, x);
                 x = Math.Min(x, Linkage.MaxRearTravel);
                 Rear.Travel[i] = x;
             }
+
+            if (!sawValidRear)
+                throw new Exception("Rear calibration produced no valid samples!");
 
             var tbins = Linspace(0, Linkage.MaxRearTravel, Parameters.TravelHistBins + 1);
             var dt = Digitize(Rear.Travel, tbins);
@@ -953,7 +983,7 @@ public class TelemetryData
     {
         var suspension = type == SuspensionType.Front ? Front : Rear;
 
-        var divider = (suspension.TravelBins.Length - 1) / TravelBinsForVelocityHistogram;
+        var srcBins = suspension.TravelBins.Length - 1;
         var hist = new double[suspension.VelocityBins.Length - 1][];
         for (var i = 0; i < hist.Length; i++)
         {
@@ -966,8 +996,8 @@ public class TelemetryData
             totalCount += s.Stat.Count;
             for (int i = 0; i < s.Stat.Count; ++i)
             {
-                var vbin = s.DigitizedVelocity[i];
-                var tbin = s.DigitizedTravel[i] / divider;
+                var vbin = Math.Clamp(s.DigitizedVelocity[i], 0, hist.Length - 1);
+                var tbin = Math.Clamp(s.DigitizedTravel[i] * TravelBinsForVelocityHistogram / srcBins, 0, TravelBinsForVelocityHistogram - 1);
                 hist[vbin][tbin] += 1;
             }
         }
@@ -993,7 +1023,7 @@ public class TelemetryData
     {
         var suspension = type == SuspensionType.Front ? Front : Rear;
 
-        var divider = (suspension.TravelBins.Length - 1) / TravelBinsForVelocityHistogram;
+        var srcBins = suspension.TravelBins.Length - 1;
         var stepFine = suspension.FineVelocityBins[1] - suspension.FineVelocityBins[0];
         var hist = new double[suspension.FineVelocityBins.Length - 1][];
         for (var i = 0; i < hist.Length; i++)
@@ -1007,13 +1037,13 @@ public class TelemetryData
             totalCount += s.Stat.Count;
             for (int i = 0; i < s.Stat.Count; ++i)
             {
-                var vbinFine = s.FineDigitizedVelocity[i];
+                var vbinFine = Math.Clamp(s.FineDigitizedVelocity[i], 0, hist.Length - 1);
                 var midpoint = suspension.FineVelocityBins[vbinFine] + stepFine / 2.0;
                 if (midpoint <= -(highSpeedThreshold + stepFine / 2.0) ||
                     midpoint >= (highSpeedThreshold + stepFine / 2.0))
                     continue;
 
-                var tbin = s.DigitizedTravel[i] / divider;
+                var tbin = Math.Clamp(s.DigitizedTravel[i] * TravelBinsForVelocityHistogram / srcBins, 0, TravelBinsForVelocityHistogram - 1);
                 hist[vbinFine][tbin] += 1;
             }
         }
@@ -1103,7 +1133,7 @@ public class TelemetryData
             return new NormalDistributionData([], []);
 
         var mu = mean;
-        var std = Math.Sqrt(m2 / (n - 1));
+        var std = Math.Sqrt(m2 / n);
 
         var range = max - min;
         var ny = new double[100];
@@ -1405,6 +1435,120 @@ public class TelemetryData
         return new PositionVelocityData(travel.ToArray(), velocity.ToArray());
     }
 
+    /// <summary>
+    /// Rear-only velocity histogram in the shock/damper domain: bins by shaft position and
+    /// shaft velocity (mm/s) instead of wheel position/velocity. A wheel-velocity bin mixes
+    /// different shaft speeds across the stroke under progressive/degressive kinematics, but
+    /// the damper's LS/HS knee sits at a fixed shaft speed — so this is the view that matches
+    /// the clicker. Mirrors CalculateVelocityHistogram's stacking with the robust tbin rescale.
+    /// </summary>
+    public StackedHistogramData CalculateDamperVelocityHistogram()
+    {
+        var arrayLen = Math.Min(Rear.Travel.Length, Rear.Velocity.Length);
+        if (Rear.ShockTravel is not null)
+            arrayLen = Math.Min(arrayLen, Rear.ShockTravel.Length);
+
+        // Local leverage = dWheel/dShock — converts stored wheel velocity into shaft velocity.
+        var dPolynomial = Linkage.Polynomial.Differentiate();
+
+        var shockPos = new List<double>();
+        var shockVel = new List<double>();
+        foreach (var s in Rear.Strokes.Compressions.Concat(Rear.Strokes.Rebounds))
+        {
+            if (s.End < s.Start || s.Start < 0 || s.End >= arrayLen) continue;
+            for (var i = s.Start; i <= s.End; i++)
+            {
+                var pos = Rear.ShockTravel?[i] ?? Linkage.WheelToDamperTravel(Rear.Travel[i]);
+                var leverage = dPolynomial.Evaluate(pos);
+                shockPos.Add(pos);
+                shockVel.Add(leverage > 0 ? Rear.Velocity[i] / leverage : 0);
+            }
+        }
+
+        if (shockPos.Count == 0)
+            return new StackedHistogramData([], []);
+
+        var maxShock = Linkage.MaxRearStroke ?? shockPos.Max();
+        if (maxShock <= 0) maxShock = shockPos.Max();
+        if (maxShock <= 0) maxShock = 1;
+
+        var tbins = Linspace(0, maxShock, Parameters.TravelHistBins + 1);
+        var digitizedTravel = Digitize(shockPos.ToArray(), tbins);
+        var (vbins, digitizedVelocity) = DigitizeVelocity(shockVel.ToArray(), Parameters.DamperVelocityHistStep);
+
+        var srcBins = tbins.Length - 1;
+        var hist = new double[vbins.Length - 1][];
+        for (var i = 0; i < hist.Length; i++)
+            hist[i] = Generate.Zeros(TravelBinsForVelocityHistogram);
+
+        var totalCount = shockPos.Count;
+        for (var i = 0; i < totalCount; i++)
+        {
+            var vbin = Math.Clamp(digitizedVelocity[i], 0, hist.Length - 1);
+            var tbin = Math.Clamp(digitizedTravel[i] * TravelBinsForVelocityHistogram / srcBins, 0, TravelBinsForVelocityHistogram - 1);
+            hist[vbin][tbin] += 1;
+        }
+
+        foreach (var travelHist in hist)
+            for (var j = 0; j < TravelBinsForVelocityHistogram; j++)
+                travelHist[j] = travelHist[j] / totalCount * 100.0;
+
+        return new StackedHistogramData(vbins.ToList(), [.. hist]);
+    }
+
+    /// <summary>
+    /// Normal fit of the rear shaft (damper-domain) velocity distribution, overlaid on the
+    /// shaft-velocity histogram. Mirrors CalculateNormalDistribution but over shaft velocities
+    /// (wheel velocity / local leverage) and the damper bin step. Y values are in mm/s.
+    /// </summary>
+    public NormalDistributionData CalculateDamperNormalDistribution()
+    {
+        var arrayLen = System.Math.Min(Rear.Travel.Length, Rear.Velocity.Length);
+        if (Rear.ShockTravel is not null)
+            arrayLen = System.Math.Min(arrayLen, Rear.ShockTravel.Length);
+
+        var dPolynomial = Linkage.Polynomial.Differentiate();
+
+        // Welford's online algorithm over shaft velocities
+        long n = 0;
+        double mean = 0.0, m2 = 0.0;
+        double min = double.MaxValue, max = double.MinValue;
+
+        foreach (var s in Rear.Strokes.Compressions.Concat(Rear.Strokes.Rebounds))
+        {
+            if (s.End < s.Start || s.Start < 0 || s.End >= arrayLen) continue;
+            for (var i = s.Start; i <= s.End; i++)
+            {
+                var pos = Rear.ShockTravel?[i] ?? Linkage.WheelToDamperTravel(Rear.Travel[i]);
+                var leverage = dPolynomial.Evaluate(pos);
+                var v = leverage > 0 ? Rear.Velocity[i] / leverage : 0;
+                n++;
+                var delta = v - mean;
+                mean += delta / n;
+                m2 += delta * (v - mean);
+                if (v < min) min = v;
+                if (v > max) max = v;
+            }
+        }
+
+        if (n < 2)
+            return new NormalDistributionData([], []);
+
+        var mu = mean;
+        var std = System.Math.Sqrt(m2 / n);
+
+        var range = max - min;
+        var ny = new double[100];
+        for (int i = 0; i < 100; i++)
+            ny[i] = min + i * range / 99;
+
+        var pdf = new List<double>(100);
+        for (int i = 0; i < 100; i++)
+            pdf.Add(Normal.PDF(mu, std, ny[i]) * Parameters.DamperVelocityHistStep * 100);
+
+        return new NormalDistributionData([.. ny], pdf);
+    }
+
     public PositionVelocityData CalculateForkPositionVelocityData()
     {
         var sinHeadAngle = Math.Sin(Linkage.HeadAngle * Math.PI / 180.0);
@@ -1481,9 +1625,30 @@ public class TelemetryData
         var frontPoly = FitPolynomial(frontTravelVelocity.Item1, frontTravelVelocity.Item2);
         var rearPoly = FitPolynomial(rearTravelVelocity.Item1, rearTravelVelocity.Item2);
 
-        var evalPoints = Enumerable.Range(0, 100).Select(i => i + 0.5).ToArray();
-        var sum = evalPoints.Sum(t => frontPoly(t) - rearPoly(t));
-        var msd = sum / evalPoints.Length;
+        // Evaluate the front/rear fit difference only over the travel%-range actually
+        // covered by BOTH suspensions, so the MSD is not dominated by extrapolation into
+        // unoccupied travel ranges. TravelVelocity returns the travel% arrays sorted ascending.
+        var frontT = frontTravelVelocity.Item1;
+        var rearT = rearTravelVelocity.Item1;
+        double msd;
+        if (frontT.Length == 0 || rearT.Length == 0)
+        {
+            msd = 0;
+        }
+        else
+        {
+            var lo = Math.Max(frontT[0], rearT[0]);
+            var hi = Math.Min(frontT[^1], rearT[^1]);
+            if (lo >= hi)
+            {
+                msd = 0;
+            }
+            else
+            {
+                var evalPoints = Enumerable.Range(0, 100).Select(i => lo + (hi - lo) * (i + 0.5) / 100.0).ToArray();
+                msd = evalPoints.Average(t => frontPoly(t) - rearPoly(t));
+            }
+        }
 
         return new BalanceData(
             [.. frontTravelVelocity.Item1],

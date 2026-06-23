@@ -14,6 +14,7 @@ public class SessionCache
     [Column("front_velocity_histogram")] public string? FrontVelocityHistogram { get; set; }
     [Column("front_low_speed_velocity_histogram")] public string? FrontLowSpeedVelocityHistogram { get; set; }
     [Column("rear_velocity_histogram")] public string? RearVelocityHistogram { get; set; }
+    [Column("rear_damper_velocity_histogram")] public string? RearDamperVelocityHistogram { get; set; }
     [Column("rear_low_speed_velocity_histogram")] public string? RearLowSpeedVelocityHistogram { get; set; }
     [Column("combined_balance")] public string? CombinedBalance { get; set; }
     [Column("compression_balance")] public string? CompressionBalance { get; set; }

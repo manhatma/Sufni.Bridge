@@ -50,7 +50,10 @@
                     LsrPercentage="{Binding RearLsrPercentage}" />
             </StackPanel>
 
-            <Image IsVisible="{Binding FrontVelocityTimeCropped, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontVelocityTimeCropped}" Margin="0,24,0,0" />
+            <!--  Rear shaft velocity histogram (damper domain)  -->
+            <Image IsVisible="{Binding RearDamperVelocityHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearDamperVelocityHistogram}" Margin="0,16,0,0" />
+
+            <Image IsVisible="{Binding FrontVelocityTimeCropped, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontVelocityTimeCropped}" />
             <Image IsVisible="{Binding RearVelocityTimeCropped, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearVelocityTimeCropped}" />
 
         </StackPanel>

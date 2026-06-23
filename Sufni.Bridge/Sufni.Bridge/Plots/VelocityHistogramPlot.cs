@@ -93,8 +93,8 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
         base.LoadTelemetryData(telemetryData);
 
         SetTitle(type == SuspensionType.Front
-            ? "Front velocity"
-            : "Rear velocity");
+            ? "Front wheel velocity"
+            : "Rear wheel velocity");
 
         Plot.Layout.Fixed(new PixelPadding(50, 24, 50, 40));
 
@@ -150,6 +150,8 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
         normal.MarkerStyle.IsVisible = false;
         normal.LineStyle.Width = 3;
         normal.LineStyle.Pattern = LinePattern.Dotted;
+
+        AddBinColorLegend(palette, -VelocityLimitMs, VelocityLimitMs, yRangeTop);
 
         AddSymmetryLabel(data, yRangeTop);
         AddStatsBox(telemetryData, yRangeTop);

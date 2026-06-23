@@ -77,15 +77,7 @@ public class LowSpeedVelocityHistogramPlot(Plot plot, SuspensionType type, doubl
 
         Plot.Add.VerticalLine(0, 1f, Color.FromHex("#dddddd"), LinePattern.Dotted);
 
-        // Normal distribution overlay — x range matches plot display range (±velocityLimit)
-        var normalData = telemetryData.CalculateLowSpeedNormalDistribution(type, highSpeedThreshold);
-        var normal = Plot.Add.Scatter(
-            normalData.Y.ToArray(),
-            normalData.Pdf.ToArray());
-        normal.Color = Color.FromHex("#d53e4f");
-        normal.MarkerStyle.IsVisible = false;
-        normal.LineStyle.Width = 3;
-        normal.LineStyle.Pattern = LinePattern.Dotted;
+        AddBinColorLegend(palette, -velocityLimit, velocityLimit, yRangeTop);
 
         var symmetry = TelemetryData.CalculateVelocityHistogramSymmetry(data);
         var color = type == SuspensionType.Front ? FrontColor : RearColor;

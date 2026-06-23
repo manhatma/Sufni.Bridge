@@ -32,6 +32,10 @@ public static class Parameters
     // (mm/s) step between fine-grained velocity histogram bins
     public const double VelocityHistStepFine = 10.0;
 
+    // (mm/s) step between rear shock/damper-domain velocity histogram bins. Finer than the
+    // wheel-domain step because shaft velocities span a much smaller range.
+    public const double DamperVelocityHistStep = 25.0;
+
     // (mm) bottom-outs are regions where travel > max_travel - this value
     public const double BottomoutThreshold = 2.5;
 

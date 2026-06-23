@@ -42,6 +42,11 @@ public class RawTelemetryData
                 reader.ReadUInt16()));
         }
 
+        if (records.Count == 0)
+        {
+            throw new Exception("SST data contains no records");
+        }
+
         var hasFront = records[0].ForkAngle != 0xffff;
         var hasRear = records[0].ShockAngle != 0xffff;
 

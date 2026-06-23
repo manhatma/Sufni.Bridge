@@ -219,6 +219,7 @@ public class SqLiteDatabaseService : IDatabaseService
                 await connection.ExecuteAsync($"ALTER TABLE session_cache ADD COLUMN {name} {type} DEFAULT 0");
         }
         await AddColumnIfMissing("travel_comparison_histogram");
+        await AddColumnIfMissing("rear_damper_velocity_histogram");
         await AddColumnIfMissing("front_rear_travel_scatter");
         await AddColumnIfMissing("front_position_distribution");
         await AddColumnIfMissing("rear_position_distribution");

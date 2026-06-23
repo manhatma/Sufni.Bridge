@@ -174,8 +174,8 @@ public class Strokes
                 strokes.Count > 0 &&
                 strokes[^1].Stat.MaxTravel < Parameters.StrokeLengthThreshold * Parameters.StrokeLengthThresholdFac)
             {
-                strokes[^1].End = i;
-                strokes[^1].Duration += duration;
+                var prev = strokes[^1];
+                strokes[^1] = new Stroke(prev.Start, i, prev.Duration + duration, travel, velocity, maxTravel);
             }
             else
             {

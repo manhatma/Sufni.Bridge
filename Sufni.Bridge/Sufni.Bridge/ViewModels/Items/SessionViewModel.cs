@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 180;
+    private const int CurrentPlotVersion = 186;
 
     // Approximate rendered height of the VelocityBandView control (margin + title text +
     // 44 px band grid). Used to size the low-speed velocity histograms so the
@@ -181,6 +181,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 var frontVelHistTask   = Task.Run(() => SvgToSource(cache.FrontVelocityHistogram));
                 var frontLsVelHistTask = Task.Run(() => SvgToSource(cache.FrontLowSpeedVelocityHistogram));
                 var rearVelHistTask    = Task.Run(() => SvgToSource(cache.RearVelocityHistogram));
+                var rearDamperVelHistTask = Task.Run(() => SvgToSource(cache.RearDamperVelocityHistogram));
                 var rearLsVelHistTask  = Task.Run(() => SvgToSource(cache.RearLowSpeedVelocityHistogram));
                 var combBalTask      = Task.Run(() => SvgToSource(cache.CombinedBalance));
                 var compBalTask      = Task.Run(() => SvgToSource(cache.CompressionBalance));
@@ -199,7 +200,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 var combinedFftHighTask = Task.Run(() => SvgToSource(cache.CombinedTravelFftHigh));
                 var combinedVelFftTask  = Task.Run(() => SvgToSource(cache.CombinedVelocityFft));
 
-                await Task.WhenAll(frontVelHistTask, frontLsVelHistTask, rearVelHistTask, rearLsVelHistTask,
+                await Task.WhenAll(frontVelHistTask, frontLsVelHistTask, rearVelHistTask, rearDamperVelHistTask, rearLsVelHistTask,
                     combBalTask, compBalTask, rebBalTask,
                     velDistCompTask, posVelCompTask, frontPosVelTask, rearPosVelTask,
                     frontTravelCropTask, rearTravelCropTask, frontVelCropTask, rearVelCropTask,
@@ -209,6 +210,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 var frontVelHistSrc   = frontVelHistTask.Result;
                 var frontLsVelHistSrc = frontLsVelHistTask.Result;
                 var rearVelHistSrc    = rearVelHistTask.Result;
+                var rearDamperVelHistSrc = rearDamperVelHistTask.Result;
                 var rearLsVelHistSrc  = rearLsVelHistTask.Result;
                 var combBalSrc      = combBalTask.Result;
                 var compBalSrc      = compBalTask.Result;
@@ -229,6 +231,7 @@ public partial class SessionViewModel : ItemViewModelBase
                     DamperPage.FrontVelocityHistogram          = SourceToImage(frontVelHistSrc);
                     DamperPage.FrontLowSpeedVelocityHistogram = SourceToImage(frontLsVelHistSrc);
                     DamperPage.RearVelocityHistogram           = SourceToImage(rearVelHistSrc);
+                    DamperPage.RearDamperVelocityHistogram     = SourceToImage(rearDamperVelHistSrc);
                     DamperPage.RearLowSpeedVelocityHistogram  = SourceToImage(rearLsVelHistSrc);
                     DamperPage.FrontHscPercentage     = cache.FrontHscPercentage;
                     DamperPage.RearHscPercentage      = cache.RearHscPercentage;
@@ -459,6 +462,15 @@ public partial class SessionViewModel : ItemViewModelBase
                 sessionCache.RearVelocityHistogram = rvh.Plot.GetSvgXml(width, height);
                 var rearVelocityHistSrc = SvgToSource(sessionCache.RearVelocityHistogram);
                 Dispatcher.UIThread.Post(() => { DamperPage.RearVelocityHistogram = SourceToImage(rearVelocityHistSrc); });
+            }));
+
+            tasks.Add(ThrottledPlotTask(() =>
+            {
+                var rdvh = new DamperVelocityHistogramPlot(new Plot());
+                rdvh.LoadTelemetryData(telemetryData);
+                sessionCache.RearDamperVelocityHistogram = rdvh.Plot.GetSvgXml(width, height);
+                var rearDamperVelocityHistSrc = SvgToSource(sessionCache.RearDamperVelocityHistogram);
+                Dispatcher.UIThread.Post(() => { DamperPage.RearDamperVelocityHistogram = SourceToImage(rearDamperVelocityHistSrc); });
             }));
 
             tasks.Add(ThrottledPlotTask(() =>
@@ -1707,6 +1719,7 @@ public partial class SessionViewModel : ItemViewModelBase
             svgEntries.Add(cache.FrontVelocityHistogram);
             svgEntries.Add(cache.FrontLowSpeedVelocityHistogram);
             svgEntries.Add(cache.RearVelocityHistogram);
+            svgEntries.Add(cache.RearDamperVelocityHistogram);
             svgEntries.Add(cache.RearLowSpeedVelocityHistogram);
 
             // Balance tab
