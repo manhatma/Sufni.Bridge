@@ -372,3 +372,6 @@ Sufni.Bridge/Sufni.Bridge.Android/lib
 
 # User dictionary
 Sufni.Bridge.sln.DotSettings
+
+# Claude Code local agent state (worktrees, plans, settings)
+.claude/
