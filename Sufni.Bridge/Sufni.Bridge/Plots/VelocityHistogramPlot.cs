@@ -46,17 +46,24 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
         var p95Comp = compVels.Count > 0 ? compVels.Percentile(95) : 0.0;
         var p95Reb  = rebVels.Count  > 0 ? rebVels.Percentile(95)  : 0.0;
 
-        // Non-breaking spaces keep columns aligned in ScottPlot SVG rendering
-        static string N(double v, int w = 7) =>
+        // Monospace table (row label + Avg / 95th / Max columns). Non-breaking spaces keep
+        // the columns aligned in ScottPlot's SVG text rendering. Headers are centered over
+        // each column; values stay right-aligned. Rebound stays signed (negative).
+        static string Num(double v, int w = 7) =>
             v.ToString("F1").PadLeft(w).Replace(' ', '\u00A0');
+        static string Ctr(string s, int w = 7)
+        {
+            var left = (w - s.Length) / 2;
+            return s.PadLeft(s.Length + left).PadRight(w).Replace(' ', '\u00A0');
+        }
+        static string Row(string s, int w = 6) =>
+            s.PadRight(w).Replace(' ', '\u00A0');
 
+        const string gap = "\u00A0";
         var statsText =
-            $"Comp\u00A0avg:\u00A0\u00A0{N(stats.AverageCompression)}\u00A0mm/s\n" +
-            $"Comp\u00A095th:\u00A0{N(p95Comp)}\u00A0mm/s\n" +
-            $"Comp\u00A0max:\u00A0\u00A0{N(stats.MaxCompression)}\u00A0mm/s\n" +
-            $"Reb\u00A0max:\u00A0\u00A0\u00A0{N(stats.MaxRebound)}\u00A0mm/s\n" +
-            $"Reb\u00A095th:\u00A0\u00A0{N(-p95Reb)}\u00A0mm/s\n" +
-            $"Reb\u00A0avg:\u00A0\u00A0\u00A0{N(stats.AverageRebound)}\u00A0mm/s";
+            $"{Row("[mm/s]")}{gap}{Ctr("Avg")}{gap}{Ctr("95th")}{gap}{Ctr("Max")}\n" +
+            $"{Row("Comp")}{gap}{Num(stats.AverageCompression)}{gap}{Num(p95Comp)}{gap}{Num(stats.MaxCompression)}\n" +
+            $"{Row("Reb")}{gap}{Num(stats.AverageRebound)}{gap}{Num(-p95Reb)}{gap}{Num(stats.MaxRebound)}";
 
         var box = Plot.Add.Text(statsText, VelocityLimitMs, yRangeTop * 0.97);
         box.LabelFontColor = StatColor;
