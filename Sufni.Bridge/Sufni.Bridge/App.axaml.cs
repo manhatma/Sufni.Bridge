@@ -7,6 +7,7 @@ using Sufni.Bridge.ViewModels;
 using Sufni.Bridge.Views;
 using System;
 using System.Diagnostics;
+using System.Globalization;
 using Avalonia.Controls;
 
 namespace Sufni.Bridge;
@@ -18,6 +19,15 @@ public partial class App : Application
 
     public App()
     {
+        // The whole app is English: pin a fixed culture so numbers use a '.' decimal
+        // separator (and a day-first English date format) regardless of device locale.
+        // DefaultThreadCurrentCulture also covers the background threads that render plots.
+        var culture = new CultureInfo("en-GB");
+        CultureInfo.DefaultThreadCurrentCulture = culture;
+        CultureInfo.DefaultThreadCurrentUICulture = culture;
+        CultureInfo.CurrentCulture = culture;
+        CultureInfo.CurrentUICulture = culture;
+
 #if DEBUG
         RegisteredServices.Collection.AddSingleton<IHttpApiService, HttpApiServiceStub>();
 #else
