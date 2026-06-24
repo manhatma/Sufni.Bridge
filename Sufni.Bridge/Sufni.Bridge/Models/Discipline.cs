@@ -5,4 +5,5 @@ public enum Discipline
     XC = 0,
     Enduro = 1,
     Downhill = 2,
+    Trail = 3,
 }

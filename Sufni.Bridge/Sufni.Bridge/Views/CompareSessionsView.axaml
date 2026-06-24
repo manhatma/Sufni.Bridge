@@ -119,6 +119,10 @@
                 <Image IsVisible="{Binding RearLowSpeedSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
                        Source="{Binding RearLowSpeedSvg}" />
 
+                <!-- Rear Damper Velocity Histogram -->
+                <Image IsVisible="{Binding RearDamperVelocityHistogramSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Source="{Binding RearDamperVelocityHistogramSvg}" />
+
                 <!-- Front Velocity Spectrum (1–10 Hz) -->
                 <Image IsVisible="{Binding FrontVelocitySpectrumSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
                        Source="{Binding FrontVelocitySpectrumSvg}" />
@@ -142,6 +146,14 @@
                 <!-- Rear Travel Spectrum (10–100 Hz) -->
                 <Image IsVisible="{Binding RearTravelSpectrumHighSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
                        Source="{Binding RearTravelSpectrumHighSvg}" />
+
+                <!-- Front Position vs Velocity -->
+                <Image IsVisible="{Binding FrontPositionVelocitySvg, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Source="{Binding FrontPositionVelocitySvg}" />
+
+                <!-- Rear Position vs Velocity -->
+                <Image IsVisible="{Binding RearPositionVelocitySvg, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Source="{Binding RearPositionVelocitySvg}" />
 
                 <!-- Front Wheel Table -->
                 <Grid RowDefinitions="auto auto" ColumnDefinitions="*"

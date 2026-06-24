@@ -269,6 +269,7 @@ public partial class BalanceMetricsViewModel : ObservableObject
     private static (double frontLo, double frontHi, double rearLo, double rearHi) GetFreqBands(Discipline d) => d switch
     {
         Discipline.XC       => (3.0, 3.9, 3.0, 3.6),
+        Discipline.Trail    => (2.5, 3.5, 2.5, 3.2), // new
         Discipline.Downhill => (1.7, 2.5, 1.7, 2.3),
         _                   => (2.1, 3.2, 2.1, 2.9), // Enduro / default
     };

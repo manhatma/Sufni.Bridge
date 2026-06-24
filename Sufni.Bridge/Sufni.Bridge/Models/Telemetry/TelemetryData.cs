@@ -1832,6 +1832,7 @@ public class TelemetryData
     public static double FrequencySplitFor(Discipline? d) => d switch
     {
         Discipline.XC       => 2.8,
+        Discipline.Trail    => 2.4, // new
         Discipline.Downhill => 1.6,
         _                   => 2.0, // Enduro / default
     };

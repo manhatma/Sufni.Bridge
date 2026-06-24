@@ -46,7 +46,13 @@ public partial class SetupViewModel : ItemViewModelBase
     [NotifyCanExecuteChangedFor(nameof(ResetCommand))]
     private Discipline selectedDiscipline;
 
-    public IReadOnlyList<Discipline> Disciplines { get; } = Enum.GetValues<Discipline>();
+    public IReadOnlyList<Discipline> Disciplines { get; } =
+    [
+        Discipline.XC,
+        Discipline.Trail,
+        Discipline.Enduro,
+        Discipline.Downhill,
+    ];
 
     public ReadOnlyObservableCollection<ItemViewModelBase> Linkages => linkages;
     private readonly ReadOnlyObservableCollection<ItemViewModelBase> linkages;

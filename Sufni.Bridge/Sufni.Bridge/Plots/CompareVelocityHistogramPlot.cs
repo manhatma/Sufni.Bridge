@@ -15,8 +15,8 @@ public class CompareVelocityHistogramPlot(Plot plot, SuspensionType type) : Sufn
     public void LoadMultipleSessions(List<(TelemetryData data, Color color, LinePattern pattern, string name)> sessions)
     {
         SetTitle(type == SuspensionType.Front
-            ? "Front velocity histogram"
-            : "Rear velocity histogram");
+            ? "Front wheel velocity"
+            : "Rear wheel velocity");
         Plot.Layout.Fixed(new PixelPadding(50, 24, 50, 40));
         Plot.Axes.Bottom.Label.Text = "Velocity (m/s)";
         Plot.Axes.Left.Label.Text = "Time (%)";

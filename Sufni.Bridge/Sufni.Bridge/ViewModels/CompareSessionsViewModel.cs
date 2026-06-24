@@ -62,12 +62,15 @@ public partial class CompareSessionsViewModel : ViewModelBase
     [ObservableProperty] private SvgImage? rearVelocityHistogramSvg;
     [ObservableProperty] private SvgImage? frontLowSpeedSvg;
     [ObservableProperty] private SvgImage? rearLowSpeedSvg;
+    [ObservableProperty] private SvgImage? rearDamperVelocityHistogramSvg;
     [ObservableProperty] private SvgImage? frontVelocitySpectrumSvg;
     [ObservableProperty] private SvgImage? rearVelocitySpectrumSvg;
     [ObservableProperty] private SvgImage? frontTravelSpectrumLowSvg;
     [ObservableProperty] private SvgImage? rearTravelSpectrumLowSvg;
     [ObservableProperty] private SvgImage? frontTravelSpectrumHighSvg;
     [ObservableProperty] private SvgImage? rearTravelSpectrumHighSvg;
+    [ObservableProperty] private SvgImage? frontPositionVelocitySvg;
+    [ObservableProperty] private SvgImage? rearPositionVelocitySvg;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ExportPdfCommand))]
@@ -88,12 +91,15 @@ public partial class CompareSessionsViewModel : ViewModelBase
     private string? _rearVelocityHistogramXml;
     private string? _frontLowSpeedXml;
     private string? _rearLowSpeedXml;
+    private string? _rearDamperVelocityHistogramXml;
     private string? _frontVelocitySpectrumXml;
     private string? _rearVelocitySpectrumXml;
     private string? _frontTravelSpectrumLowXml;
     private string? _rearTravelSpectrumLowXml;
     private string? _frontTravelSpectrumHighXml;
     private string? _rearTravelSpectrumHighXml;
+    private string? _frontPositionVelocityXml;
+    private string? _rearPositionVelocityXml;
 
     public ObservableCollection<CompareTableRow> FrontWheelRows { get; } = [];
     public ObservableCollection<CompareTableRow> RearWheelRows { get; } = [];
@@ -349,6 +355,17 @@ public partial class CompareSessionsViewModel : ViewModelBase
             Dispatcher.UIThread.Post(() => RearLowSpeedSvg = SourceToImage(src));
         }));
 
+        // Rear Damper Velocity Histogram (damper domain, mm/s, rear-only)
+        tasks.Add(Task.Run(() =>
+        {
+            var p = new CompareDamperVelocityHistogramPlot(new Plot());
+            p.LoadMultipleSessions(sessionData);
+            var svg = p.Plot.GetSvgXml(width, height);
+            _rearDamperVelocityHistogramXml = svg;
+            var src = SvgToSource(svg);
+            Dispatcher.UIThread.Post(() => RearDamperVelocityHistogramSvg = SourceToImage(src));
+        }));
+
         // 7. Front velocity spectrum (1–10 Hz, with body-resonance peak markers)
         tasks.Add(Task.Run(() =>
         {
@@ -439,6 +456,28 @@ public partial class CompareSessionsViewModel : ViewModelBase
             Dispatcher.UIThread.Post(() => RearTravelSpectrumHighSvg = SourceToImage(src));
         }));
 
+        // Front Position vs Velocity (phase portrait)
+        tasks.Add(Task.Run(() =>
+        {
+            var p = new ComparePositionVelocityPlot(new Plot(), SuspensionType.Front);
+            p.LoadMultipleSessions(sessionData);
+            var svg = p.Plot.GetSvgXml(width, height);
+            _frontPositionVelocityXml = svg;
+            var src = SvgToSource(svg);
+            Dispatcher.UIThread.Post(() => FrontPositionVelocitySvg = SourceToImage(src));
+        }));
+
+        // Rear Position vs Velocity (phase portrait)
+        tasks.Add(Task.Run(() =>
+        {
+            var p = new ComparePositionVelocityPlot(new Plot(), SuspensionType.Rear);
+            p.LoadMultipleSessions(sessionData);
+            var svg = p.Plot.GetSvgXml(width, height);
+            _rearPositionVelocityXml = svg;
+            var src = SvgToSource(svg);
+            Dispatcher.UIThread.Post(() => RearPositionVelocitySvg = SourceToImage(src));
+        }));
+
         // 13. Summary Table
         tasks.Add(Task.Run(() =>
         {
@@ -468,7 +507,9 @@ public partial class CompareSessionsViewModel : ViewModelBase
          _frontLowSpeedXml is not null || _rearLowSpeedXml is not null ||
          _frontVelocitySpectrumXml is not null || _rearVelocitySpectrumXml is not null ||
          _frontTravelSpectrumLowXml is not null || _rearTravelSpectrumLowXml is not null ||
-         _frontTravelSpectrumHighXml is not null || _rearTravelSpectrumHighXml is not null);
+         _frontTravelSpectrumHighXml is not null || _rearTravelSpectrumHighXml is not null ||
+         _rearDamperVelocityHistogramXml is not null || _frontPositionVelocityXml is not null ||
+         _rearPositionVelocityXml is not null);
 
     [RelayCommand(CanExecute = nameof(CanExportPdf))]
     private async Task ExportPdf()
@@ -482,9 +523,11 @@ public partial class CompareSessionsViewModel : ViewModelBase
                 _balanceXml, _reboundBalanceXml, _compressionBalanceXml,
                 _frontVelocityHistogramXml, _rearVelocityHistogramXml,
                 _frontLowSpeedXml, _rearLowSpeedXml,
+                _rearDamperVelocityHistogramXml,
                 _frontVelocitySpectrumXml, _rearVelocitySpectrumXml,
                 _frontTravelSpectrumLowXml, _rearTravelSpectrumLowXml,
                 _frontTravelSpectrumHighXml, _rearTravelSpectrumHighXml,
+                _frontPositionVelocityXml, _rearPositionVelocityXml,
             };
             var validSvgs = svgs.Where(s => s is not null).Cast<string>().ToList();
             if (validSvgs.Count == 0)
