@@ -1,10 +1,15 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
+using System.Threading.Tasks;
 using Avalonia.Media;
 using Avalonia.Svg.Skia;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
+using Microsoft.Extensions.DependencyInjection;
 using Sufni.Bridge.Models;
 using Sufni.Bridge.Models.Telemetry;
+using Sufni.Bridge.Services;
 
 namespace Sufni.Bridge.ViewModels.SessionPages;
 
@@ -17,6 +22,20 @@ public partial class BalanceMetricRow : ObservableObject
     [ObservableProperty] private string target = "";
     [ObservableProperty] private BalanceStatus status = BalanceStatus.Unknown;
 
+    // Identity & edit affordance — set once at construction for the editable rows.
+    public string Key { get; init; } = "";
+    public bool IsEditable { get; init; }
+    public bool HasRange { get; init; }
+
+    // Edit state, driven by the parent BalanceMetricsViewModel.IsEditing toggle.
+    [ObservableProperty] private bool isEditing;
+    [ObservableProperty] private double? greenMin;
+    [ObservableProperty] private double? greenMax;
+
+    public bool ShowEditors => IsEditing && IsEditable;
+    public bool ShowTargetText => !ShowEditors;
+    public bool ShowMaxField => HasRange;
+
     public IBrush ValueBrush => Status switch
     {
         BalanceStatus.Good       => new SolidColorBrush(Color.FromRgb(0x6C, 0xC4, 0x4A)),
@@ -26,15 +45,21 @@ public partial class BalanceMetricRow : ObservableObject
     };
 
     partial void OnStatusChanged(BalanceStatus value) => OnPropertyChanged(nameof(ValueBrush));
+
+    partial void OnIsEditingChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ShowEditors));
+        OnPropertyChanged(nameof(ShowTargetText));
+    }
 }
 
 public partial class BalanceMetricsViewModel : ObservableObject
 {
-    public BalanceMetricRow FrontSag      { get; } = new() { Label = "Front SAG (dyn.)", Target = "23–28 %" };
-    public BalanceMetricRow RearSag       { get; } = new() { Label = "Rear SAG (dyn.)",  Target = "28–33 %" };
-    public BalanceMetricRow SagDiff       { get; } = new() { Label = "Sag-Diff |F−R|",   Target = "≤ 5 pp" };
-    public BalanceMetricRow FrontP95      { get; } = new() { Label = "Front 95th",       Target = "> 55 %" };
-    public BalanceMetricRow RearP95       { get; } = new() { Label = "Rear 95th",        Target = "> 55 %" };
+    public BalanceMetricRow FrontSag      { get; } = new() { Label = "Front SAG (dyn.)", Target = "23–28 %", Key = "FrontSag", IsEditable = true, HasRange = true };
+    public BalanceMetricRow RearSag       { get; } = new() { Label = "Rear SAG (dyn.)",  Target = "28–33 %", Key = "RearSag",  IsEditable = true, HasRange = true };
+    public BalanceMetricRow SagDiff       { get; } = new() { Label = "Sag-Diff |F−R|",   Target = "≤ 5 pp",  Key = "SagDiff",  IsEditable = true };
+    public BalanceMetricRow FrontP95      { get; } = new() { Label = "Front 95th",       Target = "> 55 %",  Key = "FrontP95", IsEditable = true };
+    public BalanceMetricRow RearP95       { get; } = new() { Label = "Rear 95th",        Target = "> 55 %",  Key = "RearP95",  IsEditable = true };
     public BalanceMetricRow P95Diff       { get; } = new() { Label = "95th-Diff |F−R|",  Target = "≤ 5 pp" };
     public BalanceMetricRow EffectiveHeadAngle { get; } = new() { Label = "Eff. Head Angle", Target = "" };
     public BalanceMetricRow FrontBO       { get; } = new() { Label = "Front Bottom-out", Target = "≈ 0" };
@@ -42,7 +67,7 @@ public partial class BalanceMetricsViewModel : ObservableObject
     public BalanceMetricRow CompVelRatio  { get; } = new() { Label = "Comp Vel F/R",     Target = "−0.08 … +0.07" };
     public BalanceMetricRow RebVelRatio   { get; } = new() { Label = "Reb Vel F/R",      Target = "0.00 … +0.07" };
     public BalanceMetricRow CompMsd       { get; } = new() { Label = "MSD Compression",  Target = "≈ 0" };
-    public BalanceMetricRow RebMsd        { get; } = new() { Label = "MSD Rebound",      Target = "−10 to 0 %" };
+    public BalanceMetricRow RebMsd        { get; } = new() { Label = "MSD Rebound",      Target = "−10 to 0 %", Key = "RebMsd", IsEditable = true, HasRange = true };
     // Discipline-dependent eigenfrequency targets — see GetFreqBands below.
     // Following Vorsprung's recommendation, the band starts equal front/rear
     // (lower bound matches Rear); the upper bound runs ~0.3 Hz higher to allow
@@ -71,13 +96,126 @@ public partial class BalanceMetricsViewModel : ObservableObject
     public BalanceMetricRow WheelCoherence { get; } = new() { Label = "Coherence (10.0–25.0 Hz)", Target = "≤ 0.4" };
     public BalanceMetricRow HighCoherence  { get; } = new() { Label = "Coherence (25.0–50.0 Hz)", Target = "≤ 0.1" };
 
-    public void Apply(BalanceMetrics m, Discipline? discipline = null)
+    // --- user-editable targets (per discipline) ------------------------------------------
+    // Cached inputs so the editor can re-color in place without recomputing telemetry.
+    private BalanceMetrics? lastMetrics;
+    private Discipline? lastDiscipline;
+    private readonly Dictionary<string, (double? min, double? max)> targetOverrides = new();
+
+    [ObservableProperty] private bool isEditing;
+
+    private BalanceMetricRow[] EditableRows => [FrontSag, RearSag, SagDiff, FrontP95, RearP95, RebMsd];
+
+    partial void OnIsEditingChanged(bool value)
     {
-        SetSagBand(FrontSag, m.FrontSagPct, 23, 28);
-        SetSagBand(RearSag,  m.RearSagPct,  28, 33);
-        SetThreshold(SagDiff, m.SagDifferencePp, "{0:0.0} pp", 5.0, 8.0, lowerIsBetter: true);
-        SetThreshold(FrontP95, m.FrontP95Pct, "{0:0.0} %", 55.0, 50.0, lowerIsBetter: false);
-        SetThreshold(RearP95,  m.RearP95Pct,  "{0:0.0} %", 55.0, 50.0, lowerIsBetter: false);
+        foreach (var row in EditableRows)
+        {
+            if (value) SeedEditor(row);
+            row.IsEditing = value;
+        }
+    }
+
+    // Effective green bounds: a stored override, else the registry default.
+    private (double min, double? max) EffectiveGreen(string key, Discipline? discipline)
+    {
+        if (targetOverrides.TryGetValue(key, out var o) && o.min.HasValue)
+            return (o.min.Value, o.max);
+        return BalanceTargetDefaults.DefaultGreen(key, discipline);
+    }
+
+    private void SeedEditor(BalanceMetricRow row)
+    {
+        var (min, max) = EffectiveGreen(row.Key, lastDiscipline);
+        row.GreenMin = min;
+        row.GreenMax = max;
+    }
+
+    // Sets Value/Status for an editable metric from its effective green bounds, deriving the
+    // yellow band via the registry, and regenerates the Target string so it tracks edits.
+    private void ApplyEditable(BalanceMetricRow row, double? value, Discipline? discipline)
+    {
+        var def = BalanceTargetDefaults.All[row.Key];
+        var (min, max) = EffectiveGreen(row.Key, discipline);
+        row.Target = def.TargetFormatter(min, max);
+        if (!value.HasValue) { row.Value = "—"; row.Status = BalanceStatus.Unknown; return; }
+        row.Value = string.Format(CultureInfo.InvariantCulture, def.ValueFormat, value.Value);
+        row.Status = BalanceTargetDefaults.Classify(def, min, max, value.Value);
+    }
+
+    [RelayCommand]
+    private async Task ConfirmEdit()
+    {
+        var db = App.Current?.Services?.GetService<IDatabaseService>();
+        var discipline = lastDiscipline ?? Discipline.Enduro;
+        foreach (var row in EditableRows)
+        {
+            var def = BalanceTargetDefaults.All[row.Key];
+            double? min = row.GreenMin;
+            double? max = def.HasRange ? row.GreenMax : null;
+            if (!IsValidGreen(def, min, max)) { SeedEditor(row); continue; }
+
+            var (defMin, defMax) = BalanceTargetDefaults.DefaultGreen(row.Key, discipline);
+            var isDefault = NearlyEqual(min!.Value, defMin) && NullableNearlyEqual(max, defMax);
+            if (isDefault)
+            {
+                targetOverrides.Remove(row.Key);
+                if (db is not null) await db.DeleteBalanceTargetOverrideAsync(discipline, row.Key);
+            }
+            else
+            {
+                targetOverrides[row.Key] = (min, max);
+                if (db is not null)
+                    await db.PutBalanceTargetOverrideAsync(new BalanceTargetOverride
+                    {
+                        Discipline = discipline, MetricKey = row.Key, GreenMin = min, GreenMax = max
+                    });
+            }
+        }
+
+        IsEditing = false;
+        if (lastMetrics is not null) Apply(lastMetrics, lastDiscipline);
+    }
+
+    [RelayCommand]
+    private void CancelEdit() => IsEditing = false;
+
+    [RelayCommand]
+    private void ResetMetric(BalanceMetricRow? row)
+    {
+        if (row is null) return;
+        var (min, max) = BalanceTargetDefaults.DefaultGreen(row.Key, lastDiscipline);
+        row.GreenMin = min;
+        row.GreenMax = max;
+    }
+
+    private static bool IsValidGreen(BalanceMetricDef def, double? min, double? max)
+    {
+        if (min is null || double.IsNaN(min.Value) || double.IsInfinity(min.Value)) return false;
+        if (!def.HasRange) return true;
+        if (max is null || double.IsNaN(max.Value) || double.IsInfinity(max.Value)) return false;
+        return min.Value < max.Value;
+    }
+
+    private static bool NearlyEqual(double a, double b) => Math.Abs(a - b) < 1e-9;
+    private static bool NullableNearlyEqual(double? a, double? b)
+        => (a is null && b is null) || (a.HasValue && b.HasValue && NearlyEqual(a.Value, b.Value));
+
+    public void Apply(BalanceMetrics m, Discipline? discipline = null,
+                      IReadOnlyDictionary<string, (double? min, double? max)>? overrideMap = null)
+    {
+        lastMetrics = m;
+        lastDiscipline = discipline;
+        if (overrideMap is not null)
+        {
+            targetOverrides.Clear();
+            foreach (var kv in overrideMap) targetOverrides[kv.Key] = kv.Value;
+        }
+
+        ApplyEditable(FrontSag, m.FrontSagPct,     discipline);
+        ApplyEditable(RearSag,  m.RearSagPct,      discipline);
+        ApplyEditable(SagDiff,  m.SagDifferencePp, discipline);
+        ApplyEditable(FrontP95, m.FrontP95Pct,     discipline);
+        ApplyEditable(RearP95,  m.RearP95Pct,      discipline);
         var p95Diff = (m.FrontP95Pct.HasValue && m.RearP95Pct.HasValue)
             ? (double?)Math.Abs(m.FrontP95Pct.Value - m.RearP95Pct.Value)
             : null;
@@ -94,7 +232,7 @@ public partial class BalanceMetricsViewModel : ObservableObject
         // Acceptable band stays at 1.00–1.20 → 0.0–0.0909 in Michelson space.
         SetSignedBand(RebVelRatio,  m.ReboundVelocityRatio,      0.0,    0.0698,  0.0,    0.0909);
         SetMsd(CompMsd, m.CompressionMsd);
-        SetMsdRebound(RebMsd, m.ReboundMsd);
+        ApplyEditable(RebMsd, m.ReboundMsd, discipline);
         var (frontLo, frontHi, rearLo, rearHi) = GetFreqBands(discipline ?? Discipline.Enduro);
         FrontFreq.Target = string.Format(CultureInfo.InvariantCulture, "{0:0.0}–{1:0.0} Hz", frontLo, frontHi);
         RearFreq.Target  = string.Format(CultureInfo.InvariantCulture, "{0:0.0}–{1:0.0} Hz", rearLo,  rearHi);
@@ -158,16 +296,6 @@ public partial class BalanceMetricsViewModel : ObservableObject
                 : value.Value <= cutoff + buffer + epsilon        ? BalanceStatus.Acceptable
                 :                                                   BalanceStatus.Critical;
         }
-    }
-
-    private static void SetSagBand(BalanceMetricRow row, double? value, double goodLo, double goodHi)
-    {
-        if (!value.HasValue) { row.Value = "—"; row.Status = BalanceStatus.Unknown; return; }
-        row.Value = string.Format(CultureInfo.InvariantCulture, "{0:0.0} %", value.Value);
-        var v = value.Value;
-        row.Status = (v >= goodLo && v <= goodHi) ? BalanceStatus.Good
-            : (v >= goodLo - 2 && v <= goodHi + 2) ? BalanceStatus.Acceptable
-            : BalanceStatus.Critical;
     }
 
     private static void SetThreshold(BalanceMetricRow row, double? value, string fmt,
@@ -241,20 +369,6 @@ public partial class BalanceMetricsViewModel : ObservableObject
         row.Status = abs <= 5  ? BalanceStatus.Good
             : abs <= 15        ? BalanceStatus.Acceptable
             :                    BalanceStatus.Critical;
-    }
-
-    // Rebound MSD: asymmetric — rear should NOT rebound faster than front
-    // (positive MSD = kick on rebound). Negative values up to −10% are still
-    // good (rear slightly slower is acceptable / preferred). Critical at
-    // |value| ≥ 15%.
-    private static void SetMsdRebound(BalanceMetricRow row, double? value)
-    {
-        if (!value.HasValue) { row.Value = "—"; row.Status = BalanceStatus.Unknown; return; }
-        row.Value = string.Format(CultureInfo.InvariantCulture, "{0:+0.00;-0.00;0.00} %", value.Value);
-        var v = value.Value;
-        row.Status = (v >= -10 && v <= 0) ? BalanceStatus.Good
-            : Math.Abs(v) >= 15            ? BalanceStatus.Critical
-            :                                BalanceStatus.Acceptable;
     }
 
     /// <summary>

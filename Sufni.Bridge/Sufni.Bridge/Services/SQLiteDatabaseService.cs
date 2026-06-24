@@ -122,7 +122,8 @@ public class SqLiteDatabaseService : IDatabaseService
             typeof(SessionCache),
             typeof(Synchronization),
             typeof(CombinedSessionSource),
-            typeof(PendingSetupChanges)
+            typeof(PendingSetupChanges),
+            typeof(BalanceTargetOverride)
         });
 
         if (result.Results[typeof(CalibrationMethod)] == CreateTableResult.Created)
@@ -964,5 +965,30 @@ public class SqLiteDatabaseService : IDatabaseService
         await Initialization;
         await connection.ExecuteAsync("DELETE FROM pending_setup_changes WHERE setup_id = ?", setupId);
         PendingSetupChanges.RaiseChanged(setupId);
+    }
+
+    public async Task<List<BalanceTargetOverride>> GetBalanceTargetOverridesAsync(Discipline discipline)
+    {
+        await Initialization;
+        return await connection.Table<BalanceTargetOverride>()
+            .Where(o => o.Discipline == discipline)
+            .ToListAsync();
+    }
+
+    public async Task PutBalanceTargetOverrideAsync(BalanceTargetOverride balanceTargetOverride)
+    {
+        await Initialization;
+        balanceTargetOverride.Id = BalanceTargetOverride.MakeId(
+            balanceTargetOverride.Discipline, balanceTargetOverride.MetricKey);
+        balanceTargetOverride.Updated = (int)DateTimeOffset.Now.ToUnixTimeSeconds();
+        await connection.InsertOrReplaceAsync(balanceTargetOverride);
+    }
+
+    public async Task DeleteBalanceTargetOverrideAsync(Discipline discipline, string metricKey)
+    {
+        await Initialization;
+        await connection.ExecuteAsync(
+            "DELETE FROM balance_target_override WHERE id = ?",
+            BalanceTargetOverride.MakeId(discipline, metricKey));
     }
 }

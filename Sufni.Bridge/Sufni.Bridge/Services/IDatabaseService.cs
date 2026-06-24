@@ -58,4 +58,7 @@ public interface IDatabaseService
     public Task<PendingSetupChanges?> GetPendingSetupChangesAsync(Guid setupId);
     public Task PutPendingSetupChangesAsync(PendingSetupChanges pending);
     public Task DeletePendingSetupChangesAsync(Guid setupId);
+    public Task<List<BalanceTargetOverride>> GetBalanceTargetOverridesAsync(Discipline discipline);
+    public Task PutBalanceTargetOverrideAsync(BalanceTargetOverride balanceTargetOverride);
+    public Task DeleteBalanceTargetOverrideAsync(Discipline discipline, string metricKey);
 }

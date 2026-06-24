@@ -225,6 +225,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 var sessionDiscipline = cache.BalanceMetricsJson is not null
                     ? await GetSessionDisciplineAsync()
                     : null;
+                var balanceOverrides = await GetBalanceOverridesAsync(sessionDiscipline);
 
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
@@ -255,7 +256,7 @@ public partial class SessionViewModel : ItemViewModelBase
                             try
                             {
                                 var m = JsonSerializer.Deserialize<BalanceMetrics>(cache.BalanceMetricsJson);
-                                if (m is not null) BalancePage.Metrics.Apply(m, sessionDiscipline);
+                                if (m is not null) BalancePage.Metrics.Apply(m, sessionDiscipline, balanceOverrides);
                             }
                             catch { /* corrupt metrics cache; will be rebuilt */ }
                         }
@@ -296,6 +297,24 @@ public partial class SessionViewModel : ItemViewModelBase
         {
             var setup = await dbSvc.GetSetupAsync(session.Setup.Value);
             return setup?.Discipline;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
+    /// Loads the user's per-discipline balance-target overrides as a metric-keyed map, or
+    /// null when there is no discipline / database. Passed into BalanceMetrics.Apply so the
+    /// metric table reflects the user's edited green ranges.
+    /// </summary>
+    private async Task<Dictionary<string, (double? min, double? max)>?> GetBalanceOverridesAsync(Discipline? discipline)
+    {
+        if (discipline is null) return null;
+        var dbSvc = App.Current?.Services?.GetService<IDatabaseService>();
+        if (dbSvc is null) return null;
+        try
+        {
+            var overrides = await dbSvc.GetBalanceTargetOverridesAsync(discipline.Value);
+            return overrides.ToDictionary(o => o.MetricKey, o => (o.GreenMin, o.GreenMax));
         }
         catch { return null; }
     }
@@ -639,7 +658,8 @@ public partial class SessionViewModel : ItemViewModelBase
                 }
                 var metrics = telemetryData.CalculateBalanceMetrics(discipline);
                 sessionCache.BalanceMetricsJson = JsonSerializer.Serialize(metrics);
-                Dispatcher.UIThread.Post(() => BalancePage.Metrics.Apply(metrics, discipline));
+                var balanceOverrides = await GetBalanceOverridesAsync(discipline);
+                Dispatcher.UIThread.Post(() => BalancePage.Metrics.Apply(metrics, discipline, balanceOverrides));
             }));
         }
 

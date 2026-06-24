@@ -14,6 +14,11 @@
         <vm:BalancePageViewModel />
     </Design.DataContext>
 
+    <UserControl.Resources>
+        <!--  Shrink the Fluent text-control min height for the compact inline target editors.  -->
+        <x:Double x:Key="TextControlThemeMinHeight">22</x:Double>
+    </UserControl.Resources>
+
     <UserControl.Styles>
         <Style Selector="TextBlock.metricLabel">
             <Setter Property="Foreground" Value="#D0D0D0" />
@@ -37,6 +42,62 @@
         <Style Selector="Grid.metricRow">
             <Setter Property="Margin" Value="0,2" />
         </Style>
+        <Style Selector="StackPanel.targetEditor">
+            <Setter Property="Orientation" Value="Horizontal" />
+            <Setter Property="Spacing" Value="2" />
+            <Setter Property="HorizontalAlignment" Value="Right" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TextBlock.editDash">
+            <Setter Property="Foreground" Value="#808890" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="NumericUpDown.balanceEdit">
+            <Setter Property="ShowButtonSpinner" Value="False" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="MinWidth" Value="34" />
+            <Setter Property="MaxWidth" Value="46" />
+            <Setter Property="Minimum" Value="-100" />
+            <Setter Property="Maximum" Value="200" />
+            <Setter Property="Increment" Value="1" />
+            <Setter Property="FormatString" Value="0.#" />
+            <Setter Property="ClipValueToMinMax" Value="True" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <!--  The bordered box is the NumericUpDown's inner ButtonSpinner. Its theme MinHeight
+              (~32) stayed taller than our Height and got clipped, so the top/bottom borders
+              vanished. Collapse the spinner's and the editor's min height + padding.  -->
+        <Style Selector="NumericUpDown.balanceEdit /template/ ButtonSpinner">
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Padding" Value="0" />
+        </Style>
+        <Style Selector="NumericUpDown.balanceEdit /template/ TextBox">
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Padding" Value="3,0" />
+            <Setter Property="FontSize" Value="11" />
+        </Style>
+        <Style Selector="ToggleButton.pencil">
+            <Setter Property="Padding" Value="4" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="ToggleButton.pencil /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="ToggleButton.pencil:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Opacity" Value="0.8" />
+        </Style>
     </UserControl.Styles>
 
     <ScrollViewer Width="{Binding $parent[ScrollViewer].Bounds.Width}" Height="{Binding $parent[ScrollViewer].Bounds.Height}" IsScrollChainingEnabled="False">
@@ -44,33 +105,112 @@
             <Border Background="#20262B" BorderBrush="#505558" BorderThickness="1"
                     CornerRadius="4" Padding="10" Margin="6">
                 <StackPanel Orientation="Vertical">
-                    <TextBlock Text="Balance metrics" Foreground="#D0D0D0" FontSize="14"
-                               FontWeight="SemiBold" Margin="0,0,0,6" />
+                    <Grid ColumnDefinitions="* Auto Auto" Margin="0,0,0,6">
+                        <TextBlock Grid.Column="0" Text="Balance metrics" Foreground="#D0D0D0" FontSize="14"
+                                   FontWeight="SemiBold" VerticalAlignment="Center" />
+                        <ToggleButton Grid.Column="1" Classes="pencil" IsChecked="{Binding Metrics.IsEditing}"
+                                      IsVisible="{Binding !Metrics.IsEditing}" ToolTip.Tip="Edit target ranges">
+                            <Image Width="13" Source="{SvgImage /Assets/fa-pen-square.svg}" />
+                        </ToggleButton>
+                        <Button Grid.Column="1" Classes="embedded" Command="{Binding Metrics.ConfirmEditCommand}"
+                                IsVisible="{Binding Metrics.IsEditing}" ToolTip.Tip="Save changes">
+                            <Image Width="14" Source="{SvgImage /Assets/fa-check_green.svg}" />
+                        </Button>
+                        <Button Grid.Column="2" Classes="embedded" Margin="10,0,0,0" Command="{Binding Metrics.CancelEditCommand}"
+                                IsVisible="{Binding Metrics.IsEditing}" ToolTip.Tip="Discard changes">
+                            <Image Width="12" Source="{SvgImage /Assets/fa-xmark.svg}" />
+                        </Button>
+                    </Grid>
 
                     <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
                         <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.FrontSag.Label}" />
                         <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.FrontSag.Value}"  Foreground="{Binding Metrics.FrontSag.ValueBrush}" />
-                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.FrontSag.Target}" />
+                        <Panel Grid.Column="2">
+                            <TextBlock Classes="metricTarget" Text="{Binding Metrics.FrontSag.Target}"
+                                       IsVisible="{Binding Metrics.FrontSag.ShowTargetText}" />
+                            <StackPanel Classes="targetEditor" IsVisible="{Binding Metrics.FrontSag.ShowEditors}">
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.FrontSag.GreenMin}" />
+                                <TextBlock Classes="editDash" Text="–" IsVisible="{Binding Metrics.FrontSag.ShowMaxField}" />
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.FrontSag.GreenMax}"
+                                               IsVisible="{Binding Metrics.FrontSag.ShowMaxField}" />
+                                <Button Classes="embedded" Margin="2,0,0,0" Command="{Binding Metrics.ResetMetricCommand}"
+                                        CommandParameter="{Binding Metrics.FrontSag}" ToolTip.Tip="Reset to default">
+                                    <Image Width="10" Source="{SvgImage /Assets/fa-rotate-left.svg}" />
+                                </Button>
+                            </StackPanel>
+                        </Panel>
                     </Grid>
                     <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
                         <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.RearSag.Label}" />
                         <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.RearSag.Value}"  Foreground="{Binding Metrics.RearSag.ValueBrush}" />
-                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.RearSag.Target}" />
+                        <Panel Grid.Column="2">
+                            <TextBlock Classes="metricTarget" Text="{Binding Metrics.RearSag.Target}"
+                                       IsVisible="{Binding Metrics.RearSag.ShowTargetText}" />
+                            <StackPanel Classes="targetEditor" IsVisible="{Binding Metrics.RearSag.ShowEditors}">
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.RearSag.GreenMin}" />
+                                <TextBlock Classes="editDash" Text="–" IsVisible="{Binding Metrics.RearSag.ShowMaxField}" />
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.RearSag.GreenMax}"
+                                               IsVisible="{Binding Metrics.RearSag.ShowMaxField}" />
+                                <Button Classes="embedded" Margin="2,0,0,0" Command="{Binding Metrics.ResetMetricCommand}"
+                                        CommandParameter="{Binding Metrics.RearSag}" ToolTip.Tip="Reset to default">
+                                    <Image Width="10" Source="{SvgImage /Assets/fa-rotate-left.svg}" />
+                                </Button>
+                            </StackPanel>
+                        </Panel>
                     </Grid>
                     <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
                         <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.SagDiff.Label}" />
                         <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.SagDiff.Value}"  Foreground="{Binding Metrics.SagDiff.ValueBrush}" />
-                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.SagDiff.Target}" />
+                        <Panel Grid.Column="2">
+                            <TextBlock Classes="metricTarget" Text="{Binding Metrics.SagDiff.Target}"
+                                       IsVisible="{Binding Metrics.SagDiff.ShowTargetText}" />
+                            <StackPanel Classes="targetEditor" IsVisible="{Binding Metrics.SagDiff.ShowEditors}">
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.SagDiff.GreenMin}" />
+                                <TextBlock Classes="editDash" Text="–" IsVisible="{Binding Metrics.SagDiff.ShowMaxField}" />
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.SagDiff.GreenMax}"
+                                               IsVisible="{Binding Metrics.SagDiff.ShowMaxField}" />
+                                <Button Classes="embedded" Margin="2,0,0,0" Command="{Binding Metrics.ResetMetricCommand}"
+                                        CommandParameter="{Binding Metrics.SagDiff}" ToolTip.Tip="Reset to default">
+                                    <Image Width="10" Source="{SvgImage /Assets/fa-rotate-left.svg}" />
+                                </Button>
+                            </StackPanel>
+                        </Panel>
                     </Grid>
                     <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
                         <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.FrontP95.Label}" />
                         <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.FrontP95.Value}"  Foreground="{Binding Metrics.FrontP95.ValueBrush}" />
-                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.FrontP95.Target}" />
+                        <Panel Grid.Column="2">
+                            <TextBlock Classes="metricTarget" Text="{Binding Metrics.FrontP95.Target}"
+                                       IsVisible="{Binding Metrics.FrontP95.ShowTargetText}" />
+                            <StackPanel Classes="targetEditor" IsVisible="{Binding Metrics.FrontP95.ShowEditors}">
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.FrontP95.GreenMin}" />
+                                <TextBlock Classes="editDash" Text="–" IsVisible="{Binding Metrics.FrontP95.ShowMaxField}" />
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.FrontP95.GreenMax}"
+                                               IsVisible="{Binding Metrics.FrontP95.ShowMaxField}" />
+                                <Button Classes="embedded" Margin="2,0,0,0" Command="{Binding Metrics.ResetMetricCommand}"
+                                        CommandParameter="{Binding Metrics.FrontP95}" ToolTip.Tip="Reset to default">
+                                    <Image Width="10" Source="{SvgImage /Assets/fa-rotate-left.svg}" />
+                                </Button>
+                            </StackPanel>
+                        </Panel>
                     </Grid>
                     <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
                         <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.RearP95.Label}" />
                         <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.RearP95.Value}"  Foreground="{Binding Metrics.RearP95.ValueBrush}" />
-                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.RearP95.Target}" />
+                        <Panel Grid.Column="2">
+                            <TextBlock Classes="metricTarget" Text="{Binding Metrics.RearP95.Target}"
+                                       IsVisible="{Binding Metrics.RearP95.ShowTargetText}" />
+                            <StackPanel Classes="targetEditor" IsVisible="{Binding Metrics.RearP95.ShowEditors}">
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.RearP95.GreenMin}" />
+                                <TextBlock Classes="editDash" Text="–" IsVisible="{Binding Metrics.RearP95.ShowMaxField}" />
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.RearP95.GreenMax}"
+                                               IsVisible="{Binding Metrics.RearP95.ShowMaxField}" />
+                                <Button Classes="embedded" Margin="2,0,0,0" Command="{Binding Metrics.ResetMetricCommand}"
+                                        CommandParameter="{Binding Metrics.RearP95}" ToolTip.Tip="Reset to default">
+                                    <Image Width="10" Source="{SvgImage /Assets/fa-rotate-left.svg}" />
+                                </Button>
+                            </StackPanel>
+                        </Panel>
                     </Grid>
                     <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
                         <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.P95Diff.Label}" />
@@ -110,7 +250,20 @@
                     <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
                         <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.RebMsd.Label}" />
                         <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.RebMsd.Value}"  Foreground="{Binding Metrics.RebMsd.ValueBrush}" />
-                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.RebMsd.Target}" />
+                        <Panel Grid.Column="2">
+                            <TextBlock Classes="metricTarget" Text="{Binding Metrics.RebMsd.Target}"
+                                       IsVisible="{Binding Metrics.RebMsd.ShowTargetText}" />
+                            <StackPanel Classes="targetEditor" IsVisible="{Binding Metrics.RebMsd.ShowEditors}">
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.RebMsd.GreenMin}" />
+                                <TextBlock Classes="editDash" Text="–" IsVisible="{Binding Metrics.RebMsd.ShowMaxField}" />
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.RebMsd.GreenMax}"
+                                               IsVisible="{Binding Metrics.RebMsd.ShowMaxField}" />
+                                <Button Classes="embedded" Margin="2,0,0,0" Command="{Binding Metrics.ResetMetricCommand}"
+                                        CommandParameter="{Binding Metrics.RebMsd}" ToolTip.Tip="Reset to default">
+                                    <Image Width="10" Source="{SvgImage /Assets/fa-rotate-left.svg}" />
+                                </Button>
+                            </StackPanel>
+                        </Panel>
                     </Grid>
                     <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
                         <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.FrontFreq.Label}" />
