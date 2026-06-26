@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 189;
+    private const int CurrentPlotVersion = 190;
 
     // Approximate rendered height of the VelocityBandView control (margin + title text +
     // 44 px band grid). Used to size the low-speed velocity histograms so the
@@ -333,6 +333,18 @@ public partial class SessionViewModel : ItemViewModelBase
     {
         var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
         Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
+
+        // When a crop is applied, telemetryData is the cropped slice. CreateCroppedCopy clears
+        // Present on any side whose window contains no detected strokes (a near-constant SAG
+        // hold), which would gate out — and thus blank — every analysis plot below, leaving the
+        // tabs stuck on stale in-memory content. Re-enable Present where travel samples exist so
+        // the cropped travel/velocity/acceleration-over-time plots and histograms still render;
+        // stroke-derived plots simply come out empty. Mirrors the crop-preview fix.
+        if (session.CropStartSample.HasValue && session.CropEndSample.HasValue)
+        {
+            if (telemetryData.Front.Travel is { Length: > 0 }) telemetryData.Front.Present = true;
+            if (telemetryData.Rear.Travel is { Length: > 0 }) telemetryData.Rear.Present = true;
+        }
 
         var b = (Rect)bounds!;
         var (width, height) = ((int)b.Width, (int)(b.Height / 2.0));
