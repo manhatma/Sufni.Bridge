@@ -1586,6 +1586,14 @@ public class TelemetryData
 
     private static Func<double, double> FitPolynomial(double[] x, double[] y)
     {
+        // A degree-1 fit needs at least two points. A session with fewer than two strokes
+        // of the requested balance type (e.g. a near-constant SAG hold, or the populated
+        // side of an F/R-asymmetric comparison) yields 0 or 1 points, for which
+        // Fit.Polynomial throws an ArgumentException. Fall back to a constant — the single
+        // sample's velocity, or zero when there is none — so CalculateBalance stays robust.
+        if (x.Length < 2)
+            return _ => y.Length > 0 ? y[0] : 0.0;
+
         var coefficients = Fit.Polynomial(x, y, 1);
         return t => coefficients[1] * t + coefficients[0];
     }
