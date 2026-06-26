@@ -494,7 +494,19 @@ public partial class CompareSessionsViewModel : ViewModelBase
             });
         }));
 
-        await Task.WhenAll(tasks);
+        // A single plot throwing on edge-case data must not tear down the whole comparison
+        // view or crash the async-void caller. Each plot runs in its own task and publishes
+        // its SVG independently, so successful plots stay visible; failed ones are logged and
+        // simply remain blank.
+        try
+        {
+            await Task.WhenAll(tasks);
+        }
+        catch (Exception)
+        {
+            foreach (var faulted in tasks.Where(t => t.IsFaulted))
+                Debug.WriteLine($"GenerateComparePlots: a plot failed: {faulted.Exception?.InnerException ?? faulted.Exception}");
+        }
 
         await Dispatcher.UIThread.InvokeAsync(() => IsLoading = false);
     }

@@ -22,7 +22,16 @@ public partial class CompareSessionsView : UserControl
         BuildTable(FrontWheelHeader, FrontWheelTable, "FRONT WHEEL", vm);
         BuildTable(RearWheelHeader, RearWheelTable, "REAR WHEEL", vm);
 
-        await Task.Run(() => vm.GenerateComparePlots());
+        // async void: an unhandled exception here would crash the process. Plot generation
+        // already isolates per-plot failures; guard the handler itself as a last resort.
+        try
+        {
+            await Task.Run(() => vm.GenerateComparePlots());
+        }
+        catch (System.Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Compare view load failed: {ex}");
+        }
     }
 
     private static void BuildTable(Grid header, ItemsControl table, string title, CompareSessionsViewModel vm)
