@@ -334,16 +334,14 @@ public partial class SessionViewModel : ItemViewModelBase
         var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
         Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
 
-        // When a crop is applied, telemetryData is the cropped slice. CreateCroppedCopy clears
-        // Present on any side whose window contains no detected strokes (a near-constant SAG
-        // hold), which would gate out — and thus blank — every analysis plot below, leaving the
-        // tabs stuck on stale in-memory content. Re-enable Present where travel samples exist so
-        // the cropped travel/velocity/acceleration-over-time plots and histograms still render;
-        // stroke-derived plots simply come out empty. Mirrors the crop-preview fix.
+        // When a crop is applied, telemetryData is the cropped slice whose Present was cleared on
+        // any side with no detected strokes (a near-constant SAG hold). Without this, every analysis
+        // plot below would be gated out and the tabs would stay stuck on stale in-memory content.
+        // Re-enable Present where travel exists so the cropped over-time plots and histograms still
+        // render; stroke-derived plots simply come out empty. Mirrors the crop-preview fix.
         if (session.CropStartSample.HasValue && session.CropEndSample.HasValue)
         {
-            if (telemetryData.Front.Travel is { Length: > 0 }) telemetryData.Front.Present = true;
-            if (telemetryData.Rear.Travel is { Length: > 0 }) telemetryData.Rear.Present = true;
+            telemetryData.MarkPresentWhereTravelExists();
         }
 
         var b = (Rect)bounds!;

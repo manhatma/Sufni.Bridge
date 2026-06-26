@@ -98,12 +98,9 @@ public partial class CropPageViewModel() : PageViewModelBase("Crop")
 
         var cropped = FullData.CreateCroppedCopy(start, end);
 
-        // CreateCroppedCopy clears Present when the cropped window contains no detected
-        // strokes (e.g. a near-constant SAG hold), which would hide the curve entirely.
-        // For the preview we still want to draw the travel over time, so re-enable Present
-        // wherever travel samples exist — the cropped copy is throwaway and preview-only.
-        if (cropped.Front.Travel is { Length: > 0 }) cropped.Front.Present = true;
-        if (cropped.Rear.Travel is { Length: > 0 }) cropped.Rear.Present = true;
+        // The cropped copy is throwaway and preview-only; re-enable Present where travel exists
+        // so a near-constant SAG window still draws its travel-over-time curve.
+        cropped.MarkPresentWhereTravelExists();
 
         var bounds = ViewBounds;
         var w = bounds.Width > 0 ? bounds.Width : 393;

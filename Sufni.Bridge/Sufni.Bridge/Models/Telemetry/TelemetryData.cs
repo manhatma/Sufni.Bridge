@@ -760,6 +760,21 @@ public class TelemetryData
         return cropped;
     }
 
+    /// <summary>
+    /// Re-enables <see cref="Suspension.Present"/> on each side that has travel samples but was
+    /// marked absent because its window contains no detected strokes (a near-constant / static-SAG
+    /// hold). Both import and <see cref="CreateCroppedCopy"/> clear <c>Present</c> in that case,
+    /// which gates out the travel-only views (crop preview, cropped over-time plots, position
+    /// summary) that don't need strokes. A side with no sensor never gets its <c>Travel</c> array
+    /// allocated, so gating on <c>Travel.Length &gt; 0</c> never resurrects a side that has no data;
+    /// stroke-derived plots simply come out empty.
+    /// </summary>
+    public void MarkPresentWhereTravelExists()
+    {
+        if (Front.Travel is { Length: > 0 }) Front.Present = true;
+        if (Rear.Travel is { Length: > 0 }) Rear.Present = true;
+    }
+
     public static TelemetryData CombineSessions(List<TelemetryData> sessions, string name)
     {
         if (sessions.Count < 2)
