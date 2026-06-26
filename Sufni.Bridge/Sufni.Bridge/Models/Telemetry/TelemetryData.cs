@@ -1223,7 +1223,8 @@ public class TelemetryData
         // following rebound as well would double the single event at the reversal point.
         var bo = suspension.Strokes.Compressions.Sum(s => s.Stat.Bottomouts);
 
-        return new TravelStatistics(mx, sum / count, bo);
+        // Guard against 0/0 = NaN when there are no strokes (near-constant / static-SAG window).
+        return new TravelStatistics(mx, count > 0 ? sum / count : 0.0, bo);
     }
 
     public DetailedTravelStatistics CalculateDetailedTravelStatistics(SuspensionType type)
@@ -1289,10 +1290,11 @@ public class TelemetryData
             }
         }
 
+        // Guard against 0/0 = NaN when there are no strokes (near-constant / static-SAG window).
         return new VelocityStatistics(
-            rsum / rcount,
+            rcount > 0 ? rsum / rcount : 0.0,
             maxr,
-            csum / ccount,
+            ccount > 0 ? csum / ccount : 0.0,
             maxc);
     }
 

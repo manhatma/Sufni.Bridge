@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 190;
+    private const int CurrentPlotVersion = 191;
 
     // Approximate rendered height of the VelocityBandView control (margin + title text +
     // 44 px band grid). Used to size the low-speed velocity histograms so the
@@ -848,12 +848,43 @@ public partial class SessionViewModel : ItemViewModelBase
         return x;
     }
 
+    // Position statistics over the full travel window. Used as a fallback for near-constant /
+    // static-SAG sessions that have no detected strokes: the stroke-based statistics are then
+    // undefined (0/0), but the settled position is still meaningful, so Pos [AVG/95th/MAX]
+    // report the actual sag. Velocities and bottom-outs are zero because nothing moved.
+    private static SuspensionSummaryStats FullWindowPositionStats(double[] travel, int bottomouts)
+    {
+        double sum = 0.0, max = 0.0;
+        foreach (var t in travel)
+        {
+            sum += t;
+            if (t > max) max = t;
+        }
+
+        return new SuspensionSummaryStats(
+            max,
+            travel.Length > 0 ? sum / travel.Length : 0.0,
+            travel.Length > 0 ? travel.Percentile(95) : 0.0,
+            bottomouts,
+            0.0, 0.0, 0.0,
+            0.0, 0.0, 0.0);
+    }
+
     private static SuspensionSummaryStats? BuildWheelStats(TelemetryData telemetryData, SuspensionType type)
     {
         var suspension = type == SuspensionType.Front ? telemetryData.Front : telemetryData.Rear;
         if (!suspension.Present)
         {
             return null;
+        }
+
+        // No strokes (near-constant / static-SAG window): report the settled wheel position
+        // from the full travel window instead of undefined stroke-based statistics.
+        if (suspension.Strokes.Compressions.Length == 0 && suspension.Strokes.Rebounds.Length == 0)
+        {
+            return suspension.Travel is { Length: > 0 }
+                ? FullWindowPositionStats(suspension.Travel, 0)
+                : null;
         }
 
         var travelStats = telemetryData.CalculateTravelStatistics(type);
@@ -969,7 +1000,14 @@ public partial class SessionViewModel : ItemViewModelBase
             while (i < forkTravel.Length && forkTravel[i] > threshold) i++;
         }
 
-        if (travelCount == 0) return null;
+        // No strokes (near-constant / static-SAG window): report the settled fork position
+        // from the full travel window instead of returning no data.
+        if (travelCount == 0)
+        {
+            return forkTravel.Length > 0
+                ? FullWindowPositionStats(forkTravel, bottomouts)
+                : null;
+        }
 
         return new SuspensionSummaryStats(
             travelMax,
@@ -1084,9 +1122,13 @@ public partial class SessionViewModel : ItemViewModelBase
             }
         }
 
+        // No strokes (near-constant / static-SAG window): report the settled shock position
+        // from the full travel window instead of returning no data.
         if (travelCount == 0)
         {
-            return null;
+            return shockTravel.Length > 0
+                ? FullWindowPositionStats(shockTravel, bottomouts)
+                : null;
         }
 
         return new SuspensionSummaryStats(
