@@ -62,6 +62,10 @@ public partial class BalanceMetricsViewModel : ObservableObject
     public BalanceMetricRow RearP95       { get; } = new() { Label = "Rear 95th",        Target = "> 55 %",  Key = "RearP95",  IsEditable = true };
     public BalanceMetricRow P95Diff       { get; } = new() { Label = "95th-Diff |F−R|",  Target = "≤ 5 pp" };
     public BalanceMetricRow EffectiveHeadAngle { get; } = new() { Label = "Eff. Head Angle", Target = "" };
+    public BalanceMetricRow PitchAttitude  { get; } = new() { Label = "Pitch attitude μ", Target = "" };
+    public BalanceMetricRow PitchStability { get; } = new() { Label = "Pitch stability σ", Target = "≤ 1.0°", Key = "PitchStability", IsEditable = true };
+    public BalanceMetricRow GoutSymmetry   { get; } = new() { Label = "G-out asymmetry",    Target = "≤ 10 %",  Key = "GoutSymmetry",   IsEditable = true };
+    public BalanceMetricRow PitchModeEnergy{ get; } = new() { Label = "Pitch-mode energy",  Target = "" };
     public BalanceMetricRow FrontBO       { get; } = new() { Label = "Front Bottom-out", Target = "≈ 0" };
     public BalanceMetricRow RearBO        { get; } = new() { Label = "Rear Bottom-out",  Target = "≈ 0" };
     public BalanceMetricRow CompVelRatio  { get; } = new() { Label = "Comp Vel F/R",     Target = "−0.08 … +0.07" };
@@ -104,7 +108,7 @@ public partial class BalanceMetricsViewModel : ObservableObject
 
     [ObservableProperty] private bool isEditing;
 
-    private BalanceMetricRow[] EditableRows => [FrontSag, RearSag, SagDiff, FrontP95, RearP95, RebMsd];
+    private BalanceMetricRow[] EditableRows => [FrontSag, RearSag, SagDiff, FrontP95, RearP95, RebMsd, PitchStability, GoutSymmetry];
 
     partial void OnIsEditingChanged(bool value)
     {
@@ -221,6 +225,22 @@ public partial class BalanceMetricsViewModel : ObservableObject
             : null;
         SetThreshold(P95Diff, p95Diff, "{0:0.0} pp", 5.0, 10.0, lowerIsBetter: true);
         SetHeadAngle(EffectiveHeadAngle, m.HeadAngleStaticDeg, m.HeadAngleShiftDeg);
+        SetPitchAttitude(PitchAttitude, m.PitchMeanDeg,
+            BalanceTargetDefaults.ExpectedPitchBand(
+                EffectiveGreen("FrontSag", discipline), EffectiveGreen("RearSag", discipline),
+                m.MaxFrontTravelMm, m.MaxRearTravelMm, m.WheelbaseMm));
+        ApplyEditable(PitchStability, m.PitchStabilityDeg, discipline);
+        ApplyEditable(GoutSymmetry, m.GoutAsymmetryPct, discipline);
+        // G-out asymmetry is small-N noisy: below the reliable-event threshold drop the traffic
+        // light (Unknown) and surface the event count so the value reads as indicative, not a verdict.
+        if (m.GoutEventCount is not { } gn || gn < TelemetryData.GoutMinReliableEvents)
+        {
+            GoutSymmetry.Status = BalanceStatus.Unknown;
+            if (m.GoutAsymmetryPct is { } ga)
+                GoutSymmetry.Value = string.Format(CultureInfo.InvariantCulture,
+                    "{0:0} % (N={1})", ga, m.GoutEventCount ?? 0);
+        }
+        SetSimple(PitchModeEnergy, m.PitchModeEnergyFraction, "{0:0.00}");
         SetCount(FrontBO, m.FrontBottomouts);
         SetCount(RearBO,  m.RearBottomouts);
         // Michelson index (F-R)/(F+R): bands derived from old ratio bands 0.85–1.15 (good)
@@ -348,6 +368,27 @@ public partial class BalanceMetricsViewModel : ObservableObject
         row.Status = BalanceStatus.Unknown;
     }
 
+    // μ (mean chassis pitch) classified against the expected band derived from the SAG green
+    // ranges. Informational target text shows the band; no band ⇒ value only, Unknown status.
+    private static void SetPitchAttitude(BalanceMetricRow row, double? value, (double minDeg, double maxDeg)? band)
+    {
+        static string Fmt(double v) => v.ToString("+0.0;-0.0;0.0", CultureInfo.InvariantCulture);
+        if (!value.HasValue)
+        {
+            row.Value = "—";
+            row.Target = band is { } b0 ? $"{Fmt(b0.minDeg)} … {Fmt(b0.maxDeg)}°" : "";
+            row.Status = BalanceStatus.Unknown;
+            return;
+        }
+        row.Value = string.Format(CultureInfo.InvariantCulture, "{0:+0.0;-0.0;0.0}°", value.Value);
+        if (band is not { } b) { row.Target = ""; row.Status = BalanceStatus.Unknown; return; }
+        row.Target = $"{Fmt(b.minDeg)} … {Fmt(b.maxDeg)}°";
+        const double margin = 0.5; // degrees of acceptable slack outside the band
+        row.Status = (value.Value >= b.minDeg && value.Value <= b.maxDeg) ? BalanceStatus.Good
+            : (value.Value >= b.minDeg - margin && value.Value <= b.maxDeg + margin) ? BalanceStatus.Acceptable
+            : BalanceStatus.Critical;
+    }
+
     // Michelson-style imbalance index centered on 0; positive = front, negative = rear.
     // Always shows an explicit sign so the bias direction is visible at a glance.
     private static void SetSignedBand(BalanceMetricRow row, double? value,
@@ -418,6 +459,9 @@ public partial class BalancePageViewModel() : PageViewModelBase("Balance")
     [ObservableProperty] private SvgImage? combinedTravelFft;
     [ObservableProperty] private SvgImage? combinedTravelFftHigh;
     [ObservableProperty] private SvgImage? combinedVelocityFft;
+    [ObservableProperty] private SvgImage? pitchBalance;
+    [ObservableProperty] private SvgImage? pitchCoherence;
+    [ObservableProperty] private SvgImage? goutScatter;
 
     public BalanceMetricsViewModel Metrics { get; } = new();
 }

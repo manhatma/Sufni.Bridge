@@ -1,0 +1,151 @@
+using System;
+using ScottPlot;
+using Sufni.Bridge.Models.Telemetry;
+
+namespace Sufni.Bridge.Plots;
+
+/// <summary>
+/// Chassis pitch over time, derived from the lag-corrected difference between rear and front
+/// suspension travel mapped through the wheelbase. Nose-down is positive. An optional discipline
+/// reference band (expectedMinDeg..expectedMaxDeg) marks the target pitch range; otherwise the
+/// neutral 0° line is the only reference.
+/// </summary>
+public class PitchBalancePlot(Plot plot, double? expectedMinDeg, double? expectedMaxDeg) : TelemetryPlot(plot)
+{
+    private static readonly Color StatColor = Color.FromHex("#FFD700");
+
+    public override void LoadTelemetryData(TelemetryData telemetryData)
+    {
+        base.LoadTelemetryData(telemetryData);
+
+        SetTitle("Chassis pitch over time (body band)");
+        Plot.Layout.Fixed(new PixelPadding(55, 14, 50, 40));
+        Plot.Axes.Bottom.Label.Text = "Time (s)";
+        Plot.Axes.Left.Label.Text = "Pitch (°, nose-down +)";
+
+        var pitch = telemetryData.CalculatePitchDegrees();
+        if (pitch is not { Length: > 0 })
+        {
+            AddLabel("Pitch needs front, rear and wheelbase", 0.5, 0.5, 0, 0, Alignment.MiddleCenter, "#aaaaaa");
+            return;
+        }
+
+        var period = 1.0 / telemetryData.SampleRate;
+        var maxDuration = pitch.Length * period;
+
+        // Statistics over the pitch series: mean (μ), population std (σ), P5/P95 and extremes.
+        double sum = 0, min = double.PositiveInfinity, max = double.NegativeInfinity;
+        for (var i = 0; i < pitch.Length; i++)
+        {
+            sum += pitch[i];
+            if (pitch[i] < min) min = pitch[i];
+            if (pitch[i] > max) max = pitch[i];
+        }
+        var mean = sum / pitch.Length;
+
+        double sumSq = 0;
+        for (var i = 0; i < pitch.Length; i++)
+        {
+            var d = pitch[i] - mean;
+            sumSq += d * d;
+        }
+        var std = Math.Sqrt(sumSq / pitch.Length);
+
+        var sorted = (double[])pitch.Clone();
+        Array.Sort(sorted);
+        var p5 = Percentile(sorted, 5.0);
+        var p95 = Percentile(sorted, 95.0);
+
+        // Expected discipline band first (drawn behind the trace) as a filled translucent green
+        // region — the evaluation reference in place of the bare 0° line.
+        var haveBand = expectedMinDeg.HasValue && expectedMaxDeg.HasValue;
+        double bandLo = 0, bandHi = 0;
+        if (haveBand)
+        {
+            bandLo = Math.Min(expectedMinDeg!.Value, expectedMaxDeg!.Value);
+            bandHi = Math.Max(expectedMinDeg!.Value, expectedMaxDeg!.Value);
+            var band = Plot.Add.Rectangle(0, maxDuration, bandLo, bandHi);
+            band.FillStyle.Color = Color.FromHex("#6CC44A").WithAlpha(40);
+            band.LineStyle.IsVisible = false;
+        }
+
+        var sig = Plot.Add.Signal(pitch, period);
+        sig.Color = Color.FromHex("#c994c7");
+        sig.LineWidth = 1;
+
+        // Neutral 0° reference — very faint, unlabelled (the green band is the reference now).
+        Plot.Add.HorizontalLine(0, 1f, Color.FromHex("#dddddd").WithAlpha(70), LinePattern.Dotted);
+
+        // P5 / P95 spread — thin grey dotted, labelled at the left edge so they read as a spread.
+        Plot.Add.HorizontalLine(p5, 1f, Color.FromHex("#888888"), LinePattern.Dotted);
+        Plot.Add.HorizontalLine(p95, 1f, Color.FromHex("#888888"), LinePattern.Dotted);
+        AddLabel("P5", 0, p5, 6, -3, Alignment.UpperLeft, "#888888");
+        AddLabel("P95", 0, p95, 6, 3, Alignment.LowerLeft, "#888888");
+
+        // Expected-band label sitting on top of the green region.
+        if (haveBand)
+            AddLabel("expected", 0, bandHi, 10, 4, Alignment.LowerLeft, "#6CC44A");
+
+        // Mean (μ) as a clear solid white line + label at the right edge — the dominant reference.
+        Plot.Add.HorizontalLine(mean, 1.6f, Color.FromHex("#ffffff"), LinePattern.Solid);
+        AddLabel($"μ={mean:0.0}°", maxDuration, mean, -10, mean >= 0 ? 5 : -5,
+            mean >= 0 ? Alignment.UpperRight : Alignment.LowerRight, "#ffffff");
+
+        // Y limits: fit to the data span with 5% margin, but always keep μ and the expected band visible.
+        var lo = min;
+        var hi = max;
+        if (haveBand)
+        {
+            lo = Math.Min(lo, bandLo);
+            hi = Math.Max(hi, bandHi);
+        }
+        lo = Math.Min(lo, mean);
+        hi = Math.Max(hi, mean);
+        var span = Math.Max(hi - lo, 1e-9);
+        var bottom = lo - span * 0.05;
+        var top = hi + span * 0.05;
+        Plot.Axes.SetLimitsY(bottom: bottom, top: top);
+        Plot.Axes.SetLimitsX(left: 0, right: maxDuration);
+
+        // No τ / lag annotation: the front→rear traversal lag is heave-dominated and rarely
+        // determinable on real trails, so showing a number (or "n/a") here misleads more than it
+        // informs. τ is still applied internally to de-lag the pitch where it IS determinable.
+
+        // Gold stats box (upper-right), Menlo, mirroring VelocityTimeCroppedPlot.
+        var statsText =
+            $"μ:   {mean:+0.0;-0.0}°\n" +
+            $"σ:   {std:0.00}°\n" +
+            $"P5–95: {p5:+0.0;-0.0}…{p95:+0.0;-0.0}°\n" +
+            $"nose-dive max: {max:+0.0;-0.0;0.0}°\n" +
+            $"squat max: {min:+0.0;-0.0;0.0}°";
+
+        var statsLabel = Plot.Add.Text(statsText, maxDuration, top);
+        statsLabel.LabelFontColor = StatColor;
+        statsLabel.LabelFontSize = 9;
+        statsLabel.LabelFontName = "Menlo";
+        statsLabel.LabelAlignment = Alignment.UpperRight;
+        statsLabel.LabelOffsetX = -10;
+        statsLabel.LabelOffsetY = 6;
+        statsLabel.LabelBold = true;
+        statsLabel.LabelBackgroundColor = Color.FromHex("#15191C").WithAlpha(220);
+        statsLabel.LabelBorderColor = StatColor.WithAlpha(80);
+        statsLabel.LabelBorderWidth = 1;
+        statsLabel.LabelPadding = 5;
+    }
+
+    /// <summary>
+    /// Linear-interpolated percentile over an ascending-sorted array (p in 0..100).
+    /// </summary>
+    private static double Percentile(double[] sortedAscending, double p)
+    {
+        var n = sortedAscending.Length;
+        if (n == 0) return double.NaN;
+        if (n == 1) return sortedAscending[0];
+        var rank = p / 100.0 * (n - 1);
+        var lo = (int)Math.Floor(rank);
+        var hi = (int)Math.Ceiling(rank);
+        if (lo == hi) return sortedAscending[lo];
+        var frac = rank - lo;
+        return sortedAscending[lo] + (sortedAscending[hi] - sortedAscending[lo]) * frac;
+    }
+}

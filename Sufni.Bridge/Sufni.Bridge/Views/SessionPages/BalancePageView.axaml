@@ -223,6 +223,52 @@
                         <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.EffectiveHeadAngle.Target}" />
                     </Grid>
                     <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.PitchAttitude.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.PitchAttitude.Value}"  Foreground="{Binding Metrics.PitchAttitude.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.PitchAttitude.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.PitchStability.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.PitchStability.Value}"  Foreground="{Binding Metrics.PitchStability.ValueBrush}" />
+                        <Panel Grid.Column="2">
+                            <TextBlock Classes="metricTarget" Text="{Binding Metrics.PitchStability.Target}"
+                                       IsVisible="{Binding Metrics.PitchStability.ShowTargetText}" />
+                            <StackPanel Classes="targetEditor" IsVisible="{Binding Metrics.PitchStability.ShowEditors}">
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.PitchStability.GreenMin}" />
+                                <TextBlock Classes="editDash" Text="–" IsVisible="{Binding Metrics.PitchStability.ShowMaxField}" />
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.PitchStability.GreenMax}"
+                                               IsVisible="{Binding Metrics.PitchStability.ShowMaxField}" />
+                                <Button Classes="embedded" Margin="2,0,0,0" Command="{Binding Metrics.ResetMetricCommand}"
+                                        CommandParameter="{Binding Metrics.PitchStability}" ToolTip.Tip="Reset to default">
+                                    <Image Width="10" Source="{SvgImage /Assets/fa-rotate-left.svg}" />
+                                </Button>
+                            </StackPanel>
+                        </Panel>
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.GoutSymmetry.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.GoutSymmetry.Value}"  Foreground="{Binding Metrics.GoutSymmetry.ValueBrush}" />
+                        <Panel Grid.Column="2">
+                            <TextBlock Classes="metricTarget" Text="{Binding Metrics.GoutSymmetry.Target}"
+                                       IsVisible="{Binding Metrics.GoutSymmetry.ShowTargetText}" />
+                            <StackPanel Classes="targetEditor" IsVisible="{Binding Metrics.GoutSymmetry.ShowEditors}">
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.GoutSymmetry.GreenMin}" />
+                                <TextBlock Classes="editDash" Text="–" IsVisible="{Binding Metrics.GoutSymmetry.ShowMaxField}" />
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.GoutSymmetry.GreenMax}"
+                                               IsVisible="{Binding Metrics.GoutSymmetry.ShowMaxField}" />
+                                <Button Classes="embedded" Margin="2,0,0,0" Command="{Binding Metrics.ResetMetricCommand}"
+                                        CommandParameter="{Binding Metrics.GoutSymmetry}" ToolTip.Tip="Reset to default">
+                                    <Image Width="10" Source="{SvgImage /Assets/fa-rotate-left.svg}" />
+                                </Button>
+                            </StackPanel>
+                        </Panel>
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.PitchModeEnergy.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.PitchModeEnergy.Value}"  Foreground="{Binding Metrics.PitchModeEnergy.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.PitchModeEnergy.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
                         <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.FrontBO.Label}" />
                         <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.FrontBO.Value}"  Foreground="{Binding Metrics.FrontBO.ValueBrush}" />
                         <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.FrontBO.Target}" />
@@ -330,6 +376,9 @@
             <Image IsVisible="{Binding CombinedBalance, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CombinedBalance}" />
             <Image IsVisible="{Binding ReboundBalance, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding ReboundBalance}" />
             <Image IsVisible="{Binding CompressionBalance, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CompressionBalance}" />
+            <Image IsVisible="{Binding PitchBalance, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding PitchBalance}" />
+            <Image IsVisible="{Binding PitchCoherence, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding PitchCoherence}" />
+            <Image IsVisible="{Binding GoutScatter, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding GoutScatter}" />
             <Image IsVisible="{Binding CombinedVelocityFft, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CombinedVelocityFft}" />
             <Image IsVisible="{Binding CombinedTravelFft, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CombinedTravelFft}" />
             <Image IsVisible="{Binding CombinedTravelFftHigh, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CombinedTravelFftHigh}" />

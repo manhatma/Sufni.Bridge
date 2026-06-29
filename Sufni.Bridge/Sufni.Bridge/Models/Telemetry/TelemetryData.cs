@@ -121,7 +121,16 @@ public record BalanceMetrics(
     double? HighCoherence,
     double? FrequencySplitHz,
     double? HeadAngleStaticDeg,
-    double? HeadAngleShiftDeg);
+    double? HeadAngleShiftDeg,
+    // --- Time-domain pitch attitude (laufzeit-corrected front/rear vertical travel) ---
+    double? PitchMeanDeg,            // μ — mean chassis pitch (nose-down positive)
+    double? PitchStabilityDeg,       // σ — std-dev of the pitch attitude over time
+    double? PitchModeEnergyFraction, // B-index — ∫Spp / ∫(Spp+Shh) over the body band
+    double? GoutAsymmetryPct,        // % of paired G-out events with |front%−rear%| > 25 pp
+    int? GoutEventCount,             // N paired G-out events — gates the asymmetry headline at small N
+    double? MaxFrontTravelMm,        // geometry passthrough for the μ expected band
+    double? MaxRearTravelMm,
+    double? WheelbaseMm);
 
 [MessagePackObject(keyAsPropertyName: true)]
 public class TelemetryData
@@ -1915,6 +1924,414 @@ public class TelemetryData
         return (bestF, bestA);
     }
 
+    // ---------------------------------------------------------------------------------------
+    // Time-domain pitch attitude
+    //
+    // The chassis pitch is the angle between the front- and rear-axle contact heights. A naive
+    // instantaneous rear[i]−front[i] is contaminated by wheelbase-traversal delay: the fork hits
+    // a bump τ seconds before the rear wheel does, so a single ground feature shows up as two
+    // out-of-phase pseudo-pitch spikes (zeitversetztes Heave, not real chassis pitch). τ sits
+    // inside the pitch band (~1.3–3.3 Hz) and there is no speed channel, so τ is estimated from
+    // the signals themselves and the rear is pulled forward by τ before differencing.
+    // ---------------------------------------------------------------------------------------
+
+    [IgnoreMember]
+    private (int lagSamples, double conf, bool determined)? frontRearLag;
+
+    /// <summary>Front→rear traversal lag (rear lags front by this many samples) with a 0..1
+    /// confidence and a determinability flag, estimated once and cached.</summary>
+    private (int lagSamples, double conf, bool determined) GetFrontRearLag()
+    {
+        frontRearLag ??= EstimateFrontRearLag();
+        return frontRearLag.Value;
+    }
+
+    /// <summary>
+    /// Front→rear traversal lag τ in seconds — the time for the rear wheel to reach a terrain
+    /// feature the front already passed. 0 when not determinable (see <see cref="LagDeterminable"/>).
+    /// Public surface for plot annotation and the de-lag of pitch / G-out.
+    /// </summary>
+    [IgnoreMember]
+    public double LagSeconds => SampleRate > 0 ? (double)GetFrontRearLag().lagSamples / SampleRate : 0.0;
+
+    /// <summary>
+    /// Whether τ could be pinned to a speed-plausible, coherent value. When false the lag is 0 and
+    /// callers should treat it as "no de-lag" and label it "lag n/a" rather than showing a number.
+    /// </summary>
+    [IgnoreMember]
+    public bool LagDeterminable => GetFrontRearLag().determined;
+
+    /// <summary>
+    /// Effective riding speed implied by the traversal lag (wheelbase / τ), in km/h, or null when
+    /// the lag is not determinable. A sanity readout: realistic trail speeds are ~5–40 km/h.
+    /// </summary>
+    [IgnoreMember]
+    public double? EffectiveSpeedKmh
+    {
+        get
+        {
+            var t = LagSeconds;
+            if (!LagDeterminable || t <= 0 || Linkage is not { Wheelbase: > 0 }) return null;
+            return Linkage.Wheelbase.Value / 1000.0 / t * 3.6;
+        }
+    }
+
+    // Speed-plausible bounds for the traversal lag (m/s): τ = wheelbase / speed, so a 1.2 m
+    // wheelbase implies τ ∈ [60, 600] ms. Anything outside means the estimate locked onto in-phase
+    // heave (τ→0) or noise rather than the terrain traversal.
+    private const double LagMinSpeedMs = 2.0;
+    private const double LagMaxSpeedMs = 20.0;
+    // Band isolating the terrain-following component for the cross-correlation: above the in-phase
+    // body heave (τ≈0) and below the uncorrelated high-frequency wheel chatter.
+    private const double LagBandLowHz = 3.0;
+    private const double LagBandHighHz = 15.0;
+    // Phase-slope fit band, anchored in the coherent body band [1, 6] Hz. The lower edge is kept at
+    // 1 Hz on purpose: the in-phase heave that dominates there pins a heave-dominated trail's slope
+    // to ~0/negative (⇒ "not determinable"), while a real traversal still shows a positive ramp. The
+    // old [3, 10] Hz band drifted into the incoherent >6 Hz region, where unwrapping noise fabricated
+    // a spurious positive slope (and an implausibly high speed). The coherence floor is the weight
+    // cutoff below which a bin is wrapping noise.
+    private const double LagPhaseLowHz = 1.0;
+    private const double LagPhaseHighHz = 6.0;
+    private const double LagCoherenceFloor = 0.3;
+    private const double LagCcPeakMin = 0.3;          // min normalised CC for the correlation to confirm
+
+    // Estimates the front→rear traversal lag τ via two independent methods over a speed-plausible
+    // search window [wheelbase/vmax, wheelbase/vmin]:
+    //   1. Band-passed (3–15 Hz, common-mode heave removed) normalised cross-correlation — its peak
+    //      lag is the terrain traversal; the peak value is the confidence.
+    //   2. Cross-spectrum phase slope dφ/df = 2π·τ over the coherent band, with the phase UNWRAPPED
+    //      first (at these lags 2πfτ exceeds π within a few Hz, so the raw phase wraps).
+    // Determinability is gated on the phase slope (positive, speed-plausible, coherent); the
+    // correlation only confirms/refines it. Reports "not determinable" (τ=0) rather than inventing a
+    // correction when the phase gives no usable estimate (e.g. heave-dominated trails).
+    private (int lagSamples, double conf, bool determined) EstimateFrontRearLag()
+    {
+        if (!Front.Present || !Rear.Present ||
+            Front.Travel is not { Length: > 0 } || Rear.Travel is not { Length: > 0 } ||
+            SampleRate <= 0)
+            return (0, 0, false);
+
+        int n = Math.Min(Front.Travel.Length, Rear.Travel.Length);
+
+        // Speed-plausible search window in samples. Without a wheelbase we cannot bound by speed,
+        // so fall back to a broad 40–600 ms window and lean on coherence to stay honest.
+        double wbM = Linkage is { Wheelbase: > 0 } ? Linkage.Wheelbase.Value / 1000.0 : 0.0;
+        double tauMinSec = wbM > 0 ? wbM / LagMaxSpeedMs : 0.04;
+        double tauMaxSec = wbM > 0 ? wbM / LagMinSpeedMs : 0.6;
+        int lagMin = Math.Max(1, (int)Math.Round(tauMinSec * SampleRate));
+        int lagMax = (int)Math.Round(tauMaxSec * SampleRate);
+        if (lagMax > n / 2) lagMax = n / 2;
+        if (lagMax < lagMin) return (0, 0, false);
+
+        // --- Method 1: band-pass cross-correlation over the speed-plausible window ---------------
+        var fbp = BandPassZeroPhase(Front.Travel[..n], SampleRate, LagBandLowHz, LagBandHighHz);
+        var rbp = BandPassZeroPhase(Rear.Travel[..n], SampleRate, LagBandLowHz, LagBandHighHz);
+
+        const int targetN = 100_000;
+        int stride = n > targetN ? n / targetN : 1;
+        double fNorm = 0, rNorm = 0;
+        for (int i = 0; i < n; i += stride) { fNorm += fbp[i] * fbp[i]; rNorm += rbp[i] * rbp[i]; }
+        double denom = Math.Sqrt(fNorm * rNorm);
+        int ccLag = 0; double ccPeak = 0;
+        if (denom > 1e-12)
+        {
+            for (int lag = lagMin; lag <= lagMax; lag++)
+            {
+                double s = 0;
+                for (int i = 0; i + lag < n; i += stride) s += fbp[i] * rbp[i + lag];
+                double cc = s / denom;
+                if (cc > ccPeak) { ccPeak = cc; ccLag = lag; }
+            }
+        }
+        double ccTauSec = (double)ccLag / SampleRate;
+
+        // --- Method 2: unwrapped cross-spectrum phase slope dφ/df = 2π·τ -------------------------
+        double phaseTauSec = double.NaN; int phaseBins = 0;
+        var (cf, pxx, pyy, pxy) = ComputeWelchCrossSpectrum(Front.Travel[..n], Rear.Travel[..n], SampleRate);
+        if (cf.Length > 2)
+        {
+            // Contiguous bins across the phase band so unwrap follows a real frequency sweep;
+            // coherence becomes the fit weight (0 below the floor) rather than a hard gate.
+            var pf = new List<double>(); var pp = new List<double>(); var pw = new List<double>();
+            for (int k = 1; k < cf.Length; k++)
+            {
+                double freq = cf[k];
+                if (freq < LagPhaseLowHz || freq > LagPhaseHighHz) continue;
+                double d = pxx[k] * pyy[k];
+                double g2 = d > 1e-30 ? (pxy[k].Real * pxy[k].Real + pxy[k].Imaginary * pxy[k].Imaginary) / d : 0.0;
+                if (g2 > 1.0) g2 = 1.0;
+                pf.Add(freq);
+                // Pxy = X·conj(Y); rear (Y) lagging front (X) by τ ⇒ φ = +2π·f·τ.
+                pp.Add(Math.Atan2(pxy[k].Imaginary, pxy[k].Real));
+                pw.Add(g2 >= LagCoherenceFloor ? g2 : 0.0);
+            }
+            if (pf.Count >= 4)
+            {
+                var unwrapped = Unwrap(pp);
+                double sw = 0, swf = 0, swp = 0, swff = 0, swfp = 0;
+                for (int i = 0; i < pf.Count; i++)
+                {
+                    double w = pw[i];
+                    if (w <= 0) continue;
+                    phaseBins++;
+                    sw += w; swf += w * pf[i]; swp += w * unwrapped[i];
+                    swff += w * pf[i] * pf[i]; swfp += w * pf[i] * unwrapped[i];
+                }
+                double dnm = sw * swff - swf * swf;
+                if (sw > 0 && Math.Abs(dnm) > 1e-12)
+                {
+                    double slope = (sw * swfp - swf * swp) / dnm;   // rad / Hz
+                    phaseTauSec = slope / (2.0 * Math.PI);
+                }
+            }
+        }
+
+        // --- Decision: the phase slope is primary; the correlation only confirms ----------------
+        // A real front→rear traversal shows a positive, speed-plausible phase slope in the coherent
+        // body band. That is the only physically meaningful evidence, so it gates determinability.
+        // The band-pass correlation merely *confirms* (blends when it agrees) — it is never trusted
+        // on its own, because on heave-dominated trails it locks onto incidental short-lag
+        // correlation and would fabricate an implausibly high speed. No usable phase ⇒ "lag n/a".
+        bool phaseOk = !double.IsNaN(phaseTauSec) && phaseTauSec >= tauMinSec && phaseTauSec <= tauMaxSec
+                       && phaseBins >= 4;
+        if (!phaseOk) return (0, ccPeak, false);
+
+        bool ccConfirms = ccPeak >= LagCcPeakMin && ccLag >= lagMin && ccLag <= lagMax
+                          && Math.Abs(phaseTauSec - ccTauSec) <= Math.Max(0.04, 0.3 * phaseTauSec);
+        double chosenSec = ccConfirms ? 0.5 * (phaseTauSec + ccTauSec) : phaseTauSec;
+
+        int lagSamples = (int)Math.Round(chosenSec * SampleRate);
+        if (lagSamples < 1) return (0, ccPeak, false);
+        return (lagSamples, ccPeak, true);
+    }
+
+    // Zero-phase band-pass: difference of two zero-phase low-passes, keeping [fLow, fHigh] with no
+    // group delay (so it cannot bias the lag estimate).
+    private static double[] BandPassZeroPhase(double[] x, int sampleRate, double fLow, double fHigh)
+    {
+        var lo = LowPassZeroPhase(x, sampleRate, fLow);
+        var hi = LowPassZeroPhase(x, sampleRate, fHigh);
+        var y = new double[x.Length];
+        for (int i = 0; i < x.Length; i++) y[i] = hi[i] - lo[i];
+        return y;
+    }
+
+    // Unwraps a phase sequence so consecutive steps stay within (−π, π].
+    private static double[] Unwrap(IReadOnlyList<double> phase)
+    {
+        var u = new double[phase.Count];
+        if (phase.Count == 0) return u;
+        u[0] = phase[0];
+        for (int i = 1; i < phase.Count; i++)
+        {
+            double d = phase[i] - phase[i - 1];
+            while (d > Math.PI) d -= 2.0 * Math.PI;
+            while (d < -Math.PI) d += 2.0 * Math.PI;
+            u[i] = u[i - 1] + d;
+        }
+        return u;
+    }
+
+    /// <summary>
+    /// Chassis pitch attitude over time in degrees (nose-down positive, consistent with
+    /// <c>HeadAngleShiftDeg</c>). The rear travel is pulled forward by the estimated
+    /// front→rear lag, both signals are WH-smoothed, then
+    /// <c>pitch(i) = −atan2(rear[i+τ] − front[i], wheelbase)</c>. Both travel arrays are vertical
+    /// wheel travel (mm). Returns null without both suspensions or a wheelbase.
+    /// </summary>
+    public double[]? CalculatePitchDegrees()
+    {
+        if (!Front.Present || !Rear.Present) return null;
+        if (Front.Travel is not { Length: > 0 } || Rear.Travel is not { Length: > 0 }) return null;
+        if (Linkage is not { Wheelbase: > 0 }) return null;
+        double wb = Linkage.Wheelbase.Value;
+
+        int n = Math.Min(Front.Travel.Length, Rear.Travel.Length);
+        var (lag, _, _) = GetFrontRearLag();
+
+        var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambda);
+        var f = smoother.Smooth(Front.Travel[..n]);
+        var r = smoother.Smooth(Rear.Travel[..n]);
+
+        var pitch = new double[n];
+        for (int i = 0; i < n; i++)
+        {
+            int ri = i + lag;
+            if (ri >= n) ri = n - 1;
+            double dz = r[ri] - f[i];                    // vertical rear − front (mm)
+            pitch[i] = -Math.Atan2(dz, wb) * 180.0 / Math.PI;
+        }
+
+        // Band-limit to the rigid-body regime. The sprung mass can only pitch at low frequency
+        // (around the body resonance); the full-bandwidth rear−front difference is dominated by
+        // asynchronous wheel impacts (10–25 Hz), which are NOT chassis attitude. Low-passing here
+        // makes σ a genuine "attitude constancy" measure and the plot read as attitude rather than
+        // differential noise. The mean (μ) is preserved by the zero-phase average.
+        return LowPassZeroPhase(pitch, SampleRate, PitchLowPassHz);
+    }
+
+    // Rigid-body pitch low-pass cutoff (−3 dB), in Hz. Keeps the body resonance, strongly
+    // attenuates the wheel band (10–25 Hz) and above.
+    private const double PitchLowPassHz = 4.0;
+
+    // Zero-phase low-pass: three cascaded centered moving averages (≈ Gaussian kernel, low
+    // sidelobes). The window radius is derived from the sample rate, so the cutoff stays in Hz
+    // regardless of device rate. Edges shrink the window to the available samples (no padding
+    // artefacts, no Gibbs ringing).
+    private static double[] LowPassZeroPhase(double[] x, int sampleRate, double cutoffHz)
+    {
+        if (x.Length < 3 || sampleRate <= 0 || cutoffHz <= 0) return (double[])x.Clone();
+        int radius = (int)Math.Round(0.13 * sampleRate / cutoffHz);
+        if (radius < 1) return (double[])x.Clone();
+        var y = MovingAverageCentered(x, radius);
+        y = MovingAverageCentered(y, radius);
+        y = MovingAverageCentered(y, radius);
+        return y;
+    }
+
+    private static double[] MovingAverageCentered(double[] x, int radius)
+    {
+        int n = x.Length;
+        var prefix = new double[n + 1];
+        for (int i = 0; i < n; i++) prefix[i + 1] = prefix[i] + x[i];
+        var y = new double[n];
+        for (int i = 0; i < n; i++)
+        {
+            int a = Math.Max(0, i - radius);
+            int b = Math.Min(n - 1, i + radius);
+            y[i] = (prefix[b + 1] - prefix[a]) / (b - a + 1);
+        }
+        return y;
+    }
+
+    /// <summary>
+    /// Modal decomposition of the front/rear travel cross-spectrum: pitch (anti-phase) and heave
+    /// (in-phase) power spectra, plus magnitude-squared coherence γ²(f) and cross phase φ(f) in
+    /// degrees. Spp = (Pxx+Pyy−2·Re Pxy)/4, Shh = (Pxx+Pyy+2·Re Pxy)/4. Null without enough data.
+    /// </summary>
+    public (double[] Freqs, double[] Coherence, double[] PhaseDeg, double[] PitchPsd, double[] HeavePsd)?
+        CalculateModalSpectrum()
+    {
+        if (!Front.Present || !Rear.Present) return null;
+        if (Front.Travel is not { Length: >= 8192 } || Rear.Travel is not { Length: >= 8192 }) return null;
+
+        int n = Math.Min(Front.Travel.Length, Rear.Travel.Length);
+        var (cf, pxx, pyy, pxy) = ComputeWelchCrossSpectrum(Front.Travel[..n], Rear.Travel[..n], SampleRate);
+        if (cf.Length == 0) return null;
+
+        int m = cf.Length;
+        var coh = new double[m];
+        var phase = new double[m];
+        var spp = new double[m];
+        var shh = new double[m];
+        for (int k = 0; k < m; k++)
+        {
+            double re = pxy[k].Real, im = pxy[k].Imaginary;
+            double d = pxx[k] * pyy[k];
+            double g2 = d > 1e-30 ? (re * re + im * im) / d : 0.0;
+            coh[k] = g2 > 1.0 ? 1.0 : g2;
+            phase[k] = Math.Atan2(im, re) * 180.0 / Math.PI;
+            spp[k] = Math.Max(0.0, (pxx[k] + pyy[k] - 2.0 * re) / 4.0);
+            shh[k] = Math.Max(0.0, (pxx[k] + pyy[k] + 2.0 * re) / 4.0);
+        }
+        return (cf, coh, phase, spp, shh);
+    }
+
+    // G-out gate: a stroke drives an event when it is both deep and fast. Looser than the original
+    // 0.55/0.5 so rear-led and moderate events are caught too (more events → more robust stats).
+    private const double GoutDepthFrac = 0.45;
+    private const double GoutVelFrac = 0.40;
+    // Below this many events the asymmetry headline is small-N noise and is shown as indicative only.
+    public const int GoutMinReliableEvents = 12;
+
+    /// <summary>
+    /// G-out load-symmetry events. Each deep+fast compression (front OR rear) is one event; the
+    /// opposite end's response is read as the peak travel actually reached in the lag-aligned window
+    /// — not the nearest stroke — so a genuinely uncompressed end reads ~0 % instead of snapping to a
+    /// random micro-stroke. Front- and rear-led triggers for the same impact are de-duplicated.
+    /// Returns each side's used travel (% of available). Null without both suspensions / geometry /
+    /// strokes.
+    /// </summary>
+    public IReadOnlyList<(double FrontPct, double RearPct)>? CalculateGoutEvents()
+    {
+        if (!Front.Present || !Rear.Present) return null;
+        if (Front.Travel is not { Length: > 0 } || Rear.Travel is not { Length: > 0 }) return null;
+        var fStrokes = Front.Strokes?.Compressions;
+        var rStrokes = Rear.Strokes?.Compressions;
+        if (fStrokes is not { Length: > 0 } && rStrokes is not { Length: > 0 }) return null;
+        double maxF = Linkage?.MaxFrontTravel ?? 0;
+        double maxR = Linkage?.MaxRearTravel ?? 0;
+        if (maxF <= 0 || maxR <= 0) return null;
+
+        int n = Math.Min(Front.Travel.Length, Rear.Travel.Length);
+        var (lag, _, _) = GetFrontRearLag();
+        int tol = (int)Math.Round(0.2 * SampleRate) + Math.Abs(lag);   // response-window slack
+
+        double fVelMax = fStrokes is { Length: > 0 } ? fStrokes.Max(s => s.Stat.MaxVelocity) : 0;
+        double rVelMax = rStrokes is { Length: > 0 } ? rStrokes.Max(s => s.Stat.MaxVelocity) : 0;
+
+        // Peak travel (mm) actually reached within [a, b], clamped to the data.
+        double WindowMax(double[] travel, int a, int b)
+        {
+            if (a < 0) a = 0;
+            if (b > n - 1) b = n - 1;
+            double mx = 0;
+            for (int i = a; i <= b; i++) if (travel[i] > mx) mx = travel[i];
+            return mx;
+        }
+
+        // Each candidate tagged with the front-impact sample index, for dedup across the two triggers.
+        var raw = new List<(int frontIdx, double frontPct, double rearPct)>();
+
+        // Front-led: the front drives, the rear responds τ later in [Start+lag, End+lag+tol].
+        if (fStrokes is { Length: > 0 } && fVelMax > 0)
+            foreach (var fs in fStrokes)
+            {
+                if (fs.Stat.MaxTravel < GoutDepthFrac * maxF) continue;
+                if (fs.Stat.MaxVelocity < GoutVelFrac * fVelMax) continue;
+                var rearMm = WindowMax(Rear.Travel, fs.Start + lag, fs.End + lag + tol);
+                raw.Add((fs.Start,
+                    Math.Min(fs.Stat.MaxTravel / maxF * 100.0, 100.0),
+                    Math.Min(rearMm / maxR * 100.0, 100.0)));
+            }
+
+        // Rear-led: the rear drives, the front impact was τ earlier in [Start−lag−tol, End−lag].
+        if (rStrokes is { Length: > 0 } && rVelMax > 0)
+            foreach (var rs in rStrokes)
+            {
+                if (rs.Stat.MaxTravel < GoutDepthFrac * maxR) continue;
+                if (rs.Stat.MaxVelocity < GoutVelFrac * rVelMax) continue;
+                var frontMm = WindowMax(Front.Travel, rs.Start - lag - tol, rs.End - lag);
+                raw.Add((rs.Start - lag,
+                    Math.Min(frontMm / maxF * 100.0, 100.0),
+                    Math.Min(rs.Stat.MaxTravel / maxR * 100.0, 100.0)));
+            }
+
+        if (raw.Count == 0) return new List<(double FrontPct, double RearPct)>();
+
+        // Dedup: front- and rear-led triggers for one impact land at ~the same front index. Sort by
+        // impact, collapse neighbours within tol, keeping the heavier-loaded of the pair.
+        raw.Sort((x, y) => x.frontIdx.CompareTo(y.frontIdx));
+        var events = new List<(double FrontPct, double RearPct)>();
+        int lastIdx = int.MinValue;
+        foreach (var e in raw)
+        {
+            if (events.Count > 0 && e.frontIdx - lastIdx <= tol)
+            {
+                var prev = events[^1];
+                if (e.frontPct + e.rearPct > prev.FrontPct + prev.RearPct)
+                    events[^1] = (e.frontPct, e.rearPct);
+            }
+            else
+            {
+                events.Add((e.frontPct, e.rearPct));
+            }
+            lastIdx = e.frontIdx;
+        }
+        return events;
+    }
+
     public BalanceMetrics CalculateBalanceMetrics(Discipline? discipline = null)
     {
         double? fSag = null, rSag = null, sagDiff = null;
@@ -2063,6 +2480,48 @@ public class TelemetryData
             }
         }
 
+        // Time-domain pitch attitude (laufzeit-corrected) + modal energy split + G-out symmetry.
+        double? pitchMeanDeg = null, pitchStabilityDeg = null, pitchModeEnergy = null, goutAsymPct = null;
+        int? goutEventCount = null;
+        double? maxFrontTravelMm = maxF > 0 ? maxF : null;
+        double? maxRearTravelMm = maxR > 0 ? maxR : null;
+        double? wheelbaseMm = Linkage is { Wheelbase: > 0 } ? Linkage.Wheelbase : null;
+
+        if (Front.Present && Rear.Present)
+        {
+            var pitch = CalculatePitchDegrees();
+            if (pitch is { Length: > 0 })
+            {
+                double mean = 0;
+                for (int i = 0; i < pitch.Length; i++) mean += pitch[i];
+                mean /= pitch.Length;
+                double variance = 0;
+                for (int i = 0; i < pitch.Length; i++) { var d = pitch[i] - mean; variance += d * d; }
+                variance /= pitch.Length;
+                pitchMeanDeg = mean;
+                pitchStabilityDeg = Math.Sqrt(variance);
+            }
+
+            var modal = CalculateModalSpectrum();
+            if (modal is { } md)
+            {
+                var sum = new double[md.PitchPsd.Length];
+                for (int k = 0; k < sum.Length; k++) sum[k] = md.PitchPsd[k] + md.HeavePsd[k];
+                var ep = IntegrateBand(md.Freqs, md.PitchPsd, 1.0, fSplit);
+                var et = IntegrateBand(md.Freqs, sum, 1.0, fSplit);
+                if (et > 1e-30) pitchModeEnergy = ep / et;
+            }
+
+            var gout = CalculateGoutEvents();
+            goutEventCount = gout?.Count;
+            if (gout is { Count: > 0 })
+            {
+                int asym = 0;
+                foreach (var (fp, rp) in gout) if (Math.Abs(fp - rp) > 25.0) asym++;
+                goutAsymPct = 100.0 * asym / gout.Count;
+            }
+        }
+
         return new BalanceMetrics(
             fSag, rSag, sagDiff,
             fP95Pct, rP95Pct,
@@ -2074,7 +2533,9 @@ public class TelemetryData
             lowEnergyDb, midEnergyDb, wheelEnergyDb, highEnergyDb,
             lowCoh, midCoh, wheelCoh, highCoh,
             fSplit,
-            haStaticDeg, haShiftDeg);
+            haStaticDeg, haShiftDeg,
+            pitchMeanDeg, pitchStabilityDeg, pitchModeEnergy, goutAsymPct, goutEventCount,
+            maxFrontTravelMm, maxRearTravelMm, wheelbaseMm);
     }
 
     #endregion

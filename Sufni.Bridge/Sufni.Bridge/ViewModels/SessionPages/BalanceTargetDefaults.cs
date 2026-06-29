@@ -70,6 +70,10 @@ public static class BalanceTargetDefaults
                 (cut, _) => $"> {I(cut)} %"),
             new BalanceMetricDef("RebMsd", MetricShape.SignedBand, -10, 0, 5, 15, "{0:+0.00;-0.00;0.00} %",
                 (lo, hi) => $"{I(lo)} to {I(hi!.Value)} %"),
+            new BalanceMetricDef("PitchStability", MetricShape.CutoffLower, 1.0, null, 1.0, 0, "{0:0.00}°",
+                (cut, _) => $"≤ {cut.ToString("0.0", CultureInfo.InvariantCulture)}°"),
+            new BalanceMetricDef("GoutSymmetry", MetricShape.CutoffLower, 10, null, 10, 0, "{0:0} %",
+                (cut, _) => $"≤ {I(cut)} %"),
         }.ToDictionary(d => d.Key);
 
     /// <summary>
@@ -124,5 +128,36 @@ public static class BalanceTargetDefaults
             default:
                 return BalanceStatus.Unknown;
         }
+    }
+
+    /// <summary>Effective green bounds: a stored override (when its min is set), else the registry default.</summary>
+    public static (double min, double? max) EffectiveGreen(
+        IReadOnlyDictionary<string, (double? min, double? max)>? overrides, string key, Discipline? discipline = null)
+    {
+        if (overrides is not null && overrides.TryGetValue(key, out var o) && o.min.HasValue)
+            return (o.min.Value, o.max);
+        return DefaultGreen(key, discipline);
+    }
+
+    /// <summary>
+    /// Expected chassis-pitch band (degrees, nose-down positive) implied by the front/rear SAG
+    /// green ranges and bike geometry. Used as the μ metric's traffic-light reference and the
+    /// pitch plot's expected band. Returns null if geometry or the SAG ranges are unavailable.
+    /// </summary>
+    public static (double minDeg, double maxDeg)? ExpectedPitchBand(
+        (double min, double? max) frontSagBand, (double min, double? max) rearSagBand,
+        double? maxFrontTravelMm, double? maxRearTravelMm, double? wheelbaseMm)
+    {
+        if (maxFrontTravelMm is not > 0 || maxRearTravelMm is not > 0 || wheelbaseMm is not > 0) return null;
+        if (frontSagBand.max is null || rearSagBand.max is null) return null;
+        double Pitch(double frontPct, double rearPct)
+        {
+            var frontMm = frontPct / 100.0 * maxFrontTravelMm.Value;
+            var rearMm = rearPct / 100.0 * maxRearTravelMm.Value;
+            return -Math.Atan2(rearMm - frontMm, wheelbaseMm.Value) * 180.0 / Math.PI;
+        }
+        var maxDeg = Pitch(frontSagBand.max.Value, rearSagBand.min);
+        var minDeg = Pitch(frontSagBand.min, rearSagBand.max.Value);
+        return (minDeg, maxDeg);
     }
 }

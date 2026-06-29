@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 189;
+    private const int CurrentPlotVersion = 194;
 
     // Approximate rendered height of the VelocityBandView control (margin + title text +
     // 44 px band grid). Used to size the low-speed velocity histograms so the
@@ -199,13 +199,17 @@ public partial class SessionViewModel : ItemViewModelBase
                 var combinedFftTask     = Task.Run(() => SvgToSource(cache.CombinedTravelFft));
                 var combinedFftHighTask = Task.Run(() => SvgToSource(cache.CombinedTravelFftHigh));
                 var combinedVelFftTask  = Task.Run(() => SvgToSource(cache.CombinedVelocityFft));
+                var pitchBalanceTask    = Task.Run(() => SvgToSource(cache.PitchBalance));
+                var pitchCoherenceTask  = Task.Run(() => SvgToSource(cache.PitchCoherence));
+                var goutScatterTask     = Task.Run(() => SvgToSource(cache.GoutScatter));
 
                 await Task.WhenAll(frontVelHistTask, frontLsVelHistTask, rearVelHistTask, rearDamperVelHistTask, rearLsVelHistTask,
                     combBalTask, compBalTask, rebBalTask,
                     velDistCompTask, posVelCompTask, frontPosVelTask, rearPosVelTask,
                     frontTravelCropTask, rearTravelCropTask, frontVelCropTask, rearVelCropTask,
                     frontAccelCropTask, rearAccelCropTask,
-                    combinedFftTask, combinedFftHighTask);
+                    combinedFftTask, combinedFftHighTask,
+                    pitchBalanceTask, pitchCoherenceTask, goutScatterTask);
 
                 var frontVelHistSrc   = frontVelHistTask.Result;
                 var frontLsVelHistSrc = frontLsVelHistTask.Result;
@@ -251,6 +255,9 @@ public partial class SessionViewModel : ItemViewModelBase
                         BalancePage.CombinedTravelFft     = SourceToImage(combinedFftTask.Result);
                         BalancePage.CombinedTravelFftHigh = SourceToImage(combinedFftHighTask.Result);
                         BalancePage.CombinedVelocityFft   = SourceToImage(combinedVelFftTask.Result);
+                        BalancePage.PitchBalance          = SourceToImage(pitchBalanceTask.Result);
+                        BalancePage.PitchCoherence        = SourceToImage(pitchCoherenceTask.Result);
+                        BalancePage.GoutScatter           = SourceToImage(goutScatterTask.Result);
                         if (cache.BalanceMetricsJson is not null)
                         {
                             try
@@ -660,6 +667,40 @@ public partial class SessionViewModel : ItemViewModelBase
                 sessionCache.BalanceMetricsJson = JsonSerializer.Serialize(metrics);
                 var balanceOverrides = await GetBalanceOverridesAsync(discipline);
                 Dispatcher.UIThread.Post(() => BalancePage.Metrics.Apply(metrics, discipline, balanceOverrides));
+
+                // Pitch-attitude plots (lag-corrected). The expected band comes from the effective
+                // SAG green ranges so the plot's reference matches the μ metric's traffic light.
+                // Wheelbase was refreshed just above, so CalculatePitchDegrees sees it.
+                var expectedBand = BalanceTargetDefaults.ExpectedPitchBand(
+                    BalanceTargetDefaults.EffectiveGreen(balanceOverrides, "FrontSag", discipline),
+                    BalanceTargetDefaults.EffectiveGreen(balanceOverrides, "RearSag", discipline),
+                    metrics.MaxFrontTravelMm, metrics.MaxRearTravelMm, metrics.WheelbaseMm);
+
+                await Task.WhenAll(
+                    ThrottledPlotTask(() =>
+                    {
+                        var pb = new PitchBalancePlot(new Plot(), expectedBand?.minDeg, expectedBand?.maxDeg);
+                        pb.LoadTelemetryData(telemetryData);
+                        sessionCache.PitchBalance = pb.Plot.GetSvgXml(width, height);
+                        var src = SvgToSource(sessionCache.PitchBalance);
+                        Dispatcher.UIThread.Post(() => { BalancePage.PitchBalance = SourceToImage(src); });
+                    }),
+                    ThrottledPlotTask(() =>
+                    {
+                        var pc = new PitchCoherencePlot(new Plot(), discipline);
+                        pc.LoadTelemetryData(telemetryData);
+                        sessionCache.PitchCoherence = pc.Plot.GetSvgXml(width, height);
+                        var src = SvgToSource(sessionCache.PitchCoherence);
+                        Dispatcher.UIThread.Post(() => { BalancePage.PitchCoherence = SourceToImage(src); });
+                    }),
+                    ThrottledPlotTask(() =>
+                    {
+                        var gs = new GoutScatterPlot(new Plot());
+                        gs.LoadTelemetryData(telemetryData);
+                        sessionCache.GoutScatter = gs.Plot.GetSvgXml(width, height);
+                        var src = SvgToSource(sessionCache.GoutScatter);
+                        Dispatcher.UIThread.Post(() => { BalancePage.GoutScatter = SourceToImage(src); });
+                    }));
             }));
         }
 
@@ -1749,6 +1790,9 @@ public partial class SessionViewModel : ItemViewModelBase
             svgEntries.Add(cache.CombinedBalance);
             svgEntries.Add(cache.CompressionBalance);
             svgEntries.Add(cache.ReboundBalance);
+            svgEntries.Add(cache.PitchBalance);
+            svgEntries.Add(cache.PitchCoherence);
+            svgEntries.Add(cache.GoutScatter);
 
             // Misc tab
             svgEntries.Add(cache.FrontTravelTimeCropped);

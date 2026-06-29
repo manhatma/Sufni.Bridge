@@ -45,5 +45,8 @@ public class SessionCache
     [Column("combined_travel_fft")] public string? CombinedTravelFft { get; set; }
     [Column("combined_travel_fft_high")] public string? CombinedTravelFftHigh { get; set; }
     [Column("combined_velocity_fft")] public string? CombinedVelocityFft { get; set; }
+    [Column("pitch_balance")] public string? PitchBalance { get; set; }
+    [Column("pitch_coherence")] public string? PitchCoherence { get; set; }
+    [Column("gout_scatter")] public string? GoutScatter { get; set; }
     [Column("balance_metrics_json")] public string? BalanceMetricsJson { get; set; }
 }
