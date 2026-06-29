@@ -248,6 +248,9 @@ public class SqLiteDatabaseService : IDatabaseService
         await AddColumnIfMissing("combined_travel_fft_high");
         await AddColumnIfMissing("combined_velocity_fft");
         await AddColumnIfMissing("balance_metrics_json");
+        await AddColumnIfMissing("pitch_balance");
+        await AddColumnIfMissing("pitch_coherence");
+        await AddColumnIfMissing("gout_scatter");
     }
 
     private class TableInfoRecord
