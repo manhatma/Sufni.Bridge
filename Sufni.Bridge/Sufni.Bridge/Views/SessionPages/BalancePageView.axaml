@@ -177,6 +177,24 @@
                         </Panel>
                     </Grid>
                     <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.DamperSag.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.DamperSag.Value}"  Foreground="{Binding Metrics.DamperSag.ValueBrush}" />
+                        <Panel Grid.Column="2">
+                            <TextBlock Classes="metricTarget" Text="{Binding Metrics.DamperSag.Target}"
+                                       IsVisible="{Binding Metrics.DamperSag.ShowTargetText}" />
+                            <StackPanel Classes="targetEditor" IsVisible="{Binding Metrics.DamperSag.ShowEditors}">
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.DamperSag.GreenMin}" />
+                                <TextBlock Classes="editDash" Text="–" IsVisible="{Binding Metrics.DamperSag.ShowMaxField}" />
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.DamperSag.GreenMax}"
+                                               IsVisible="{Binding Metrics.DamperSag.ShowMaxField}" />
+                                <Button Classes="embedded" Margin="2,0,0,0" Command="{Binding Metrics.ResetMetricCommand}"
+                                        CommandParameter="{Binding Metrics.DamperSag}" ToolTip.Tip="Reset to default">
+                                    <Image Width="10" Source="{SvgImage /Assets/fa-rotate-left.svg}" />
+                                </Button>
+                            </StackPanel>
+                        </Panel>
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
                         <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.FrontP95.Label}" />
                         <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.FrontP95.Value}"  Foreground="{Binding Metrics.FrontP95.ValueBrush}" />
                         <Panel Grid.Column="2">

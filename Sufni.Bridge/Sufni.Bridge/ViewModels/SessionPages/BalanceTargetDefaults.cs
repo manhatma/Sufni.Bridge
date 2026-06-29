@@ -64,6 +64,8 @@ public static class BalanceTargetDefaults
                 (lo, hi) => $"{I(lo)}–{I(hi!.Value)} %"),
             new BalanceMetricDef("SagDiff", MetricShape.CutoffLower, 5, null, 3, 0, "{0:0.0} pp",
                 (cut, _) => $"≤ {I(cut)} pp"),
+            new BalanceMetricDef("DamperSag", MetricShape.Band, 25, 30, 2, 2, "{0:0.0} %",
+                (lo, hi) => $"{I(lo)}–{I(hi!.Value)} %"),
             new BalanceMetricDef("FrontP95", MetricShape.CutoffUpper, 55, null, 5, 0, "{0:0.0} %",
                 (cut, _) => $"> {I(cut)} %"),
             new BalanceMetricDef("RearP95", MetricShape.CutoffUpper, 55, null, 5, 0, "{0:0.0} %",

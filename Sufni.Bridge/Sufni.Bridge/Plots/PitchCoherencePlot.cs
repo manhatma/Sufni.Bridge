@@ -9,22 +9,22 @@ namespace Sufni.Bridge.Plots;
 /// <summary>
 /// Front/rear cross-spectrum diagnostics on a frequency axis: magnitude-squared coherence γ²(f)
 /// on the left axis and the cross phase φ(f) on a second (right) axis. The body/pitch band
-/// [1 Hz, fSplit] is highlighted, and the lag model φ(f)=360·f·τ is overlaid so the viewer can
-/// judge whether measured phase follows the front→rear traversal lag. A pitch-mode energy fraction
-/// summarises how much of the in-band modal energy lives in the anti-phase (pitch) mode.
+/// [1 Hz, fSplit] is marked with dotted verticals, and phase is shown only where coherence is high
+/// enough to be meaningful. A pitch-mode energy fraction summarises how much of the in-band modal
+/// energy lives in the anti-phase (pitch) mode.
 /// </summary>
 public class PitchCoherencePlot(Plot plot, Discipline? discipline) : TelemetryPlot(plot)
 {
-    private const double DisplayMaxHz = 12.0;
+    private const double DisplayMaxHz = 6.0;
     private const double PhaseCoherenceFloor = 0.3;   // below this, cross phase is wrapping noise
-    private static readonly Color PhaseColor = Color.FromHex("#e0b83a");
+    private static readonly Color PhaseColor = Color.FromHex("#F4511E");
 
     public override void LoadTelemetryData(TelemetryData telemetryData)
     {
         base.LoadTelemetryData(telemetryData);
 
         SetTitle("Front/rear coherence & phase");
-        Plot.Layout.Fixed(new PixelPadding(55, 55, 50, 40));
+        Plot.Layout.Fixed(new PixelPadding(55, 62, 50, 40));
         Plot.Axes.Bottom.Label.Text = "Frequency (Hz)";
         Plot.Axes.Left.Label.Text = "Coherence γ²";
 
@@ -39,7 +39,7 @@ public class PitchCoherencePlot(Plot plot, Discipline? discipline) : TelemetryPl
 
         var fSplit = TelemetryData.FrequencySplitFor(discipline);
 
-        // Restrict the displayed series to 0..25 Hz (keep the full arrays for the energy integral).
+        // Restrict the displayed series to the 0..DisplayMaxHz window (keep the full arrays for the energy integral).
         var dispF = new List<double>(freqs.Length);
         var dispCoh = new List<double>(freqs.Length);
         var dispPhase = new List<double>(freqs.Length);
@@ -53,7 +53,7 @@ public class PitchCoherencePlot(Plot plot, Discipline? discipline) : TelemetryPl
 
         if (dispF.Count == 0)
         {
-            AddLabel("No spectral data in 0–25 Hz", 0.5, 0.5, 0, 0, Alignment.MiddleCenter, "#aaaaaa");
+            AddLabel("No spectral data in display range", 0.5, 0.5, 0, 0, Alignment.MiddleCenter, "#aaaaaa");
             return;
         }
 
@@ -67,8 +67,16 @@ public class PitchCoherencePlot(Plot plot, Discipline? discipline) : TelemetryPl
         // scatter's YAxis to Plot.Axes.Right.
         var rightAxis = Plot.Axes.Right;
         rightAxis.Label.Text = "Phase (°)";
+        // ScottPlot's RightAxis defaults its label to Rotation = 90 (reads top-to-bottom); flip it
+        // 180° to -90 so "Phase (°)" reads bottom-to-top, matching the left axis and the conventional
+        // orientation. Only the label orientation changes; phase data is untouched.
+        rightAxis.Label.Rotation = -90f;
         rightAxis.Label.ForeColor = Color.FromHex("#D0D0D0");
         rightAxis.Label.FontSize = 14;
+        // Match the app's other axis labels: SufniPlot only un-bolds Left/Bottom, so the right axis
+        // keeps ScottPlot's bold default — clear it. Nudge inward so it isn't jammed against the edge.
+        rightAxis.Label.Bold = false;
+        rightAxis.Label.OffsetX = -10;
         rightAxis.TickLabelStyle.ForeColor = Color.FromHex("#D0D0D0");
         rightAxis.TickLabelStyle.FontSize = 12;
 
@@ -124,7 +132,7 @@ public class PitchCoherencePlot(Plot plot, Discipline? discipline) : TelemetryPl
         info.LabelBorderWidth = 1;
         info.LabelPadding = 4;
 
-        // Axis limits: X 0..25, left Y 0..1, right Y -180..180.
+        // Axis limits: X 0..DisplayMaxHz, left Y 0..1, right Y -180..180.
         Plot.Axes.SetLimits(left: 0, right: DisplayMaxHz, bottom: 0, top: 1);
         rightAxis.Min = -180;
         rightAxis.Max = 180;

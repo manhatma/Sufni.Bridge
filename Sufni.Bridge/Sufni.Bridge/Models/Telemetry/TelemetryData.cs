@@ -130,7 +130,10 @@ public record BalanceMetrics(
     int? GoutEventCount,             // N paired G-out events — gates the asymmetry headline at small N
     double? MaxFrontTravelMm,        // geometry passthrough for the μ expected band
     double? MaxRearTravelMm,
-    double? WheelbaseMm);
+    double? WheelbaseMm,
+    // Rear damper dynamic sag in % of SHOCK STROKE — distinct from rear WHEEL sag because wheel
+    // travel is a non-linear function of shock stroke (the leverage curve).
+    double? DamperSagPct);
 
 [MessagePackObject(keyAsPropertyName: true)]
 public class TelemetryData
@@ -2372,6 +2375,29 @@ public class TelemetryData
         if (fSag.HasValue && rSag.HasValue)
             sagDiff = Math.Abs(fSag.Value - rSag.Value);
 
+        // Rear damper (shock-stroke) dynamic sag: mean shock stroke ÷ max shock stroke over the
+        // same active-stroke window used for rear WHEEL sag. The two differ because wheel travel is
+        // a non-linear function of shock stroke (the leverage curve), so reporting both lets the
+        // rider compare shock-side sag (what spring/pressure setup targets) with wheel-side sag.
+        double? damperSag = null;
+        var maxRStroke = Linkage?.MaxRearStroke ?? 0;
+        if (Rear.Present && Rear.ShockTravel is { Length: > 0 } && maxRStroke > 0)
+        {
+            double shockSum = 0;
+            var shockN = 0;
+            foreach (var stroke in Rear.Strokes.Compressions.Concat(Rear.Strokes.Rebounds))
+            {
+                if (stroke.End < stroke.Start || stroke.Start < 0 || stroke.End >= Rear.ShockTravel.Length)
+                    continue;
+                for (var i = stroke.Start; i <= stroke.End; i++)
+                {
+                    shockSum += Rear.ShockTravel[i];
+                    shockN++;
+                }
+            }
+            if (shockN > 0) damperSag = shockSum / shockN / maxRStroke * 100.0;
+        }
+
         // Effective head angle under mean dynamic sag. Pitch (nose-down positive)
         // tips the front of the chassis down → head angle becomes steeper, so the
         // signed shift is −φ in degrees.
@@ -2535,7 +2561,8 @@ public class TelemetryData
             fSplit,
             haStaticDeg, haShiftDeg,
             pitchMeanDeg, pitchStabilityDeg, pitchModeEnergy, goutAsymPct, goutEventCount,
-            maxFrontTravelMm, maxRearTravelMm, wheelbaseMm);
+            maxFrontTravelMm, maxRearTravelMm, wheelbaseMm,
+            damperSag);
     }
 
     #endregion

@@ -55,9 +55,10 @@ public partial class BalanceMetricRow : ObservableObject
 
 public partial class BalanceMetricsViewModel : ObservableObject
 {
-    public BalanceMetricRow FrontSag      { get; } = new() { Label = "Front SAG (dyn.)", Target = "23–28 %", Key = "FrontSag", IsEditable = true, HasRange = true };
-    public BalanceMetricRow RearSag       { get; } = new() { Label = "Rear SAG (dyn.)",  Target = "28–33 %", Key = "RearSag",  IsEditable = true, HasRange = true };
+    public BalanceMetricRow FrontSag      { get; } = new() { Label = "Front Wheel SAG (dyn.)", Target = "23–28 %", Key = "FrontSag", IsEditable = true, HasRange = true };
+    public BalanceMetricRow RearSag       { get; } = new() { Label = "Rear Wheel SAG (dyn.)",  Target = "28–33 %", Key = "RearSag",  IsEditable = true, HasRange = true };
     public BalanceMetricRow SagDiff       { get; } = new() { Label = "Sag-Diff |F−R|",   Target = "≤ 5 pp",  Key = "SagDiff",  IsEditable = true };
+    public BalanceMetricRow DamperSag     { get; } = new() { Label = "Damper SAG (dyn.)", Target = "25–30 %", Key = "DamperSag", IsEditable = true, HasRange = true };
     public BalanceMetricRow FrontP95      { get; } = new() { Label = "Front 95th",       Target = "> 55 %",  Key = "FrontP95", IsEditable = true };
     public BalanceMetricRow RearP95       { get; } = new() { Label = "Rear 95th",        Target = "> 55 %",  Key = "RearP95",  IsEditable = true };
     public BalanceMetricRow P95Diff       { get; } = new() { Label = "95th-Diff |F−R|",  Target = "≤ 5 pp" };
@@ -108,7 +109,7 @@ public partial class BalanceMetricsViewModel : ObservableObject
 
     [ObservableProperty] private bool isEditing;
 
-    private BalanceMetricRow[] EditableRows => [FrontSag, RearSag, SagDiff, FrontP95, RearP95, RebMsd, PitchStability, GoutSymmetry];
+    private BalanceMetricRow[] EditableRows => [FrontSag, RearSag, SagDiff, DamperSag, FrontP95, RearP95, RebMsd, PitchStability, GoutSymmetry];
 
     partial void OnIsEditingChanged(bool value)
     {
@@ -218,6 +219,7 @@ public partial class BalanceMetricsViewModel : ObservableObject
         ApplyEditable(FrontSag, m.FrontSagPct,     discipline);
         ApplyEditable(RearSag,  m.RearSagPct,      discipline);
         ApplyEditable(SagDiff,  m.SagDifferencePp, discipline);
+        ApplyEditable(DamperSag, m.DamperSagPct,   discipline);
         ApplyEditable(FrontP95, m.FrontP95Pct,     discipline);
         ApplyEditable(RearP95,  m.RearP95Pct,      discipline);
         var p95Diff = (m.FrontP95Pct.HasValue && m.RearP95Pct.HasValue)
