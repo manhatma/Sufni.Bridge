@@ -23,6 +23,12 @@ public partial class App : Application
         // separator (and a day-first English date format) regardless of device locale.
         // DefaultThreadCurrentCulture also covers the background threads that render plots.
         var culture = new CultureInfo("en-GB");
+        // No thousands separators anywhere: ScottPlot's default tick formatter groups large
+        // values via CurrentCulture, so a velocity axis tick like 1000 rendered as "1,000" and
+        // could be misread as a decimal. Strip the group separators so ticks read "1000".
+        culture.NumberFormat.NumberGroupSeparator = "";
+        culture.NumberFormat.PercentGroupSeparator = "";
+        culture.NumberFormat.CurrencyGroupSeparator = "";
         CultureInfo.DefaultThreadCurrentCulture = culture;
         CultureInfo.DefaultThreadCurrentUICulture = culture;
         CultureInfo.CurrentCulture = culture;
