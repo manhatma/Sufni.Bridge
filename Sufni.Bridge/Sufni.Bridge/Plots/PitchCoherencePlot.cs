@@ -10,8 +10,10 @@ namespace Sufni.Bridge.Plots;
 /// Front/rear cross-spectrum diagnostics on a frequency axis: magnitude-squared coherence γ²(f)
 /// on the left axis and the cross phase φ(f) on a second (right) axis. The body/pitch band
 /// [1 Hz, fSplit] is marked with dotted verticals, and phase is shown only where coherence is high
-/// enough to be meaningful. A pitch-mode energy fraction summarises how much of the in-band modal
-/// energy lives in the anti-phase (pitch) mode.
+/// enough to be meaningful. An anti-phase energy fraction summarises how much of the in-band modal
+/// energy lives in the anti-phase (pitch) mode, de-lagged by the front→rear traversal lag τ where
+/// determinable; where τ is not determinable this is an upper bound on the true chassis-pitch
+/// energy fraction.
 /// </summary>
 public class PitchCoherencePlot(Plot plot, Discipline? discipline) : TelemetryPlot(plot)
 {
@@ -110,16 +112,16 @@ public class PitchCoherencePlot(Plot plot, Discipline? discipline) : TelemetryPl
         // still used internally for the pitch de-lag where it IS determinable. The measured coherence
         // and phase above are the honest content of this plot.
 
-        // Pitch-mode energy fraction over [1, fSplit], using the FULL (unclipped) spectrum arrays.
+        // Anti-phase energy fraction over [1, fSplit], using the FULL (unclipped) spectrum arrays.
         var pitchSum = new double[freqs.Length];
         for (var k = 0; k < freqs.Length; k++)
             pitchSum[k] = pitchPsd[k] + heavePsd[k];
         var ep = TelemetryData.IntegrateBand(freqs, pitchPsd, 1.0, fSplit);
         var et = TelemetryData.IntegrateBand(freqs, pitchSum, 1.0, fSplit);
         var frac = et > 0 ? ep / et : 0.0;
-        // Info box (top-right, over the low-coherence/empty region): pitch-mode energy fraction.
+        // Info box (top-right, over the low-coherence/empty region): anti-phase energy fraction.
         var info = Plot.Add.Text(
-            $"pitch-mode energy: {frac:0.00}", DisplayMaxHz, 1);
+            $"anti-phase energy: {frac:0.00}", DisplayMaxHz, 1);
         info.LabelFontColor = Color.FromHex("#FFD700");
         info.LabelFontSize = 9;
         info.LabelFontName = "Menlo";

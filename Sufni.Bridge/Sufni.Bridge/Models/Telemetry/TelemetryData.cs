@@ -1942,41 +1942,13 @@ public class TelemetryData
     private (int lagSamples, double conf, bool determined)? frontRearLag;
 
     /// <summary>Front→rear traversal lag (rear lags front by this many samples) with a 0..1
-    /// confidence and a determinability flag, estimated once and cached.</summary>
+    /// confidence and a determinability flag, estimated once and cached. determined=false means τ
+    /// could not be pinned to a speed-plausible, coherent value; callers should treat lagSamples as 0
+    /// ("no de-lag") rather than a real estimate.</summary>
     private (int lagSamples, double conf, bool determined) GetFrontRearLag()
     {
         frontRearLag ??= EstimateFrontRearLag();
         return frontRearLag.Value;
-    }
-
-    /// <summary>
-    /// Front→rear traversal lag τ in seconds — the time for the rear wheel to reach a terrain
-    /// feature the front already passed. 0 when not determinable (see <see cref="LagDeterminable"/>).
-    /// Public surface for plot annotation and the de-lag of pitch / G-out.
-    /// </summary>
-    [IgnoreMember]
-    public double LagSeconds => SampleRate > 0 ? (double)GetFrontRearLag().lagSamples / SampleRate : 0.0;
-
-    /// <summary>
-    /// Whether τ could be pinned to a speed-plausible, coherent value. When false the lag is 0 and
-    /// callers should treat it as "no de-lag" and label it "lag n/a" rather than showing a number.
-    /// </summary>
-    [IgnoreMember]
-    public bool LagDeterminable => GetFrontRearLag().determined;
-
-    /// <summary>
-    /// Effective riding speed implied by the traversal lag (wheelbase / τ), in km/h, or null when
-    /// the lag is not determinable. A sanity readout: realistic trail speeds are ~5–40 km/h.
-    /// </summary>
-    [IgnoreMember]
-    public double? EffectiveSpeedKmh
-    {
-        get
-        {
-            var t = LagSeconds;
-            if (!LagDeterminable || t <= 0 || Linkage is not { Wheelbase: > 0 }) return null;
-            return Linkage.Wheelbase.Value / 1000.0 / t * 3.6;
-        }
     }
 
     // Speed-plausible bounds for the traversal lag (m/s): τ = wheelbase / speed, so a 1.2 m
@@ -2096,6 +2068,11 @@ public class TelemetryData
         // The band-pass correlation merely *confirms* (blends when it agrees) — it is never trusted
         // on its own, because on heave-dominated trails it locks onto incidental short-lag
         // correlation and would fabricate an implausibly high speed. No usable phase ⇒ "lag n/a".
+        // Caveat: with mixed heave + traversal content the cross-spectrum phase lies power-weighted
+        // between 0 (pure in-phase heave) and 2π·f·τ (pure traversal), so the fitted τ is a lower
+        // bound on the true traversal delay. Consequently the modal-split de-lag (CalculateModalSpectrum)
+        // removes traversal pseudo-pitch only partially, and any wheelbase/τ speed readout
+        // overestimates the effective speed.
         bool phaseOk = !double.IsNaN(phaseTauSec) && phaseTauSec >= tauMinSec && phaseTauSec <= tauMaxSec
                        && phaseBins >= 4;
         if (!phaseOk) return (0, ccPeak, false);
@@ -2174,6 +2151,73 @@ public class TelemetryData
         return LowPassZeroPhase(pitch, SampleRate, PitchLowPassHz);
     }
 
+    /// <summary>
+    /// Pitch mean/spread statistics over the union of both ends' active stroke windows (front and
+    /// rear Compressions + Rebounds) — the SAME windowing used by <see cref="CalculateDetailedTravelStatistics"/>
+    /// for dynamic SAG. Including idle samples (both travels ≈ 0 ⇒ pitch ≈ 0) would dilute μ toward
+    /// 0°, but the expected pitch band it is traffic-light-compared against is itself derived from
+    /// SAG, which only averages over active windows — so restricting to the same windows here keeps
+    /// the comparison apples-to-apples. Falls back to all samples if no stroke selects any (e.g. no
+    /// stroke data available). Returns null if pitch itself is unavailable.
+    /// </summary>
+    public (double Mean, double Std, double P5, double P95, double Min, double Max)? CalculatePitchStatistics()
+    {
+        var pitch = CalculatePitchDegrees();
+        if (pitch is not { Length: > 0 }) return null;
+
+        var mask = new bool[pitch.Length];
+        var any = false;
+        void Mark(Stroke[]? strokes)
+        {
+            if (strokes is not { Length: > 0 }) return;
+            foreach (var s in strokes)
+            {
+                if (s.End < s.Start) continue;
+                int a = Math.Max(0, s.Start);
+                int b = Math.Min(pitch.Length - 1, s.End);
+                for (int i = a; i <= b; i++) { mask[i] = true; any = true; }
+            }
+        }
+        Mark(Front.Strokes?.Compressions);
+        Mark(Front.Strokes?.Rebounds);
+        Mark(Rear.Strokes?.Compressions);
+        Mark(Rear.Strokes?.Rebounds);
+
+        var values = any
+            ? Enumerable.Range(0, pitch.Length).Where(i => mask[i]).Select(i => pitch[i]).ToArray()
+            : pitch;
+        if (values.Length == 0) return null;
+
+        double mean = values.Average();
+        double variance = 0;
+        double min = values[0], max = values[0];
+        for (int i = 0; i < values.Length; i++)
+        {
+            var d = values[i] - mean;
+            variance += d * d;
+            if (values[i] < min) min = values[i];
+            if (values[i] > max) max = values[i];
+        }
+        variance /= values.Length;
+        double std = Math.Sqrt(variance);
+
+        var sorted = (double[])values.Clone();
+        Array.Sort(sorted);
+        double P(double p)
+        {
+            int cnt = sorted.Length;
+            if (cnt == 1) return sorted[0];
+            double rank = p / 100.0 * (cnt - 1);
+            int lo = (int)Math.Floor(rank), hi = (int)Math.Ceiling(rank);
+            if (lo == hi) return sorted[lo];
+            double frac = rank - lo;
+            return sorted[lo] + (sorted[hi] - sorted[lo]) * frac;
+        }
+        double p5 = P(5.0), p95 = P(95.0);
+
+        return (mean, std, p5, p95, min, max);
+    }
+
     // Rigid-body pitch low-pass cutoff (−3 dB), in Hz. Keeps the body resonance, strongly
     // attenuates the wheel band (10–25 Hz) and above.
     private const double PitchLowPassHz = 4.0;
@@ -2211,7 +2255,15 @@ public class TelemetryData
     /// <summary>
     /// Modal decomposition of the front/rear travel cross-spectrum: pitch (anti-phase) and heave
     /// (in-phase) power spectra, plus magnitude-squared coherence γ²(f) and cross phase φ(f) in
-    /// degrees. Spp = (Pxx+Pyy−2·Re Pxy)/4, Shh = (Pxx+Pyy+2·Re Pxy)/4. Null without enough data.
+    /// degrees. Spp = (Pxx+Pyy−2·Re Pxy)/4, Shh = (Pxx+Pyy+2·Re Pxy)/4, computed on the τ-de-lagged
+    /// cross spectrum (Pxy rotated by e^(−i2πfτ) before taking the real part) when the front→rear
+    /// traversal lag is determinable, so the traversal delay does not masquerade as anti-phase
+    /// (pitch) energy. When τ is not determinable the raw (non-rotated) split is used instead, and
+    /// heave leaks into Spp with a sin²(π·f·τ) factor — the resulting fraction is only an upper
+    /// bound on the true chassis-pitch energy (hence the metric is labelled "anti-phase energy", not
+    /// "pitch energy"). Coherence and PhaseDeg are magnitude/angle of the RAW (non-rotated) Pxy —
+    /// rotation does not change |Pxy|, and the displayed phase stays the honest measured phase.
+    /// Null without enough data.
     /// </summary>
     public (double[] Freqs, double[] Coherence, double[] PhaseDeg, double[] PitchPsd, double[] HeavePsd)?
         CalculateModalSpectrum()
@@ -2222,6 +2274,9 @@ public class TelemetryData
         int n = Math.Min(Front.Travel.Length, Rear.Travel.Length);
         var (cf, pxx, pyy, pxy) = ComputeWelchCrossSpectrum(Front.Travel[..n], Rear.Travel[..n], SampleRate);
         if (cf.Length == 0) return null;
+
+        var (lagSamples, _, lagDetermined) = GetFrontRearLag();
+        double tau = lagDetermined && SampleRate > 0 ? (double)lagSamples / SampleRate : 0.0;
 
         int m = cf.Length;
         var coh = new double[m];
@@ -2235,18 +2290,37 @@ public class TelemetryData
             double g2 = d > 1e-30 ? (re * re + im * im) / d : 0.0;
             coh[k] = g2 > 1.0 ? 1.0 : g2;
             phase[k] = Math.Atan2(im, re) * 180.0 / Math.PI;
-            spp[k] = Math.Max(0.0, (pxx[k] + pyy[k] - 2.0 * re) / 4.0);
-            shh[k] = Math.Max(0.0, (pxx[k] + pyy[k] + 2.0 * re) / 4.0);
+
+            // De-lag the real part used for the modal split only: rotate Pxy by e^(−i2πfτ) so the
+            // front→rear traversal delay (a pure phase term) is removed before pitch/heave are
+            // separated. Coherence and PhaseDeg above intentionally keep the raw (non-rotated) pxy.
+            double reDelagged = re;
+            if (tau != 0.0)
+            {
+                double ang = -2.0 * Math.PI * cf[k] * tau;
+                reDelagged = re * Math.Cos(ang) - im * Math.Sin(ang);
+            }
+            spp[k] = Math.Max(0.0, (pxx[k] + pyy[k] - 2.0 * reDelagged) / 4.0);
+            shh[k] = Math.Max(0.0, (pxx[k] + pyy[k] + 2.0 * reDelagged) / 4.0);
         }
         return (cf, coh, phase, spp, shh);
     }
 
     // G-out gate: a stroke drives an event when it is both deep and fast. Looser than the original
     // 0.55/0.5 so rear-led and moderate events are caught too (more events → more robust stats).
+    // GoutDepthFrac is relative to that end's own max available travel (fixed, transfers across
+    // sessions). GoutVelFrac is relative to the session's own max stroke velocity (fVelMax/rVelMax),
+    // NOT an absolute mm/s threshold — absolute thresholds do not transfer across bikes, travel
+    // classes and disciplines, where "fast" spans a wide range of raw velocities. The deliberate
+    // trade-off: a single extreme hit in a session raises the velocity bar for that whole session,
+    // so event counts are not directly comparable across sessions (a smooth session and a session
+    // with one huge hit are not judged against the same absolute speed).
     private const double GoutDepthFrac = 0.45;
     private const double GoutVelFrac = 0.40;
     // Below this many events the asymmetry headline is small-N noise and is shown as indicative only.
     public const int GoutMinReliableEvents = 12;
+    // A paired G-out event counts as asymmetric when |front% − rear%| exceeds this many points.
+    public const double GoutAsymmetryThresholdPp = 25.0;
 
     /// <summary>
     /// G-out load-symmetry events. Each deep+fast compression (front OR rear) is one event; the
@@ -2274,11 +2348,16 @@ public class TelemetryData
         double fVelMax = fStrokes is { Length: > 0 } ? fStrokes.Max(s => s.Stat.MaxVelocity) : 0;
         double rVelMax = rStrokes is { Length: > 0 } ? rStrokes.Max(s => s.Stat.MaxVelocity) : 0;
 
-        // Peak travel (mm) actually reached within [a, b], clamped to the data.
+        // Peak travel (mm) actually reached within [a, b], clamped to the data. NaN when the
+        // requested window lies entirely outside the data (e.g. a G-out in the last ~0.3 s of the
+        // recording, where the lag-shifted response window runs past the end of the array) — callers
+        // must skip such candidates rather than reading the clamp as a genuine 0 mm (uncompressed)
+        // response, which would falsely count the event as asymmetric.
         double WindowMax(double[] travel, int a, int b)
         {
             if (a < 0) a = 0;
             if (b > n - 1) b = n - 1;
+            if (a > b) return double.NaN;
             double mx = 0;
             for (int i = a; i <= b; i++) if (travel[i] > mx) mx = travel[i];
             return mx;
@@ -2294,6 +2373,7 @@ public class TelemetryData
                 if (fs.Stat.MaxTravel < GoutDepthFrac * maxF) continue;
                 if (fs.Stat.MaxVelocity < GoutVelFrac * fVelMax) continue;
                 var rearMm = WindowMax(Rear.Travel, fs.Start + lag, fs.End + lag + tol);
+                if (double.IsNaN(rearMm)) continue;
                 raw.Add((fs.Start,
                     Math.Min(fs.Stat.MaxTravel / maxF * 100.0, 100.0),
                     Math.Min(rearMm / maxR * 100.0, 100.0)));
@@ -2306,6 +2386,7 @@ public class TelemetryData
                 if (rs.Stat.MaxTravel < GoutDepthFrac * maxR) continue;
                 if (rs.Stat.MaxVelocity < GoutVelFrac * rVelMax) continue;
                 var frontMm = WindowMax(Front.Travel, rs.Start - lag - tol, rs.End - lag);
+                if (double.IsNaN(frontMm)) continue;
                 raw.Add((rs.Start - lag,
                     Math.Min(frontMm / maxF * 100.0, 100.0),
                     Math.Min(rs.Stat.MaxTravel / maxR * 100.0, 100.0)));
@@ -2515,17 +2596,11 @@ public class TelemetryData
 
         if (Front.Present && Rear.Present)
         {
-            var pitch = CalculatePitchDegrees();
-            if (pitch is { Length: > 0 })
+            var pitchStats = CalculatePitchStatistics();
+            if (pitchStats is { } ps)
             {
-                double mean = 0;
-                for (int i = 0; i < pitch.Length; i++) mean += pitch[i];
-                mean /= pitch.Length;
-                double variance = 0;
-                for (int i = 0; i < pitch.Length; i++) { var d = pitch[i] - mean; variance += d * d; }
-                variance /= pitch.Length;
-                pitchMeanDeg = mean;
-                pitchStabilityDeg = Math.Sqrt(variance);
+                pitchMeanDeg = ps.Mean;
+                pitchStabilityDeg = ps.Std;
             }
 
             var modal = CalculateModalSpectrum();
@@ -2543,7 +2618,7 @@ public class TelemetryData
             if (gout is { Count: > 0 })
             {
                 int asym = 0;
-                foreach (var (fp, rp) in gout) if (Math.Abs(fp - rp) > 25.0) asym++;
+                foreach (var (fp, rp) in gout) if (Math.Abs(fp - rp) > GoutAsymmetryThresholdPp) asym++;
                 goutAsymPct = 100.0 * asym / gout.Count;
             }
         }

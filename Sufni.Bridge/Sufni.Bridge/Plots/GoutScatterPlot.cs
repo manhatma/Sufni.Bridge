@@ -7,9 +7,9 @@ namespace Sufni.Bridge.Plots;
 
 /// <summary>
 /// G-out load symmetry: each paired G-out event plotted as rear-vs-front used travel (% of
-/// available). Points on the dashed 1:1 line are balanced; the ±25 pp band brackets the
-/// "acceptable" asymmetry. The stats box summarises how often, and how far, the loading skews
-/// front or rear.
+/// available). Points on the dashed 1:1 line are balanced; the tolerance band (±TelemetryData
+/// .GoutAsymmetryThresholdPp pp, the shared asymmetry threshold) brackets the "acceptable"
+/// asymmetry. The stats box summarises how often, and how far, the loading skews front or rear.
 /// </summary>
 public class GoutScatterPlot(Plot plot) : TelemetryPlot(plot)
 {
@@ -54,14 +54,15 @@ public class GoutScatterPlot(Plot plot) : TelemetryPlot(plot)
         oneToOne.LineStyle.Width = 2;
         oneToOne.LineStyle.Pattern = LinePattern.Dashed;
 
-        // ±25 pp tolerance band (dashed grey).
-        var upper = Plot.Add.Scatter(new[] { 0.0, 75.0 }, new[] { 25.0, 100.0 });
+        // Tolerance band (dashed grey), ± TelemetryData.GoutAsymmetryThresholdPp pp around the 1:1 line.
+        var thr = TelemetryData.GoutAsymmetryThresholdPp;
+        var upper = Plot.Add.Scatter(new[] { 0.0, 100.0 - thr }, new[] { thr, 100.0 });
         upper.MarkerStyle.IsVisible = false;
         upper.LineStyle.Color = Color.FromHex("#888888");
         upper.LineStyle.Width = 1.5f;
         upper.LineStyle.Pattern = LinePattern.Dashed;
 
-        var lower = Plot.Add.Scatter(new[] { 25.0, 100.0 }, new[] { 0.0, 75.0 });
+        var lower = Plot.Add.Scatter(new[] { thr, 100.0 }, new[] { 0.0, 100.0 - thr });
         lower.MarkerStyle.IsVisible = false;
         lower.LineStyle.Color = Color.FromHex("#888888");
         lower.LineStyle.Width = 1.5f;
@@ -78,7 +79,7 @@ public class GoutScatterPlot(Plot plot) : TelemetryPlot(plot)
             diffs[i] = d;
             absDiffs[i] = Math.Abs(d);
             sum += d;
-            if (Math.Abs(d) > 25.0) asym++;
+            if (Math.Abs(d) > thr) asym++;
         }
         var meanDiff = sum / n;
         double sumSq = 0;

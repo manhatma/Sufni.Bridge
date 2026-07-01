@@ -66,7 +66,7 @@ public partial class BalanceMetricsViewModel : ObservableObject
     public BalanceMetricRow PitchAttitude  { get; } = new() { Label = "Pitch attitude μ", Target = "" };
     public BalanceMetricRow PitchStability { get; } = new() { Label = "Pitch stability σ", Target = "≤ 1.0°", Key = "PitchStability", IsEditable = true };
     public BalanceMetricRow GoutSymmetry   { get; } = new() { Label = "G-out asymmetry",    Target = "≤ 10 %",  Key = "GoutSymmetry",   IsEditable = true };
-    public BalanceMetricRow PitchModeEnergy{ get; } = new() { Label = "Pitch-mode energy",  Target = "" };
+    public BalanceMetricRow PitchModeEnergy{ get; } = new() { Label = "Anti-phase energy",  Target = "" };
     public BalanceMetricRow FrontBO       { get; } = new() { Label = "Front Bottom-out", Target = "≈ 0" };
     public BalanceMetricRow RearBO        { get; } = new() { Label = "Rear Bottom-out",  Target = "≈ 0" };
     public BalanceMetricRow CompVelRatio  { get; } = new() { Label = "Comp Vel F/R",     Target = "−0.08 … +0.07" };

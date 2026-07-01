@@ -33,28 +33,21 @@ public class PitchBalancePlot(Plot plot, double? expectedMinDeg, double? expecte
         var period = 1.0 / telemetryData.SampleRate;
         var maxDuration = pitch.Length * period;
 
-        // Statistics over the pitch series: mean (μ), population std (σ), P5/P95 and extremes.
-        double sum = 0, min = double.PositiveInfinity, max = double.NegativeInfinity;
+        // Displayed statistics (μ, σ, P5/P95, extremes) come from the active-window pitch stats —
+        // the union of both ends' active stroke windows, matching dynamic SAG windowing — so idle
+        // sections don't dilute them. CalculatePitchStatistics returns null exactly when
+        // CalculatePitchDegrees does, so this is unreachable when pitch above is non-empty.
+        var stats = telemetryData.CalculatePitchStatistics()!.Value;
+        var (mean, std, p5, p95, min, max) = stats;
+
+        // Full-series min/max, used only for the Y-axis limits below so the drawn trace (which
+        // still spans the whole series, idle included) always fits on screen.
+        double fullMin = double.PositiveInfinity, fullMax = double.NegativeInfinity;
         for (var i = 0; i < pitch.Length; i++)
         {
-            sum += pitch[i];
-            if (pitch[i] < min) min = pitch[i];
-            if (pitch[i] > max) max = pitch[i];
+            if (pitch[i] < fullMin) fullMin = pitch[i];
+            if (pitch[i] > fullMax) fullMax = pitch[i];
         }
-        var mean = sum / pitch.Length;
-
-        double sumSq = 0;
-        for (var i = 0; i < pitch.Length; i++)
-        {
-            var d = pitch[i] - mean;
-            sumSq += d * d;
-        }
-        var std = Math.Sqrt(sumSq / pitch.Length);
-
-        var sorted = (double[])pitch.Clone();
-        Array.Sort(sorted);
-        var p5 = Percentile(sorted, 5.0);
-        var p95 = Percentile(sorted, 95.0);
 
         // Expected discipline band first (drawn behind the trace) as a filled translucent green
         // region — the evaluation reference in place of the bare 0° line.
@@ -74,11 +67,12 @@ public class PitchBalancePlot(Plot plot, double? expectedMinDeg, double? expecte
         sig.LineWidth = 1;
 
         // Bold zero-phase readability trend (~1.5 Hz pitch-mode / body band) drawn on top of the
-        // faint raw trace. Statistics below are still computed on the original pitch array.
+        // faint raw trace. Statistics below come from the active-window stats computed above,
+        // not from this trend.
         var trend = SmoothZeroPhase(pitch, telemetryData.SampleRate, TrendSmoothHz);
         var trendSig = Plot.Add.Signal(trend, period);
         trendSig.Color = Color.FromHex("#E15FB8");
-        trendSig.LineWidth = 2.4f;
+        trendSig.LineWidth = 1.0f;
 
         // Neutral 0° reference — very faint, unlabelled (the green band is the reference now).
         Plot.Add.HorizontalLine(0, 1f, Color.FromHex("#dddddd").WithAlpha(70), LinePattern.Dotted);
@@ -98,9 +92,10 @@ public class PitchBalancePlot(Plot plot, double? expectedMinDeg, double? expecte
         AddLabel($"μ={mean:0.0}°", maxDuration, mean, -10, mean >= 0 ? 5 : -5,
             mean >= 0 ? Alignment.UpperRight : Alignment.LowerRight, "#ffffff");
 
-        // Y limits: fit to the data span with 5% margin, but always keep μ and the expected band visible.
-        var lo = min;
-        var hi = max;
+        // Y limits: fit to the FULL drawn trace (idle included) with 5% margin, but always keep
+        // μ and the expected band visible.
+        var lo = fullMin;
+        var hi = fullMax;
         if (haveBand)
         {
             lo = Math.Min(lo, bandLo);
@@ -169,21 +164,5 @@ public class PitchBalancePlot(Plot plot, double? expectedMinDeg, double? expecte
             y[i] = (prefix[hi + 1] - prefix[lo]) / (hi - lo + 1);
         }
         return y;
-    }
-
-    /// <summary>
-    /// Linear-interpolated percentile over an ascending-sorted array (p in 0..100).
-    /// </summary>
-    private static double Percentile(double[] sortedAscending, double p)
-    {
-        var n = sortedAscending.Length;
-        if (n == 0) return double.NaN;
-        if (n == 1) return sortedAscending[0];
-        var rank = p / 100.0 * (n - 1);
-        var lo = (int)Math.Floor(rank);
-        var hi = (int)Math.Ceiling(rank);
-        if (lo == hi) return sortedAscending[lo];
-        var frac = rank - lo;
-        return sortedAscending[lo] + (sortedAscending[hi] - sortedAscending[lo]) * frac;
     }
 }
