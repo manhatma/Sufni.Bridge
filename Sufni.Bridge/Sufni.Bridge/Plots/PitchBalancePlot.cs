@@ -38,10 +38,12 @@ public class PitchBalancePlot(Plot plot, double? expectedMinDeg, double? expecte
         // sections don't dilute them. CalculatePitchStatistics returns null exactly when
         // CalculatePitchDegrees does, so this is unreachable when pitch above is non-empty.
         var stats = telemetryData.CalculatePitchStatistics()!.Value;
-        var (mean, std, p5, p95, min, max) = stats;
+        var (mean, std, p5, p95, _, _) = stats;
 
-        // Full-series min/max, used only for the Y-axis limits below so the drawn trace (which
-        // still spans the whole series, idle included) always fits on screen.
+        // Full-series min/max: used for the Y-axis limits below AND for the nose-dive/squat
+        // extremes in the stats box. The drawn trace spans the whole series, so the box extremes
+        // must describe the same data — windowed extremes would miss sustained excursions that
+        // produce no strokes (e.g. a held steep-chute plateau) while the trace visibly shows them.
         double fullMin = double.PositiveInfinity, fullMax = double.NegativeInfinity;
         for (var i = 0; i < pitch.Length; i++)
         {
@@ -113,13 +115,16 @@ public class PitchBalancePlot(Plot plot, double? expectedMinDeg, double? expecte
         // determinable on real trails, so showing a number (or "n/a") here misleads more than it
         // informs. τ is still applied internally to de-lag the pitch where it IS determinable.
 
-        // Gold stats box (upper-right), Menlo, mirroring VelocityTimeCroppedPlot.
+        // Gold stats box (upper-right), Menlo, mirroring VelocityTimeCroppedPlot. μ/σ/P5–95 are
+        // active-window stats (disclosed in the box); the extremes are full-series so they match
+        // the drawn trace.
         var statsText =
             $"μ:   {mean:+0.0;-0.0}°\n" +
             $"σ:   {std:0.00}°\n" +
             $"P5–95: {p5:+0.0;-0.0}…{p95:+0.0;-0.0}°\n" +
-            $"nose-dive max: {max:+0.0;-0.0;0.0}°\n" +
-            $"squat max: {min:+0.0;-0.0;0.0}°";
+            $"nose-dive max: {fullMax:+0.0;-0.0;0.0}°\n" +
+            $"squat max: {fullMin:+0.0;-0.0;0.0}°\n" +
+            $"(μ/σ/P: active windows)";
 
         var statsLabel = Plot.Add.Text(statsText, maxDuration, top);
         statsLabel.LabelFontColor = StatColor;

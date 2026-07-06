@@ -1,3 +1,5 @@
+using System;
+
 namespace Sufni.Bridge.Models.Telemetry;
 
 public static class Parameters
@@ -83,4 +85,17 @@ public static class Parameters
     // residual differentiation noise.
     public const int WhAccelOrder = 3;
     public const double WhAccelLambda = 10000.0;
+
+    // Sample rate the λ constants above were calibrated at (ADS1115 continuous mode, 860 SPS).
+    public const double WhReferenceSampleRate = 860.0;
+
+    // The WH smoother operates on sample indices, so a fixed λ fixes the cutoff in f/fs and the
+    // Hz cutoff would scale linearly with the device sample rate (which is read from the SST file
+    // header and not pinned to 860). Keeping f_c constant in Hz requires λ ∝ fs^(2p), from
+    // f_c/f_s ≈ (1/2π)·λ^(−1/2p). At exactly 860 SPS these return the raw constants.
+    public static double WhLambdaFor(double sampleRate) =>
+        sampleRate > 0 ? WhLambda * Math.Pow(sampleRate / WhReferenceSampleRate, 2.0 * WhOrder) : WhLambda;
+
+    public static double WhAccelLambdaFor(double sampleRate) =>
+        sampleRate > 0 ? WhAccelLambda * Math.Pow(sampleRate / WhReferenceSampleRate, 2.0 * WhAccelOrder) : WhAccelLambda;
 }

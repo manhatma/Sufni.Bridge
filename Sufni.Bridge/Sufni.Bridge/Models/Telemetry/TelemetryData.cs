@@ -429,7 +429,7 @@ public class TelemetryData
         }
 
         // Create Whittaker-Henderson smoother for velocity smoothing
-        var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambda);
+        var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambdaFor(SampleRate));
 
         if (Front.Present)
         {
@@ -557,7 +557,7 @@ public class TelemetryData
     /// </summary>
     public byte[] ReprocessVelocity()
     {
-        var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambda);
+        var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambdaFor(SampleRate));
 
         if (Front.Present)
         {
@@ -709,7 +709,7 @@ public class TelemetryData
             Rear  = new Suspension { Present = Rear.Present,  Calibration = Rear.Calibration,  Strokes = new Strokes() }
         };
 
-        var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambda);
+        var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambdaFor(SampleRate));
 
         if (Front.Present && Front.Travel.Length > 0)
         {
@@ -805,7 +805,7 @@ public class TelemetryData
             Rear = new Suspension { Present = hasRear, Strokes = new Strokes() }
         };
 
-        var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambda);
+        var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambdaFor(first.SampleRate));
 
         if (hasFront)
         {
@@ -1743,9 +1743,15 @@ public class TelemetryData
             return ([], [], [], []);
 
         int n = x.Length;
-        if (segLen > n) segLen = n;
+        // Coherence is only meaningful when it averages ≥2 segments: with a single segment
+        // |Pxy|² == Pxx·Pyy holds exactly, so γ² ≡ 1 for every bin and every coherence
+        // gate/weight downstream (lag phase fit, band coherence, coherence plot) is void.
+        // Halve the segment length until at least two half-overlapping segments fit
+        // (step + segLen ≤ n ⟺ n ≥ 1.5·segLen), trading frequency resolution for a
+        // trustworthy γ² on short signals.
+        while (segLen + segLen / 2 > n && segLen >= 128) segLen /= 2;
         if ((segLen & 1) != 0) segLen--;
-        if (segLen < 64) return ([], [], [], []);
+        if (segLen < 64 || segLen + segLen / 2 > n) return ([], [], [], []);
 
         var window = Window.Hann(segLen);
         double winSum = 0;
@@ -1975,8 +1981,9 @@ public class TelemetryData
     // search window [wheelbase/vmax, wheelbase/vmin]:
     //   1. Band-passed (3–15 Hz, common-mode heave removed) normalised cross-correlation — its peak
     //      lag is the terrain traversal; the peak value is the confidence.
-    //   2. Cross-spectrum phase slope dφ/df = 2π·τ over the coherent band, with the phase UNWRAPPED
-    //      first (at these lags 2πfτ exceeds π within a few Hz, so the raw phase wraps).
+    //   2. Cross-spectrum phase slope dφ/df = 2π·τ over the coherent band, fitted from wrapped
+    //      phase differences between consecutive coherent bins (at these lags 2πfτ exceeds π
+    //      within a few Hz, so absolute phase wraps; per-bin differences stay within (−π, π]).
     // Determinability is gated on the phase slope (positive, speed-plausible, coherent); the
     // correlation only confirms/refines it. Reports "not determinable" (τ=0) rather than inventing a
     // correction when the phase gives no usable estimate (e.g. heave-dominated trails).
@@ -2026,8 +2033,9 @@ public class TelemetryData
         var (cf, pxx, pyy, pxy) = ComputeWelchCrossSpectrum(Front.Travel[..n], Rear.Travel[..n], SampleRate);
         if (cf.Length > 2)
         {
-            // Contiguous bins across the phase band so unwrap follows a real frequency sweep;
-            // coherence becomes the fit weight (0 below the floor) rather than a hard gate.
+            // Contiguous bins across the phase band so consecutive-bin phase differences follow
+            // a real frequency sweep; coherence becomes the fit weight (0 below the floor)
+            // rather than a hard gate.
             var pf = new List<double>(); var pp = new List<double>(); var pw = new List<double>();
             for (int k = 1; k < cf.Length; k++)
             {
@@ -2043,22 +2051,38 @@ public class TelemetryData
             }
             if (pf.Count >= 4)
             {
-                var unwrapped = Unwrap(pp);
-                double sw = 0, swf = 0, swp = 0, swff = 0, swfp = 0;
+                // Fit dφ/df from WRAPPED phase differences between consecutive coherent bins
+                // instead of cumulatively unwrapping the whole band: an unwrap slip inside an
+                // incoherent (zero-weight) stretch would carry a 2π step into every later bin
+                // and bias the fitted slope (a suffix offset is not absorbable by the fit
+                // intercept), whereas a wrapped difference is immune to constant offsets and a
+                // rare mis-wrapped pair contributes one bounded, down-weighted outlier. A pair
+                // is unambiguous while |2π·Δf·τ| < π, so pairs spanning an incoherent gap wider
+                // than 0.5/τmax are skipped — the wrap count there is unresolvable.
+                double maxGapHz = 0.5 / tauMaxSec;
+                double num = 0, den = 0;
+                int prev = -1;
                 for (int i = 0; i < pf.Count; i++)
                 {
-                    double w = pw[i];
-                    if (w <= 0) continue;
+                    if (pw[i] <= 0) continue;
                     phaseBins++;
-                    sw += w; swf += w * pf[i]; swp += w * unwrapped[i];
-                    swff += w * pf[i] * pf[i]; swfp += w * pf[i] * unwrapped[i];
+                    if (prev >= 0)
+                    {
+                        double dfHz = pf[i] - pf[prev];
+                        if (dfHz <= maxGapHz)
+                        {
+                            double dphi = pp[i] - pp[prev];
+                            while (dphi > Math.PI) dphi -= 2.0 * Math.PI;
+                            while (dphi < -Math.PI) dphi += 2.0 * Math.PI;
+                            double w = Math.Min(pw[i], pw[prev]);
+                            num += w * dphi * dfHz;                 // LS through origin: Δφ = slope·Δf
+                            den += w * dfHz * dfHz;
+                        }
+                    }
+                    prev = i;
                 }
-                double dnm = sw * swff - swf * swf;
-                if (sw > 0 && Math.Abs(dnm) > 1e-12)
-                {
-                    double slope = (sw * swfp - swf * swp) / dnm;   // rad / Hz
-                    phaseTauSec = slope / (2.0 * Math.PI);
-                }
+                if (den > 1e-12)
+                    phaseTauSec = num / den / (2.0 * Math.PI);
             }
         }
 
@@ -2097,22 +2121,6 @@ public class TelemetryData
         return y;
     }
 
-    // Unwraps a phase sequence so consecutive steps stay within (−π, π].
-    private static double[] Unwrap(IReadOnlyList<double> phase)
-    {
-        var u = new double[phase.Count];
-        if (phase.Count == 0) return u;
-        u[0] = phase[0];
-        for (int i = 1; i < phase.Count; i++)
-        {
-            double d = phase[i] - phase[i - 1];
-            while (d > Math.PI) d -= 2.0 * Math.PI;
-            while (d < -Math.PI) d += 2.0 * Math.PI;
-            u[i] = u[i - 1] + d;
-        }
-        return u;
-    }
-
     /// <summary>
     /// Chassis pitch attitude over time in degrees (nose-down positive, consistent with
     /// <c>HeadAngleShiftDeg</c>). The rear travel is pulled forward by the estimated
@@ -2130,16 +2138,20 @@ public class TelemetryData
         int n = Math.Min(Front.Travel.Length, Rear.Travel.Length);
         var (lag, _, _) = GetFrontRearLag();
 
-        var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambda);
+        var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambdaFor(SampleRate));
         var f = smoother.Smooth(Front.Travel[..n]);
         var r = smoother.Smooth(Rear.Travel[..n]);
 
-        var pitch = new double[n];
-        for (int i = 0; i < n; i++)
+        // The last `lag` samples have no rear counterpart, so the series is truncated there.
+        // Clamping the shifted index instead would difference the moving front against a frozen
+        // rear[n−1] and fabricate a pitch ramp at the end of the recording — inside the stats
+        // windows and visible in the plot.
+        int m = n - lag;
+        if (m < 2) return null;
+        var pitch = new double[m];
+        for (int i = 0; i < m; i++)
         {
-            int ri = i + lag;
-            if (ri >= n) ri = n - 1;
-            double dz = r[ri] - f[i];                    // vertical rear − front (mm)
+            double dz = r[i + lag] - f[i];               // vertical rear − front (mm)
             pitch[i] = -Math.Atan2(dz, wb) * 180.0 / Math.PI;
         }
 
@@ -2167,21 +2179,26 @@ public class TelemetryData
 
         var mask = new bool[pitch.Length];
         var any = false;
-        void Mark(Stroke[]? strokes)
+        void Mark(Stroke[]? strokes, int offset = 0)
         {
             if (strokes is not { Length: > 0 }) return;
             foreach (var s in strokes)
             {
                 if (s.End < s.Start) continue;
-                int a = Math.Max(0, s.Start);
-                int b = Math.Min(pitch.Length - 1, s.End);
+                int a = Math.Max(0, s.Start + offset);
+                int b = Math.Min(pitch.Length - 1, s.End + offset);
                 for (int i = a; i <= b; i++) { mask[i] = true; any = true; }
             }
         }
+        // The pitch series is on the front timeline (CalculatePitchDegrees pulls the rear forward
+        // by the traversal lag), so rear stroke windows must shift by −lag to mark the samples
+        // where the rear's contribution actually appears — the same alignment CalculateGoutEvents
+        // uses for its response windows. Front windows are already aligned.
+        var (statsLag, _, _) = GetFrontRearLag();
         Mark(Front.Strokes?.Compressions);
         Mark(Front.Strokes?.Rebounds);
-        Mark(Rear.Strokes?.Compressions);
-        Mark(Rear.Strokes?.Rebounds);
+        Mark(Rear.Strokes?.Compressions, -statsLag);
+        Mark(Rear.Strokes?.Rebounds, -statsLag);
 
         var values = any
             ? Enumerable.Range(0, pitch.Length).Where(i => mask[i]).Select(i => pitch[i]).ToArray()
@@ -2343,7 +2360,15 @@ public class TelemetryData
 
         int n = Math.Min(Front.Travel.Length, Rear.Travel.Length);
         var (lag, _, _) = GetFrontRearLag();
-        int tol = (int)Math.Round(0.2 * SampleRate) + Math.Abs(lag);   // response-window slack
+        // Response-window slack past the lag-aligned stroke. Deliberately WITHOUT the |lag| term:
+        // the window is already shifted by lag, so re-adding |lag| here would stretch its reach to
+        // 0.2 s + 2·|lag| past the driving stroke and read unrelated later hits as this event's
+        // response (masking true asymmetry on fast repeated terrain). 0.2 s covers the residual
+        // lag-estimate error (the fitted τ is a lower bound, see EstimateFrontRearLag).
+        int slack = (int)Math.Round(0.2 * SampleRate);
+        // Dedup tolerance between front-led and rear-led triggers of the SAME impact: their front
+        // indices differ by up to the lag-estimate error, so |lag| stays included here.
+        int tol = slack + Math.Abs(lag);
 
         double fVelMax = fStrokes is { Length: > 0 } ? fStrokes.Max(s => s.Stat.MaxVelocity) : 0;
         double rVelMax = rStrokes is { Length: > 0 } ? rStrokes.Max(s => s.Stat.MaxVelocity) : 0;
@@ -2366,26 +2391,33 @@ public class TelemetryData
         // Each candidate tagged with the front-impact sample index, for dedup across the two triggers.
         var raw = new List<(int frontIdx, double frontPct, double rearPct)>();
 
-        // Front-led: the front drives, the rear responds τ later in [Start+lag, End+lag+tol].
+        // Front-led: the front drives, the rear responds τ later in [Start+lag, End+lag+slack].
+        // Events whose CORE lag-aligned window [Start+lag, End+lag] is clipped by the recording
+        // edge are skipped entirely: a partially clipped window can miss the response peak and
+        // read a spuriously low value, falsely counting the event as asymmetric (the NaN guard
+        // in WindowMax only catches windows lying ENTIRELY outside the data).
         if (fStrokes is { Length: > 0 } && fVelMax > 0)
             foreach (var fs in fStrokes)
             {
                 if (fs.Stat.MaxTravel < GoutDepthFrac * maxF) continue;
                 if (fs.Stat.MaxVelocity < GoutVelFrac * fVelMax) continue;
-                var rearMm = WindowMax(Rear.Travel, fs.Start + lag, fs.End + lag + tol);
+                if (fs.Start + lag < 0 || fs.End + lag > n - 1) continue;
+                var rearMm = WindowMax(Rear.Travel, fs.Start + lag, fs.End + lag + slack);
                 if (double.IsNaN(rearMm)) continue;
                 raw.Add((fs.Start,
                     Math.Min(fs.Stat.MaxTravel / maxF * 100.0, 100.0),
                     Math.Min(rearMm / maxR * 100.0, 100.0)));
             }
 
-        // Rear-led: the rear drives, the front impact was τ earlier in [Start−lag−tol, End−lag].
+        // Rear-led: the rear drives, the front impact was τ earlier in [Start−lag−slack, End−lag].
+        // Same core-window edge rule as above (mirror case at the recording start).
         if (rStrokes is { Length: > 0 } && rVelMax > 0)
             foreach (var rs in rStrokes)
             {
                 if (rs.Stat.MaxTravel < GoutDepthFrac * maxR) continue;
                 if (rs.Stat.MaxVelocity < GoutVelFrac * rVelMax) continue;
-                var frontMm = WindowMax(Front.Travel, rs.Start - lag - tol, rs.End - lag);
+                if (rs.Start - lag < 0 || rs.End - lag > n - 1) continue;
+                var frontMm = WindowMax(Front.Travel, rs.Start - lag - slack, rs.End - lag);
                 if (double.IsNaN(frontMm)) continue;
                 raw.Add((rs.Start - lag,
                     Math.Min(frontMm / maxF * 100.0, 100.0),
@@ -2395,23 +2427,29 @@ public class TelemetryData
         if (raw.Count == 0) return new List<(double FrontPct, double RearPct)>();
 
         // Dedup: front- and rear-led triggers for one impact land at ~the same front index. Sort by
-        // impact, collapse neighbours within tol, keeping the heavier-loaded of the pair.
+        // impact, collapse neighbours within tol of the KEPT event, keeping the heavier-loaded of
+        // the pair. The anchor must be the kept event's index, not the last candidate's — advancing
+        // it on every candidate would chain-merge whole trains of distinct events spaced within tol
+        // into a single event, deflating GoutEventCount and biasing the asymmetry sample.
         raw.Sort((x, y) => x.frontIdx.CompareTo(y.frontIdx));
         var events = new List<(double FrontPct, double RearPct)>();
-        int lastIdx = int.MinValue;
+        int keptIdx = int.MinValue;
         foreach (var e in raw)
         {
-            if (events.Count > 0 && e.frontIdx - lastIdx <= tol)
+            if (events.Count > 0 && e.frontIdx - keptIdx <= tol)
             {
                 var prev = events[^1];
                 if (e.frontPct + e.rearPct > prev.FrontPct + prev.RearPct)
+                {
                     events[^1] = (e.frontPct, e.rearPct);
+                    keptIdx = e.frontIdx;
+                }
             }
             else
             {
                 events.Add((e.frontPct, e.rearPct));
+                keptIdx = e.frontIdx;
             }
-            lastIdx = e.frontIdx;
         }
         return events;
     }

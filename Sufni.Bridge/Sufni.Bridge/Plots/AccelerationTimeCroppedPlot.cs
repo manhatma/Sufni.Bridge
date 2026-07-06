@@ -31,7 +31,7 @@ public class AccelerationTimeCroppedPlot(Plot plot, SuspensionType type) : Telem
         // stronger WH (cutoff ≈29 Hz @ 860 SPS, just below mechanical bandwidth) before
         // the central difference. Acts only on the acceleration display; Velocity, Strokes
         // and histograms are unaffected.
-        var accelSmoother = new WhittakerHendersonSmoother(Parameters.WhAccelOrder, Parameters.WhAccelLambda);
+        var accelSmoother = new WhittakerHendersonSmoother(Parameters.WhAccelOrder, Parameters.WhAccelLambdaFor(sampleRate));
 
         double[] ToAcceleration(double[] v)
         {
