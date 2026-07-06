@@ -2,6 +2,7 @@
     x:Class="Sufni.Bridge.Views.Controls.SwipeToDeleteButton"
     xmlns="https://github.com/avaloniaui"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="clr-namespace:Sufni.Bridge.Views.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="clr-namespace:Sufni.Bridge.ViewModels.Items"
@@ -64,31 +65,15 @@
             </Grid>
         </Button>
 
-        <!-- Expanded sub-sessions for combined sessions -->
+        <!-- Expanded sub-sessions for combined sessions. Rendered via a self-referencing
+             SubSessionRow control so sub-sessions that are themselves combined sessions
+             also get a chain toggle and their own (further indented) sub-session list. -->
         <ItemsRepeater x:DataType="vm:SessionViewModel"
                        ItemsSource="{Binding SubSessions}"
                        IsVisible="{Binding IsExpanded, FallbackValue=False}">
             <ItemsRepeater.ItemTemplate>
                 <DataTemplate x:DataType="vm:SessionViewModel">
-                    <StackPanel>
-                        <Button Height="28" Padding="50,0,10,0"
-                                HorizontalAlignment="Stretch"
-                                VerticalContentAlignment="Center"
-                                Background="#1a1e21" CornerRadius="0"
-                                Command="{Binding OpenPageCommand}"
-                                CommandParameter="{Binding}">
-                            <Grid ColumnDefinitions="auto * auto" HorizontalAlignment="Stretch">
-                                <TextBlock Grid.Column="0" Text="{Binding Name}"
-                                           Foreground="#B0B0B0" FontSize="12"
-                                           VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="2" Text="{Binding Timestamp}"
-                                           Foreground="#606060" FontSize="12"
-                                           VerticalAlignment="Center" />
-                            </Grid>
-                        </Button>
-                        <Separator Height="1" Margin="40,0,0,0"
-                                   Background="#2a2e32" />
-                    </StackPanel>
+                    <controls:SubSessionRow Level="1" />
                 </DataTemplate>
             </ItemsRepeater.ItemTemplate>
         </ItemsRepeater>

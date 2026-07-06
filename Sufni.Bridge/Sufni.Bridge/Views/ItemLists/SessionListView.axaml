@@ -260,29 +260,59 @@
             </controls:PullableMenuScrollViewer.ItemTemplate>
         </controls:PullableMenuScrollViewer>
 
-        <!-- Compare mode session list with checkboxes -->
+        <!-- Compare mode session list with checkboxes, grouped by date -->
         <ScrollViewer Grid.Row="2" Margin="0,15,0,5" IsVisible="{Binding IsCompareMode}">
-            <ItemsRepeater ItemsSource="{Binding Items}">
+            <ItemsRepeater ItemsSource="{Binding DayGroups}">
                 <ItemsRepeater.ItemTemplate>
-                    <DataTemplate x:DataType="vmi:ItemViewModelBase">
+                    <DataTemplate x:DataType="vmi:SessionDayGroupViewModel">
                         <StackPanel>
-                            <Button Height="34"
+                            <!-- Day group header -->
+                            <Button Background="Transparent" Padding="10,8" CornerRadius="0"
                                     HorizontalAlignment="Stretch"
-                                    VerticalContentAlignment="Center"
-                                    Classes="compare-item"
-                                    Command="{Binding $parent[UserControl].((vml:SessionListViewModel)DataContext).ToggleCompareSelectionCommand}"
-                                    CommandParameter="{Binding}">
-                                <Grid ColumnDefinitions="30 auto * auto" HorizontalAlignment="Stretch">
-                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsSelectedForCompare}"
-                                              IsHitTestVisible="False" VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="1" Text="{Binding Name}"
-                                               VerticalAlignment="Center" FontSize="13" />
-                                    <TextBlock Grid.Column="3" Text="{Binding Timestamp}"
-                                               VerticalAlignment="Center" Foreground="#808080" FontSize="13" />
+                                    Command="{Binding ToggleExpandCommand}">
+                                <Grid ColumnDefinitions="20 * auto" HorizontalAlignment="Stretch">
+                                    <Image Grid.Column="0" Width="12" Height="12"
+                                           Source="{SvgImage /Assets/fa-chevron-right.svg}">
+                                        <Image.RenderTransform>
+                                            <RotateTransform Angle="{Binding ChevronAngle}" />
+                                        </Image.RenderTransform>
+                                    </Image>
+                                    <TextBlock Grid.Column="1" Text="{Binding Title}"
+                                               VerticalAlignment="Center" FontSize="13"
+                                               FontWeight="DemiBold" Foreground="#D0D0D0" />
+                                    <TextBlock Grid.Column="2" Text="{Binding TimeRange}"
+                                               VerticalAlignment="Center" FontSize="12"
+                                               Foreground="#808080" />
                                 </Grid>
                             </Button>
-                            <Separator Height="1" Margin="0"
-                                       Background="{StaticResource SufniBackgroundDisabled}" />
+                            <Border Height="1" Background="#2e3438" />
+                            <!-- Sessions in this day group -->
+                            <ItemsRepeater ItemsSource="{Binding Sessions}"
+                                           IsVisible="{Binding IsExpanded}">
+                                <ItemsRepeater.ItemTemplate>
+                                    <DataTemplate x:DataType="vmi:SessionViewModel">
+                                        <StackPanel>
+                                            <Button Height="34"
+                                                    HorizontalAlignment="Stretch"
+                                                    VerticalContentAlignment="Center"
+                                                    Classes="compare-item"
+                                                    Command="{Binding $parent[UserControl].((vml:SessionListViewModel)DataContext).ToggleCompareSelectionCommand}"
+                                                    CommandParameter="{Binding}">
+                                                <Grid ColumnDefinitions="30 auto * auto" HorizontalAlignment="Stretch">
+                                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsSelectedForCompare}"
+                                                              IsHitTestVisible="False" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                                               VerticalAlignment="Center" FontSize="13" />
+                                                    <TextBlock Grid.Column="3" Text="{Binding Timestamp}"
+                                                               VerticalAlignment="Center" Foreground="#808080" FontSize="13" />
+                                                </Grid>
+                                            </Button>
+                                            <Separator Height="1" Margin="0"
+                                                       Background="{StaticResource SufniBackgroundDisabled}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsRepeater.ItemTemplate>
+                            </ItemsRepeater>
                         </StackPanel>
                     </DataTemplate>
                 </ItemsRepeater.ItemTemplate>
@@ -300,29 +330,59 @@
             </TextBlock>
         </Button>
 
-        <!-- Combine mode session list with checkboxes -->
+        <!-- Combine mode session list with checkboxes, grouped by date -->
         <ScrollViewer Grid.Row="2" Margin="0,15,0,5" IsVisible="{Binding IsCombineMode}">
-            <ItemsRepeater ItemsSource="{Binding Items}">
+            <ItemsRepeater ItemsSource="{Binding DayGroups}">
                 <ItemsRepeater.ItemTemplate>
-                    <DataTemplate x:DataType="vmi:ItemViewModelBase">
+                    <DataTemplate x:DataType="vmi:SessionDayGroupViewModel">
                         <StackPanel>
-                            <Button Height="34"
+                            <!-- Day group header -->
+                            <Button Background="Transparent" Padding="10,8" CornerRadius="0"
                                     HorizontalAlignment="Stretch"
-                                    VerticalContentAlignment="Center"
-                                    Classes="compare-item"
-                                    Command="{Binding $parent[UserControl].((vml:SessionListViewModel)DataContext).ToggleCombineSelectionCommand}"
-                                    CommandParameter="{Binding}">
-                                <Grid ColumnDefinitions="30 auto * auto" HorizontalAlignment="Stretch">
-                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsSelectedForCompare}"
-                                              IsHitTestVisible="False" VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="1" Text="{Binding Name}"
-                                               VerticalAlignment="Center" FontSize="13" />
-                                    <TextBlock Grid.Column="3" Text="{Binding Timestamp}"
-                                               VerticalAlignment="Center" Foreground="#808080" FontSize="13" />
+                                    Command="{Binding ToggleExpandCommand}">
+                                <Grid ColumnDefinitions="20 * auto" HorizontalAlignment="Stretch">
+                                    <Image Grid.Column="0" Width="12" Height="12"
+                                           Source="{SvgImage /Assets/fa-chevron-right.svg}">
+                                        <Image.RenderTransform>
+                                            <RotateTransform Angle="{Binding ChevronAngle}" />
+                                        </Image.RenderTransform>
+                                    </Image>
+                                    <TextBlock Grid.Column="1" Text="{Binding Title}"
+                                               VerticalAlignment="Center" FontSize="13"
+                                               FontWeight="DemiBold" Foreground="#D0D0D0" />
+                                    <TextBlock Grid.Column="2" Text="{Binding TimeRange}"
+                                               VerticalAlignment="Center" FontSize="12"
+                                               Foreground="#808080" />
                                 </Grid>
                             </Button>
-                            <Separator Height="1" Margin="0"
-                                       Background="{StaticResource SufniBackgroundDisabled}" />
+                            <Border Height="1" Background="#2e3438" />
+                            <!-- Sessions in this day group -->
+                            <ItemsRepeater ItemsSource="{Binding Sessions}"
+                                           IsVisible="{Binding IsExpanded}">
+                                <ItemsRepeater.ItemTemplate>
+                                    <DataTemplate x:DataType="vmi:SessionViewModel">
+                                        <StackPanel>
+                                            <Button Height="34"
+                                                    HorizontalAlignment="Stretch"
+                                                    VerticalContentAlignment="Center"
+                                                    Classes="compare-item"
+                                                    Command="{Binding $parent[UserControl].((vml:SessionListViewModel)DataContext).ToggleCombineSelectionCommand}"
+                                                    CommandParameter="{Binding}">
+                                                <Grid ColumnDefinitions="30 auto * auto" HorizontalAlignment="Stretch">
+                                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsSelectedForCompare}"
+                                                              IsHitTestVisible="False" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                                               VerticalAlignment="Center" FontSize="13" />
+                                                    <TextBlock Grid.Column="3" Text="{Binding Timestamp}"
+                                                               VerticalAlignment="Center" Foreground="#808080" FontSize="13" />
+                                                </Grid>
+                                            </Button>
+                                            <Separator Height="1" Margin="0"
+                                                       Background="{StaticResource SufniBackgroundDisabled}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsRepeater.ItemTemplate>
+                            </ItemsRepeater>
                         </StackPanel>
                     </DataTemplate>
                 </ItemsRepeater.ItemTemplate>
@@ -357,29 +417,59 @@
             </Button>
         </StackPanel>
 
-        <!-- Delete mode session list with checkboxes -->
+        <!-- Delete mode session list with checkboxes, grouped by date -->
         <ScrollViewer Grid.Row="2" Margin="0,15,0,5" IsVisible="{Binding IsDeleteMode}">
-            <ItemsRepeater ItemsSource="{Binding Items}">
+            <ItemsRepeater ItemsSource="{Binding DayGroups}">
                 <ItemsRepeater.ItemTemplate>
-                    <DataTemplate x:DataType="vmi:ItemViewModelBase">
+                    <DataTemplate x:DataType="vmi:SessionDayGroupViewModel">
                         <StackPanel>
-                            <Button Height="34"
+                            <!-- Day group header -->
+                            <Button Background="Transparent" Padding="10,8" CornerRadius="0"
                                     HorizontalAlignment="Stretch"
-                                    VerticalContentAlignment="Center"
-                                    Classes="compare-item"
-                                    Command="{Binding $parent[UserControl].((vml:SessionListViewModel)DataContext).ToggleDeleteSelectionCommand}"
-                                    CommandParameter="{Binding}">
-                                <Grid ColumnDefinitions="30 auto * auto" HorizontalAlignment="Stretch">
-                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsSelectedForCompare}"
-                                              IsHitTestVisible="False" VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="1" Text="{Binding Name}"
-                                               VerticalAlignment="Center" FontSize="13" />
-                                    <TextBlock Grid.Column="3" Text="{Binding Timestamp}"
-                                               VerticalAlignment="Center" Foreground="#808080" FontSize="13" />
+                                    Command="{Binding ToggleExpandCommand}">
+                                <Grid ColumnDefinitions="20 * auto" HorizontalAlignment="Stretch">
+                                    <Image Grid.Column="0" Width="12" Height="12"
+                                           Source="{SvgImage /Assets/fa-chevron-right.svg}">
+                                        <Image.RenderTransform>
+                                            <RotateTransform Angle="{Binding ChevronAngle}" />
+                                        </Image.RenderTransform>
+                                    </Image>
+                                    <TextBlock Grid.Column="1" Text="{Binding Title}"
+                                               VerticalAlignment="Center" FontSize="13"
+                                               FontWeight="DemiBold" Foreground="#D0D0D0" />
+                                    <TextBlock Grid.Column="2" Text="{Binding TimeRange}"
+                                               VerticalAlignment="Center" FontSize="12"
+                                               Foreground="#808080" />
                                 </Grid>
                             </Button>
-                            <Separator Height="1" Margin="0"
-                                       Background="{StaticResource SufniBackgroundDisabled}" />
+                            <Border Height="1" Background="#2e3438" />
+                            <!-- Sessions in this day group -->
+                            <ItemsRepeater ItemsSource="{Binding Sessions}"
+                                           IsVisible="{Binding IsExpanded}">
+                                <ItemsRepeater.ItemTemplate>
+                                    <DataTemplate x:DataType="vmi:SessionViewModel">
+                                        <StackPanel>
+                                            <Button Height="34"
+                                                    HorizontalAlignment="Stretch"
+                                                    VerticalContentAlignment="Center"
+                                                    Classes="compare-item"
+                                                    Command="{Binding $parent[UserControl].((vml:SessionListViewModel)DataContext).ToggleDeleteSelectionCommand}"
+                                                    CommandParameter="{Binding}">
+                                                <Grid ColumnDefinitions="30 auto * auto" HorizontalAlignment="Stretch">
+                                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsSelectedForCompare}"
+                                                              IsHitTestVisible="False" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                                               VerticalAlignment="Center" FontSize="13" />
+                                                    <TextBlock Grid.Column="3" Text="{Binding Timestamp}"
+                                                               VerticalAlignment="Center" Foreground="#808080" FontSize="13" />
+                                                </Grid>
+                                            </Button>
+                                            <Separator Height="1" Margin="0"
+                                                       Background="{StaticResource SufniBackgroundDisabled}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsRepeater.ItemTemplate>
+                            </ItemsRepeater>
                         </StackPanel>
                     </DataTemplate>
                 </ItemsRepeater.ItemTemplate>

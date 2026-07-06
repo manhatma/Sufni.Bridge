@@ -1,0 +1,61 @@
+<UserControl
+    x:Class="Sufni.Bridge.Views.Controls.SubSessionRow"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="clr-namespace:Sufni.Bridge.Views.Controls"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="clr-namespace:Sufni.Bridge.ViewModels.Items"
+    d:DesignHeight="60"
+    d:DesignWidth="500"
+    x:DataType="vm:ItemViewModelBase"
+    mc:Ignorable="d">
+
+    <StackPanel>
+        <Button Height="28"
+                Padding="{Binding $parent[controls:SubSessionRow].RowPadding}"
+                HorizontalAlignment="Stretch"
+                VerticalContentAlignment="Center"
+                Background="#1a1e21" CornerRadius="0"
+                Command="{Binding OpenPageCommand}"
+                CommandParameter="{Binding}">
+            <Grid ColumnDefinitions="30 auto * auto" HorizontalAlignment="Stretch">
+                <!-- Chain toggle for a combined session nested inside this row's parent -->
+                <Button Grid.Column="0" Background="Transparent" Padding="0"
+                        x:DataType="vm:SessionViewModel"
+                        VerticalAlignment="Center" HorizontalAlignment="Left"
+                        Width="30" Height="28"
+                        Command="{Binding ToggleExpandCommand}"
+                        IsVisible="{Binding IsCombinedSession, FallbackValue=False}">
+                    <Image Width="15" Height="15"
+                           Source="{SvgImage /Assets/fa-link.svg}">
+                        <Image.RenderTransform>
+                            <RotateTransform Angle="{Binding ChainIconAngle, FallbackValue=90}" />
+                        </Image.RenderTransform>
+                    </Image>
+                </Button>
+                <TextBlock Grid.Column="1" Text="{Binding Name}"
+                           Foreground="#B0B0B0" FontSize="12"
+                           VerticalAlignment="Center" />
+                <TextBlock Grid.Column="3" Text="{Binding Timestamp}"
+                           Foreground="#606060" FontSize="12"
+                           VerticalAlignment="Center"
+                           x:DataType="vm:SessionViewModel"
+                           IsVisible="{Binding !IsCombinedSession, FallbackValue=True}" />
+            </Grid>
+        </Button>
+        <Separator Height="1" Margin="{Binding $parent[controls:SubSessionRow].SeparatorMargin}"
+                   Background="#2a2e32" />
+
+        <!-- Nested sub-sessions, one level deeper, when this row is itself a combined session -->
+        <ItemsRepeater x:DataType="vm:SessionViewModel"
+                       ItemsSource="{Binding SubSessions}"
+                       IsVisible="{Binding IsExpanded, FallbackValue=False}">
+            <ItemsRepeater.ItemTemplate>
+                <DataTemplate x:DataType="vm:SessionViewModel">
+                    <controls:SubSessionRow Level="{Binding $parent[controls:SubSessionRow].NextLevel, FallbackValue=2}" />
+                </DataTemplate>
+            </ItemsRepeater.ItemTemplate>
+        </ItemsRepeater>
+    </StackPanel>
+</UserControl>
