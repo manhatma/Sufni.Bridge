@@ -18,7 +18,7 @@ public class NetworkTelemetryFile : ITelemetryFile
 
     private readonly IPEndPoint ipEndPoint;
 
-    public async Task<byte[]> GeneratePsstAsync(Linkage linkage, Calibration? frontCal, Calibration? rearCal)
+    public async Task<(TelemetryData Data, byte[] Psst)> GeneratePsstAsync(Linkage linkage, Calibration? frontCal, Calibration? rearCal)
     {
         var idString = FileName[..5].TrimStart('0');
         var idInt = int.Parse(idString);
@@ -27,7 +27,8 @@ public class NetworkTelemetryFile : ITelemetryFile
         var telemetryData = new TelemetryData(FileName,
             rawTelemetryData.Version, rawTelemetryData.SampleRate, rawTelemetryData.Timestamp,
             frontCal, rearCal, linkage);
-        return telemetryData.ProcessRecording(rawTelemetryData.Front, rawTelemetryData.Rear);
+        var psst = telemetryData.ProcessRecording(rawTelemetryData.Front, rawTelemetryData.Rear);
+        return (telemetryData, psst);
     }
 
     public Task OnImported()

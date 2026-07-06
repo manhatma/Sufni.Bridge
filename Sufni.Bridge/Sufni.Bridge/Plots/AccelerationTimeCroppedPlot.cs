@@ -30,8 +30,9 @@ public class AccelerationTimeCroppedPlot(Plot plot, SuspensionType type) : Telem
         // 2nd differentiation produces unphysical g-peaks. Pre-smooth velocity with a
         // stronger WH (cutoff ≈29 Hz @ 860 SPS, just below mechanical bandwidth) before
         // the central difference. Acts only on the acceleration display; Velocity, Strokes
-        // and histograms are unaffected.
-        var accelSmoother = new WhittakerHendersonSmoother(Parameters.WhAccelOrder, Parameters.WhAccelLambdaFor(sampleRate));
+        // and histograms are unaffected. The smoother instance (and its ~50 MB factored
+        // matrix) is shared between the front and rear acceleration plots.
+        var accelSmoother = telemetryData.GetAccelSmoother();
 
         double[] ToAcceleration(double[] v)
         {

@@ -47,14 +47,15 @@ public class MassStorageTelemetryFile : ITelemetryFile
         SourceIdentifier = $"{boardId ?? ""}:{timestamp}";
     }
 
-    public async Task<byte[]> GeneratePsstAsync(Linkage linkage, Calibration? frontCal, Calibration? rearCal)
+    public async Task<(TelemetryData Data, byte[] Psst)> GeneratePsstAsync(Linkage linkage, Calibration? frontCal, Calibration? rearCal)
     {
         var rawData = await File.ReadAllBytesAsync(fileInfo.FullName);
         var rawTelemetryData = new RawTelemetryData(rawData);
         var telemetryData = new TelemetryData(fileInfo.Name,
             rawTelemetryData.Version, rawTelemetryData.SampleRate, rawTelemetryData.Timestamp,
             frontCal, rearCal, linkage);
-        return telemetryData.ProcessRecording(rawTelemetryData.Front, rawTelemetryData.Rear);
+        var psst = telemetryData.ProcessRecording(rawTelemetryData.Front, rawTelemetryData.Rear);
+        return (telemetryData, psst);
     }
 
     public Task OnImported()

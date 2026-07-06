@@ -15,7 +15,9 @@ public interface ITelemetryFile
     public DateTime StartTime { get; }
     public string Duration { get; }
 
-    public Task<byte[]> GeneratePsstAsync(Linkage linkage, Calibration? frontCal, Calibration? rearCal);
+    // Returns both the processed in-memory TelemetryData and its serialized PSST blob, so
+    // callers can reuse the object (duration, cache precomputation) without re-deserializing.
+    public Task<(TelemetryData Data, byte[] Psst)> GeneratePsstAsync(Linkage linkage, Calibration? frontCal, Calibration? rearCal);
     public Task OnImported();
     public Task OnTrashed();
 }

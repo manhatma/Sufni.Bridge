@@ -222,48 +222,64 @@ public partial class ImportSessionsViewModel : ViewModelBase
         var pendingChanges = await databaseService.GetPendingSetupChangesAsync(SelectedSetup!.Value);
         var pendingApplied = false;
 
+        // Setup, linkage and calibrations are fixed for the whole run (SelectedSetup does not
+        // change mid-import), so fetch and prepare them once instead of per file. A broken
+        // configuration fails the import as a whole — every file would fail identically.
+        Models.Telemetry.Linkage linkage;
+        Models.Telemetry.Calibration? fcal, rcal;
+        try
+        {
+            var swSetup = Stopwatch.StartNew();
+            var setup = await databaseService.GetSetupAsync(SelectedSetup!.Value);
+            linkage = await databaseService.GetLinkageAsync(setup!.LinkageId)
+                      ?? throw new Exception("Linkage is missing");
+
+            // Get front Calibration
+            fcal = await databaseService.GetCalibrationAsync(setup.FrontCalibrationId ?? Guid.Empty);
+            var fmethod = fcal is null ? null : await databaseService.GetCalibrationMethodAsync(fcal.MethodId);
+            if (fcal is not null && fmethod == null)
+            {
+                throw new Exception("Front calibration method is missing.");
+            }
+
+            // Get rear Calibration
+            rcal = await databaseService.GetCalibrationAsync(setup.RearCalibrationId ?? Guid.Empty);
+            var rmethod = rcal is null ? null : await databaseService.GetCalibrationMethodAsync(rcal.MethodId);
+            if (rcal is not null && rmethod == null)
+            {
+                throw new Exception("Rear calibration method is missing.");
+            }
+
+            fcal?.Prepare(fmethod!, linkage.MaxFrontStroke!.Value, linkage.MaxFrontTravel);
+            rcal?.Prepare(rmethod!, linkage.MaxRearStroke!.Value, linkage.MaxRearTravel);
+            PerfLog.Log("import/setup", swSetup.Elapsed.TotalMilliseconds);
+        }
+        catch (Exception e)
+        {
+            Dispatcher.UIThread.Post(() =>
+            {
+                ErrorMessages.Add($"Could not import: {e.Message}");
+            });
+            ImportInProgress = false;
+            return;
+        }
+
         foreach (var telemetryFile in TelemetryFiles.Where(f => f.ShouldBeImported.HasValue && f.ShouldBeImported.Value))
         {
             try
             {
-                // Get Linkage
-                var setup = await databaseService.GetSetupAsync(SelectedSetup!.Value);
-                var linkage = await databaseService.GetLinkageAsync(setup!.LinkageId);
-                if (linkage is null)
-                {
-                    throw new Exception("Linkage is missing");
-                }
+                using var perfTotal = PerfLog.Measure($"import/total {telemetryFile.Name}");
 
-                // Get front Calibration
-                var fcal = await databaseService.GetCalibrationAsync(setup.FrontCalibrationId ?? Guid.Empty);
-                var fmethod = fcal is null ? null : await databaseService.GetCalibrationMethodAsync(fcal.MethodId);
-                if (fcal is not null && fmethod == null)
-                {
-                    throw new Exception("Front calibration method is missing.");
-                }
+                var swProcess = Stopwatch.StartNew();
+                var (telemetryData, psst) = await telemetryFile.GeneratePsstAsync(linkage, fcal, rcal);
+                PerfLog.Log($"import/process {telemetryFile.Name}", swProcess.Elapsed.TotalMilliseconds);
 
-                // Get rear Calibration
-                var rcal = await databaseService.GetCalibrationAsync(setup.RearCalibrationId ?? Guid.Empty);
-                var rmethod = rcal is null ? null : await databaseService.GetCalibrationMethodAsync(rcal.MethodId);
-                if (rcal is not null && rmethod == null)
-                {
-                    throw new Exception("Rear calibration method is missing.");
-                }
-
-                fcal?.Prepare(fmethod!, linkage.MaxFrontStroke!.Value, linkage.MaxFrontTravel);
-                rcal?.Prepare(rmethod!, linkage.MaxRearStroke!.Value, linkage.MaxRearTravel);
-                var psst = await telemetryFile.GeneratePsstAsync(linkage, fcal, rcal);
-
-                // Compute duration from telemetry for day group time range display
+                // Duration for the day-group time range display, straight from the in-memory
+                // object (same expression the blob roundtrip used to compute).
                 int? durationSeconds = null;
-                try
-                {
-                    var td = MessagePack.MessagePackSerializer.Deserialize<Models.Telemetry.TelemetryData>(psst);
-                    var sampleCount = Math.Max(td.Front.Travel?.Length ?? 0, td.Rear.Travel?.Length ?? 0);
-                    if (td.SampleRate > 0)
-                        durationSeconds = sampleCount / td.SampleRate;
-                }
-                catch { /* duration is optional */ }
+                var sampleCount = Math.Max(telemetryData.Front.Travel?.Length ?? 0, telemetryData.Rear.Travel?.Length ?? 0);
+                if (telemetryData.SampleRate > 0)
+                    durationSeconds = sampleCount / telemetryData.SampleRate;
 
                 var session = new Session(
                     id: Guid.NewGuid(),
@@ -291,7 +307,9 @@ public partial class ImportSessionsViewModel : ViewModelBase
                     DurationSeconds = durationSeconds,
                 };
 
+                var swDbWrite = Stopwatch.StartNew();
                 await databaseService.PutSessionAsync(session);
+                PerfLog.Log($"import/db-write {telemetryFile.Name}", swDbWrite.Elapsed.TotalMilliseconds);
                 lastSession = session;
                 if (pendingChanges != null)
                 {
@@ -305,7 +323,9 @@ public partial class ImportSessionsViewModel : ViewModelBase
                     var svm = new SessionViewModel(session, true);
                     sessions.AddOrUpdate(svm);
                     Notifications.Insert(0, $"{svm.Name} was successfully imported.");
-                    _ = Task.Run(svm.PrecomputeCache);
+                    // Hand the in-memory TelemetryData to the cache precomputation so it does
+                    // not have to re-read and re-deserialize the blob it was just built from.
+                    _ = Task.Run(() => svm.PrecomputeCache(telemetryData));
                 });
             }
             catch (Exception e)

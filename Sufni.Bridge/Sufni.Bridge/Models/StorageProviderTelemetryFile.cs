@@ -59,7 +59,7 @@ public class StorageProviderTelemetryFile : ITelemetryFile
     }
 #pragma warning restore CS8618 // Non-nullable field must contain a non-null value when exiting constructor. Consider declaring as nullable.
 
-    public async Task<byte[]> GeneratePsstAsync(Linkage linkage, Calibration? frontCal, Calibration? rearCal)
+    public async Task<(TelemetryData Data, byte[] Psst)> GeneratePsstAsync(Linkage linkage, Calibration? frontCal, Calibration? rearCal)
     {
         await Initialization;
 
@@ -68,7 +68,8 @@ public class StorageProviderTelemetryFile : ITelemetryFile
         var telemetryData = new TelemetryData(storageFile.Name,
             rawTelemetryData.Version, rawTelemetryData.SampleRate, rawTelemetryData.Timestamp,
             frontCal, rearCal, linkage);
-        return telemetryData.ProcessRecording(rawTelemetryData.Front, rawTelemetryData.Rear);
+        var psst = telemetryData.ProcessRecording(rawTelemetryData.Front, rawTelemetryData.Rear);
+        return (telemetryData, psst);
     }
 
     public async Task OnImported()

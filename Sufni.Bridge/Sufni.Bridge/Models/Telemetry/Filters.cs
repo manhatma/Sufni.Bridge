@@ -15,6 +15,7 @@ public class WhittakerHendersonSmoother
 
     private readonly int order;
     private readonly double lambda;
+    private readonly object gate = new();
     private double[][]? matrix;
     private int matrixLength;
 
@@ -27,15 +28,40 @@ public class WhittakerHendersonSmoother
         this.lambda = lambda;
     }
 
+    /// <summary>
+    /// Builds (or reuses) the factored band matrix for signals of length <paramref name="n"/>.
+    /// Thread-safe; concurrent Smooth calls with the same length never rebuild. The instance
+    /// caches ONE matrix — alternating lengths rebuild each time, so share an instance only
+    /// across equal-length signals.
+    /// </summary>
+    public void EnsurePrepared(int n)
+    {
+        lock (gate)
+        {
+            if (matrix == null || matrixLength != n)
+            {
+                matrix = BuildCholeskyMatrix(n);
+                matrixLength = n;
+            }
+        }
+    }
+
     public double[] Smooth(double[] data)
     {
-        if (matrix == null || matrixLength != data.Length)
+        // Snapshot the matrix reference under the lock; Solve is pure and runs unlocked so
+        // concurrent smoothing of equal-length signals proceeds in parallel.
+        double[][] m;
+        lock (gate)
         {
-            matrix = BuildCholeskyMatrix(data.Length);
-            matrixLength = data.Length;
+            if (matrix == null || matrixLength != data.Length)
+            {
+                matrix = BuildCholeskyMatrix(data.Length);
+                matrixLength = data.Length;
+            }
+            m = matrix;
         }
 
-        return Solve(matrix, data);
+        return Solve(m, data);
     }
 
     private double[][] BuildCholeskyMatrix(int size)

@@ -98,13 +98,13 @@ public class CombinedTravelFftPlot(
 
         if (telemetryData.Front.Present && telemetryData.Front.Travel is { Length: >= 64 })
         {
-            var (lo, hi) = AddSpectrum(telemetryData.Front.Travel, sampleRate, FrontColor);
+            var (lo, hi) = AddSpectrum(telemetryData.GetTravelSpectrum(SuspensionType.Front, segmentLength), FrontColor);
             yMaxDb = Math.Max(yMaxDb, hi); yMinDb = Math.Min(yMinDb, lo);
             drewAny = true;
         }
         if (telemetryData.Rear.Present && telemetryData.Rear.Travel is { Length: >= 64 })
         {
-            var (lo, hi) = AddSpectrum(telemetryData.Rear.Travel, sampleRate, RearColor);
+            var (lo, hi) = AddSpectrum(telemetryData.GetTravelSpectrum(SuspensionType.Rear, segmentLength), RearColor);
             yMaxDb = Math.Max(yMaxDb, hi); yMinDb = Math.Min(yMinDb, lo);
             drewAny = true;
         }
@@ -185,9 +185,10 @@ public class CombinedTravelFftPlot(
     /// velocity plot) — high-frequency noise outside the body-resonance band
     /// otherwise drives the upper axis bound and wastes vertical real estate.
     /// When peak markers are disabled (travel plot), yMax scans the full range.</returns>
-    private (double, double) AddSpectrum(double[] signal, int sampleRate, Color color)
+    private (double, double) AddSpectrum(TravelSpectrum spec, Color color)
     {
-        var spec = TelemetryData.ComputeWelchSpectrum(signal, sampleRate, segmentLength);
+        // The spectrum comes from the TelemetryData memo (shared with the sibling FFT plot at
+        // the same segment length and with the resonance metrics) instead of a fresh Welch run.
         if (spec.Frequencies.Length == 0) return (FloorDb, FloorDb);
 
         var xs = new List<double>(spec.Frequencies.Length);

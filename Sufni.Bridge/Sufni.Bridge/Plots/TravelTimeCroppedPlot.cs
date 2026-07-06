@@ -27,8 +27,8 @@ public class TravelTimeCroppedPlot(Plot plot, SuspensionType type, bool isCroppe
         // Display the WH-smoothed travel (same parameters as the velocity pipeline) so the
         // curve matches what differentiation actually sees. The raw, LSB-quantised signal
         // remains visible in the crop dialog (TravelTimeHistoryPlot) for sensor diagnostics.
-        var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambdaFor(sampleRate));
-        var smoothed = smoother.Smooth(side.Travel);
+        // Shared memo: the pitch computation uses the same smoothed series.
+        var smoothed = telemetryData.GetSmoothedTravel(type);
 
         var sig = Plot.Add.Signal(smoothed, period);
         sig.Color = color;

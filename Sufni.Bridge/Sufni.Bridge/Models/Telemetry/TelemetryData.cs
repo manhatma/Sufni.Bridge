@@ -1,7 +1,11 @@
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Numerics;
+using System.Threading;
+using System.Threading.Tasks;
 using MathNet.Numerics;
 using MathNet.Numerics.Distributions;
 using MathNet.Numerics.IntegralTransforms;
@@ -431,8 +435,9 @@ public class TelemetryData
         // Create Whittaker-Henderson smoother for velocity smoothing
         var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambdaFor(SampleRate));
 
-        if (Front.Present)
+        void ProcessFront()
         {
+            using var perfFront = PerfLog.Measure("process/front");
             Front.Travel = new double[fc];
             var frontCoeff = Math.Sin(Linkage.HeadAngle * Math.PI / 180.0);
 
@@ -488,8 +493,9 @@ public class TelemetryData
             }
         }
 
-        if (Rear.Present)
+        void ProcessRear()
         {
+            using var perfRear = PerfLog.Measure("process/rear");
             Rear.Travel = new double[rc];
             Rear.ShockTravel = new double[rc];
 
@@ -544,10 +550,39 @@ public class TelemetryData
             }
         }
 
-        CalculateAirTimes();
+        if (Front.Present && Rear.Present)
+        {
+            // The two pipelines are independent: each writes only its own Suspension and
+            // locals, the calibrations are separate instances and Linkage is read-only.
+            // Factor the shared smoothing matrix once (fc == rc is enforced above), then
+            // run both sides concurrently; airtime detection joins afterwards.
+            smoother.EnsurePrepared(fc);
+            try
+            {
+                Parallel.Invoke(ProcessFront, ProcessRear);
+            }
+            catch (AggregateException ae) when (ae.InnerExceptions.Count > 0)
+            {
+                // Surface the pipeline's own exception (its message is shown in the import UI).
+                throw ae.InnerExceptions[0];
+            }
+        }
+        else if (Front.Present)
+        {
+            ProcessFront();
+        }
+        else if (Rear.Present)
+        {
+            ProcessRear();
+        }
+
+        using (PerfLog.Measure("process/airtimes")) { CalculateAirTimes(); }
         ProcessingVersion = CurrentProcessingVersion;
 
-        return MessagePackSerializer.Serialize(this);
+        var sw = Stopwatch.StartNew();
+        var psst = MessagePackSerializer.Serialize(this);
+        PerfLog.Log("process/serialize", sw.Elapsed.TotalMilliseconds);
+        return psst;
     }
 
     /// <summary>
@@ -991,7 +1026,10 @@ public class TelemetryData
             maxTravel);
     }
 
-    public StackedHistogramData CalculateVelocityHistogram(SuspensionType type)
+    public StackedHistogramData CalculateVelocityHistogram(SuspensionType type) =>
+        Memo($"velocityHistogram/{type}", () => CalculateVelocityHistogramCore(type));
+
+    private StackedHistogramData CalculateVelocityHistogramCore(SuspensionType type)
     {
         var suspension = type == SuspensionType.Front ? Front : Rear;
 
@@ -1116,7 +1154,10 @@ public class TelemetryData
         return Math.Clamp(symmetry, 0.0, 1.0);
     }
 
-    public NormalDistributionData CalculateNormalDistribution(SuspensionType type)
+    public NormalDistributionData CalculateNormalDistribution(SuspensionType type) =>
+        Memo($"normalDistribution/{type}", () => CalculateNormalDistributionCore(type));
+
+    private NormalDistributionData CalculateNormalDistributionCore(SuspensionType type)
     {
         var suspension = type == SuspensionType.Front ? Front : Rear;
         var step = suspension.VelocityBins[1] - suspension.VelocityBins[0];
@@ -1238,7 +1279,10 @@ public class TelemetryData
         return new TravelStatistics(mx, sum / count, bo);
     }
 
-    public DetailedTravelStatistics CalculateDetailedTravelStatistics(SuspensionType type)
+    public DetailedTravelStatistics CalculateDetailedTravelStatistics(SuspensionType type) =>
+        Memo($"detailedTravelStatistics/{type}", () => CalculateDetailedTravelStatisticsCore(type));
+
+    private DetailedTravelStatistics CalculateDetailedTravelStatisticsCore(SuspensionType type)
     {
         var suspension = type == SuspensionType.Front ? Front : Rear;
         var travelValues = new List<double>();
@@ -1272,7 +1316,10 @@ public class TelemetryData
         return new DetailedTravelStatistics(max, average, p95, bottomouts);
     }
 
-    public VelocityStatistics CalculateVelocityStatistics(SuspensionType type)
+    public VelocityStatistics CalculateVelocityStatistics(SuspensionType type) =>
+        Memo($"velocityStatistics/{type}", () => CalculateVelocityStatisticsCore(type));
+
+    private VelocityStatistics CalculateVelocityStatisticsCore(SuspensionType type)
     {
         var suspension = type == SuspensionType.Front ? Front : Rear;
 
@@ -1629,7 +1676,10 @@ public class TelemetryData
         return (tArray, vArray);
     }
 
-    public BalanceData CalculateBalance(BalanceType type)
+    public BalanceData CalculateBalance(BalanceType type) =>
+        Memo($"balance/{type}", () => CalculateBalanceCore(type));
+
+    private BalanceData CalculateBalanceCore(BalanceType type)
     {
         var frontTravelVelocity = TravelVelocity(SuspensionType.Front, type);
         var rearTravelVelocity = TravelVelocity(SuspensionType.Rear, type);
@@ -1944,18 +1994,83 @@ public class TelemetryData
     // the signals themselves and the rear is pulled forward by τ before differencing.
     // ---------------------------------------------------------------------------------------
 
+    #region Memoization
+
+    // Per-instance, thread-safe memo cells for derived analysis results that several plots and
+    // CalculateBalanceMetrics request independently (plot-cache tasks run on up to 3 threads
+    // against ONE shared TelemetryData). Private field ⇒ never MessagePack-serialized (explicit
+    // [IgnoreMember] for clarity); null after deserialization and created on demand. Per-key
+    // Lazy values give exactly-once computation without funneling independent computations
+    // through a single lock. Memoized results are returned by reference — consumers must not
+    // mutate them (all current consumers only read).
     [IgnoreMember]
-    private (int lagSamples, double conf, bool determined)? frontRearLag;
+    private ConcurrentDictionary<string, object>? memoCells;
+
+    private T Memo<T>(string key, Func<T> factory)
+    {
+        var cells = LazyInitializer.EnsureInitialized(ref memoCells,
+            static () => new ConcurrentDictionary<string, object>());
+        var lazy = (Lazy<T>)cells.GetOrAdd(key,
+            _ => new Lazy<T>(factory, LazyThreadSafetyMode.ExecutionAndPublication));
+        return lazy.Value;
+    }
+
+    /// <summary>
+    /// Shared Whittaker-Henderson smoother with the velocity-pipeline parameters. One factored
+    /// matrix serves every equal-length travel smoothing on this instance.
+    /// </summary>
+    internal WhittakerHendersonSmoother GetTravelSmoother() =>
+        Memo("smoother/travel", () => new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambdaFor(SampleRate)));
+
+    /// <summary>
+    /// Shared strong WH smoother used by the acceleration displays (front and rear velocity have
+    /// equal lengths, so both reuse one factored matrix).
+    /// </summary>
+    internal WhittakerHendersonSmoother GetAccelSmoother() =>
+        Memo("smoother/accel", () => new WhittakerHendersonSmoother(Parameters.WhAccelOrder, Parameters.WhAccelLambdaFor(SampleRate)));
+
+    /// <summary>
+    /// WH-smoothed full-length travel of one side (velocity-pipeline parameters), shared by the
+    /// travel-over-time plots and the pitch computation.
+    /// </summary>
+    internal double[] GetSmoothedTravel(SuspensionType side) =>
+        Memo($"smoothedTravel/{side}", () =>
+            GetTravelSmoother().Smooth((side == SuspensionType.Front ? Front : Rear).Travel));
+
+    /// <summary>
+    /// Memoized Welch auto-spectrum of one side's travel (see ComputeWelchSpectrum). The same
+    /// spectrum feeds the travel-FFT plot, the velocity-FFT plot (×2πf display transform) and
+    /// the resonance-peak metrics.
+    /// </summary>
+    internal TravelSpectrum GetTravelSpectrum(SuspensionType side, int segLen = 8192) =>
+        Memo($"spectrum/{side}/{segLen}", () =>
+            ComputeWelchSpectrum((side == SuspensionType.Front ? Front : Rear).Travel, SampleRate, segLen));
+
+    /// <summary>
+    /// Memoized Welch cross-spectrum of front vs rear travel over the common length
+    /// (see ComputeWelchCrossSpectrum), shared by lag estimation, the modal split and the
+    /// band-energy/coherence metrics. Passes the original arrays when lengths already match,
+    /// avoiding two full-signal slice copies.
+    /// </summary>
+    internal (double[] Freqs, double[] Pxx, double[] Pyy, Complex[] Pxy) GetCrossSpectrum(int segLen = 8192) =>
+        Memo($"crossSpectrum/{segLen}", () =>
+        {
+            if (Front.Travel is not { Length: > 0 } || Rear.Travel is not { Length: > 0 })
+                return (Array.Empty<double>(), Array.Empty<double>(), Array.Empty<double>(), Array.Empty<Complex>());
+            int n = Math.Min(Front.Travel.Length, Rear.Travel.Length);
+            var x = Front.Travel.Length == n ? Front.Travel : Front.Travel[..n];
+            var y = Rear.Travel.Length == n ? Rear.Travel : Rear.Travel[..n];
+            return ComputeWelchCrossSpectrum(x, y, SampleRate, segLen);
+        });
+
+    #endregion
 
     /// <summary>Front→rear traversal lag (rear lags front by this many samples) with a 0..1
     /// confidence and a determinability flag, estimated once and cached. determined=false means τ
     /// could not be pinned to a speed-plausible, coherent value; callers should treat lagSamples as 0
     /// ("no de-lag") rather than a real estimate.</summary>
-    private (int lagSamples, double conf, bool determined) GetFrontRearLag()
-    {
-        frontRearLag ??= EstimateFrontRearLag();
-        return frontRearLag.Value;
-    }
+    private (int lagSamples, double conf, bool determined) GetFrontRearLag() =>
+        Memo("frontRearLag", EstimateFrontRearLag);
 
     // Speed-plausible bounds for the traversal lag (m/s): τ = wheelbase / speed, so a 1.2 m
     // wheelbase implies τ ∈ [60, 600] ms. Anything outside means the estimate locked onto in-phase
@@ -2030,7 +2145,7 @@ public class TelemetryData
 
         // --- Method 2: unwrapped cross-spectrum phase slope dφ/df = 2π·τ -------------------------
         double phaseTauSec = double.NaN; int phaseBins = 0;
-        var (cf, pxx, pyy, pxy) = ComputeWelchCrossSpectrum(Front.Travel[..n], Rear.Travel[..n], SampleRate);
+        var (cf, pxx, pyy, pxy) = GetCrossSpectrum();
         if (cf.Length > 2)
         {
             // Contiguous bins across the phase band so consecutive-bin phase differences follow
@@ -2128,7 +2243,10 @@ public class TelemetryData
     /// <c>pitch(i) = −atan2(rear[i+τ] − front[i], wheelbase)</c>. Both travel arrays are vertical
     /// wheel travel (mm). Returns null without both suspensions or a wheelbase.
     /// </summary>
-    public double[]? CalculatePitchDegrees()
+    public double[]? CalculatePitchDegrees() =>
+        Memo("pitchDegrees", CalculatePitchDegreesCore);
+
+    private double[]? CalculatePitchDegreesCore()
     {
         if (!Front.Present || !Rear.Present) return null;
         if (Front.Travel is not { Length: > 0 } || Rear.Travel is not { Length: > 0 }) return null;
@@ -2138,9 +2256,20 @@ public class TelemetryData
         int n = Math.Min(Front.Travel.Length, Rear.Travel.Length);
         var (lag, _, _) = GetFrontRearLag();
 
-        var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambdaFor(SampleRate));
-        var f = smoother.Smooth(Front.Travel[..n]);
-        var r = smoother.Smooth(Rear.Travel[..n]);
+        double[] f, r;
+        if (Front.Travel.Length == n && Rear.Travel.Length == n)
+        {
+            // Equal-length case (the norm): reuse the shared smoothed-travel memos — smoothing
+            // the [..n] slice of an equal-length array is identical to smoothing the full array.
+            f = GetSmoothedTravel(SuspensionType.Front);
+            r = GetSmoothedTravel(SuspensionType.Rear);
+        }
+        else
+        {
+            var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambdaFor(SampleRate));
+            f = smoother.Smooth(Front.Travel[..n]);
+            r = smoother.Smooth(Rear.Travel[..n]);
+        }
 
         // The last `lag` samples have no rear counterpart, so the series is truncated there.
         // Clamping the shifted index instead would difference the moving front against a frozen
@@ -2172,7 +2301,10 @@ public class TelemetryData
     /// the comparison apples-to-apples. Falls back to all samples if no stroke selects any (e.g. no
     /// stroke data available). Returns null if pitch itself is unavailable.
     /// </summary>
-    public (double Mean, double Std, double P5, double P95, double Min, double Max)? CalculatePitchStatistics()
+    public (double Mean, double Std, double P5, double P95, double Min, double Max)? CalculatePitchStatistics() =>
+        Memo("pitchStatistics", CalculatePitchStatisticsCore);
+
+    private (double Mean, double Std, double P5, double P95, double Min, double Max)? CalculatePitchStatisticsCore()
     {
         var pitch = CalculatePitchDegrees();
         if (pitch is not { Length: > 0 }) return null;
@@ -2283,13 +2415,16 @@ public class TelemetryData
     /// Null without enough data.
     /// </summary>
     public (double[] Freqs, double[] Coherence, double[] PhaseDeg, double[] PitchPsd, double[] HeavePsd)?
-        CalculateModalSpectrum()
+        CalculateModalSpectrum() =>
+        Memo("modalSpectrum", CalculateModalSpectrumCore);
+
+    private (double[] Freqs, double[] Coherence, double[] PhaseDeg, double[] PitchPsd, double[] HeavePsd)?
+        CalculateModalSpectrumCore()
     {
         if (!Front.Present || !Rear.Present) return null;
         if (Front.Travel is not { Length: >= 8192 } || Rear.Travel is not { Length: >= 8192 }) return null;
 
-        int n = Math.Min(Front.Travel.Length, Rear.Travel.Length);
-        var (cf, pxx, pyy, pxy) = ComputeWelchCrossSpectrum(Front.Travel[..n], Rear.Travel[..n], SampleRate);
+        var (cf, pxx, pyy, pxy) = GetCrossSpectrum();
         if (cf.Length == 0) return null;
 
         var (lagSamples, _, lagDetermined) = GetFrontRearLag();
@@ -2347,7 +2482,10 @@ public class TelemetryData
     /// Returns each side's used travel (% of available). Null without both suspensions / geometry /
     /// strokes.
     /// </summary>
-    public IReadOnlyList<(double FrontPct, double RearPct)>? CalculateGoutEvents()
+    public IReadOnlyList<(double FrontPct, double RearPct)>? CalculateGoutEvents() =>
+        Memo("goutEvents", CalculateGoutEventsCore);
+
+    private IReadOnlyList<(double FrontPct, double RearPct)>? CalculateGoutEventsCore()
     {
         if (!Front.Present || !Rear.Present) return null;
         if (Front.Travel is not { Length: > 0 } || Rear.Travel is not { Length: > 0 }) return null;
@@ -2570,7 +2708,7 @@ public class TelemetryData
 
         if (Front.Present && Front.Travel != null && Front.Travel.Length >= 8192)
         {
-            var spec = ComputeWelchSpectrum(Front.Travel, SampleRate);
+            var spec = GetTravelSpectrum(SuspensionType.Front);
             if (spec.Amplitudes.Length > 0)
             {
                 var (f, a) = FindDominantPeak(spec, 1.3, 4.5);
@@ -2579,7 +2717,7 @@ public class TelemetryData
         }
         if (Rear.Present && Rear.Travel != null && Rear.Travel.Length >= 8192)
         {
-            var spec = ComputeWelchSpectrum(Rear.Travel, SampleRate);
+            var spec = GetTravelSpectrum(SuspensionType.Rear);
             if (spec.Amplitudes.Length > 0)
             {
                 var (f, a) = FindDominantPeak(spec, 1.3, 4.5);
@@ -2603,7 +2741,7 @@ public class TelemetryData
             && Front.Travel.Length >= 8192 && Rear.Travel.Length >= 8192
             && Front.Travel.Length == Rear.Travel.Length)
         {
-            var (cf, pxx, pyy, pxy) = ComputeWelchCrossSpectrum(Front.Travel, Rear.Travel, SampleRate);
+            var (cf, pxx, pyy, pxy) = GetCrossSpectrum();
             if (cf.Length > 0)
             {
                 static double? RatioDb(double[] freqs, double[] f, double[] r, double lo, double hi)

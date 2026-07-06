@@ -364,18 +364,27 @@ public partial class SessionViewModel : ItemViewModelBase
         return Eq(band?.minDeg, cache.PitchExpectedMinDeg) && Eq(band?.maxDeg, cache.PitchExpectedMaxDeg);
     }
 
-    private static Task ThrottledPlotTask(Action work)
+    private static Task ThrottledPlotTask(string label, Action work)
     {
         return Task.Run(async () =>
         {
+            var waitStart = Stopwatch.GetTimestamp();
             await s_plotSemaphore.WaitAsync();
-            try { work(); }
+            var waitMs = Stopwatch.GetElapsedTime(waitStart).TotalMilliseconds;
+            if (waitMs > 1.0) PerfLog.Log($"plotwait/{label}", waitMs);
+            try
+            {
+                var workStart = Stopwatch.GetTimestamp();
+                work();
+                PerfLog.Log($"plot/{label}", Stopwatch.GetElapsedTime(workStart).TotalMilliseconds);
+            }
             finally { s_plotSemaphore.Release(); }
         });
     }
 
     private async Task CreateCache(object? bounds, TelemetryData telemetryData, TelemetryData? fullData = null)
     {
+        var swCache = Stopwatch.StartNew();
         var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
         Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
 
@@ -399,7 +408,7 @@ public partial class SessionViewModel : ItemViewModelBase
 
         // TravelTimeHistory — always uses full (uncompressed) data
         var tthSource = fullData ?? telemetryData;
-        tasks.Add(ThrottledPlotTask(() =>
+        tasks.Add(ThrottledPlotTask("tth", () =>
         {
             var tth = new TravelTimeHistoryPlot(new Plot());
             tth.LoadTelemetryData(tthSource);
@@ -428,7 +437,7 @@ public partial class SessionViewModel : ItemViewModelBase
         // Spring comparison plots (Front+Rear)
         if (telemetryData.Front.Present && telemetryData.Rear.Present)
         {
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("travelCompHist", () =>
             {
                 var tcmp = new TravelHistogramComparisonPlot(new Plot());
                 tcmp.LoadTelemetryData(telemetryData);
@@ -437,7 +446,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { SpringPage.TravelComparisonHistogram = SourceToImage(travelCompSrc); });
             }));
 
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("frontRearScatter", () =>
             {
                 var frs = new FrontRearTravelScatterPlot(new Plot());
                 frs.LoadTelemetryData(telemetryData);
@@ -458,7 +467,7 @@ public partial class SessionViewModel : ItemViewModelBase
         // Front plots — each in its own task
         if (telemetryData.Front.Present)
         {
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("frontTravelHist", () =>
             {
                 var fth = new TravelHistogramPlot(new Plot(), SuspensionType.Front);
                 fth.LoadTelemetryData(telemetryData);
@@ -467,7 +476,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { SpringPage.FrontTravelHistogram = SourceToImage(frontTravelHistSrc); });
             }));
 
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("frontVelHist", () =>
             {
                 var fvh = new VelocityHistogramPlot(new Plot(), SuspensionType.Front);
                 fvh.LoadTelemetryData(telemetryData);
@@ -476,7 +485,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { DamperPage.FrontVelocityHistogram = SourceToImage(frontVelocityHistSrc); });
             }));
 
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("frontLsVelHist", () =>
             {
                 var flsvh = new LowSpeedVelocityHistogramPlot(new Plot(), SuspensionType.Front);
                 flsvh.LoadTelemetryData(telemetryData);
@@ -510,7 +519,7 @@ public partial class SessionViewModel : ItemViewModelBase
         // Rear plots — each in its own task
         if (telemetryData.Rear.Present)
         {
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("rearTravelHist", () =>
             {
                 var rth = new TravelHistogramPlot(new Plot(), SuspensionType.Rear);
                 rth.LoadTelemetryData(telemetryData);
@@ -519,7 +528,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { SpringPage.RearTravelHistogram = SourceToImage(rearTravelHistSrc); });
             }));
 
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("rearVelHist", () =>
             {
                 var rvh = new VelocityHistogramPlot(new Plot(), SuspensionType.Rear);
                 rvh.LoadTelemetryData(telemetryData);
@@ -528,7 +537,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { DamperPage.RearVelocityHistogram = SourceToImage(rearVelocityHistSrc); });
             }));
 
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("rearDamperVelHist", () =>
             {
                 var rdvh = new DamperVelocityHistogramPlot(new Plot());
                 rdvh.LoadTelemetryData(telemetryData);
@@ -537,7 +546,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { DamperPage.RearDamperVelocityHistogram = SourceToImage(rearDamperVelocityHistSrc); });
             }));
 
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("rearLsVelHist", () =>
             {
                 var rlsvh = new LowSpeedVelocityHistogramPlot(new Plot(), SuspensionType.Rear);
                 rlsvh.LoadTelemetryData(telemetryData);
@@ -569,7 +578,7 @@ public partial class SessionViewModel : ItemViewModelBase
         // Balance plots — each in its own task
         if (telemetryData.Front.Present && telemetryData.Rear.Present)
         {
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("combinedBalance", () =>
             {
                 var combined = new CombinedBalancePlot(new Plot());
                 combined.LoadTelemetryData(telemetryData);
@@ -578,7 +587,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { BalancePage.CombinedBalance = SourceToImage(combinedBalanceSrc); });
             }));
 
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("compressionBalance", () =>
             {
                 var cb = new BalancePlot(new Plot(), BalanceType.Compression);
                 cb.LoadTelemetryData(telemetryData);
@@ -587,7 +596,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { BalancePage.CompressionBalance = SourceToImage(compressionBalanceSrc); });
             }));
 
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("reboundBalance", () =>
             {
                 var rb = new BalancePlot(new Plot(), BalanceType.Rebound);
                 rb.LoadTelemetryData(telemetryData);
@@ -603,7 +612,7 @@ public partial class SessionViewModel : ItemViewModelBase
 
         if (telemetryData.Front.Present)
         {
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("frontTravelTimeCropped", () =>
             {
                 var ttc = new TravelTimeCroppedPlot(new Plot(), SuspensionType.Front, session.CropStartSample.HasValue && session.CropEndSample.HasValue);
                 ttc.LoadTelemetryData(telemetryData);
@@ -612,7 +621,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { SpringPage.FrontTravelTimeCropped = SourceToImage(src); });
             }));
 
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("frontVelTimeCropped", () =>
             {
                 var vtc = new VelocityTimeCroppedPlot(new Plot(), SuspensionType.Front);
                 vtc.LoadTelemetryData(telemetryData);
@@ -625,7 +634,7 @@ public partial class SessionViewModel : ItemViewModelBase
 
         if (telemetryData.Rear.Present)
         {
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("rearTravelTimeCropped", () =>
             {
                 var ttc = new TravelTimeCroppedPlot(new Plot(), SuspensionType.Rear, session.CropStartSample.HasValue && session.CropEndSample.HasValue);
                 ttc.LoadTelemetryData(telemetryData);
@@ -634,7 +643,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { SpringPage.RearTravelTimeCropped = SourceToImage(src); });
             }));
 
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("rearVelTimeCropped", () =>
             {
                 var vtc = new VelocityTimeCroppedPlot(new Plot(), SuspensionType.Rear);
                 vtc.LoadTelemetryData(telemetryData);
@@ -648,7 +657,7 @@ public partial class SessionViewModel : ItemViewModelBase
         // Combined Front+Rear FFT and Balance metrics — only when both sides are present.
         if (telemetryData.Front.Present && telemetryData.Rear.Present)
         {
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("velFft", () =>
             {
                 var velFft = new CombinedTravelFftPlot(new Plot(), minHz: 1.0, maxHz: 10.0,
                     peakMinHz: 1.3, peakMaxHz: 4.5,
@@ -660,7 +669,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 Dispatcher.UIThread.Post(() => { BalancePage.CombinedVelocityFft = SourceToImage(src); });
             }));
 
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("travelFft", () =>
             {
                 var fft = new CombinedTravelFftPlot(new Plot(), minHz: 1.0, maxHz: 10.0,
                     peakMinHz: 1.3, peakMaxHz: 4.5,
@@ -674,7 +683,7 @@ public partial class SessionViewModel : ItemViewModelBase
             // Second FFT view zoomed to the higher-frequency range (3–100 Hz). Peak
             // markers off — body resonance lives below 3 Hz so the search would land
             // on noise.
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("travelFftHigh", () =>
             {
                 var fftHigh = new CombinedTravelFftPlot(new Plot(), minHz: 10.0, maxHz: 100.0,
                     peakMinHz: 0.0, peakMaxHz: 0.0, segmentLength: 4096, fitYAxisToData: true,
@@ -720,7 +729,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 sessionCache.PitchExpectedMaxDeg = expectedBand?.maxDeg;
 
                 await Task.WhenAll(
-                    ThrottledPlotTask(() =>
+                    ThrottledPlotTask("pitchBalance", () =>
                     {
                         var pb = new PitchBalancePlot(new Plot(), expectedBand?.minDeg, expectedBand?.maxDeg);
                         pb.LoadTelemetryData(telemetryData);
@@ -728,7 +737,7 @@ public partial class SessionViewModel : ItemViewModelBase
                         var src = SvgToSource(sessionCache.PitchBalance);
                         Dispatcher.UIThread.Post(() => { BalancePage.PitchBalance = SourceToImage(src); });
                     }),
-                    ThrottledPlotTask(() =>
+                    ThrottledPlotTask("pitchCoherence", () =>
                     {
                         var pc = new PitchCoherencePlot(new Plot(), discipline);
                         pc.LoadTelemetryData(telemetryData);
@@ -736,7 +745,7 @@ public partial class SessionViewModel : ItemViewModelBase
                         var src = SvgToSource(sessionCache.PitchCoherence);
                         Dispatcher.UIThread.Post(() => { BalancePage.PitchCoherence = SourceToImage(src); });
                     }),
-                    ThrottledPlotTask(() =>
+                    ThrottledPlotTask("goutScatter", () =>
                     {
                         var gs = new GoutScatterPlot(new Plot());
                         gs.LoadTelemetryData(telemetryData);
@@ -749,7 +758,7 @@ public partial class SessionViewModel : ItemViewModelBase
 
         if (telemetryData.Front.Present)
         {
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("frontAccel", () =>
             {
                 var atc = new AccelerationTimeCroppedPlot(new Plot(), SuspensionType.Front);
                 atc.LoadTelemetryData(telemetryData);
@@ -761,7 +770,7 @@ public partial class SessionViewModel : ItemViewModelBase
 
         if (telemetryData.Rear.Present)
         {
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("rearAccel", () =>
             {
                 var atc = new AccelerationTimeCroppedPlot(new Plot(), SuspensionType.Rear);
                 atc.LoadTelemetryData(telemetryData);
@@ -771,7 +780,7 @@ public partial class SessionViewModel : ItemViewModelBase
             }));
         }
 
-        tasks.Add(ThrottledPlotTask(() =>
+        tasks.Add(ThrottledPlotTask("velDistComp", () =>
         {
             var vdc = new VelocityDistributionComparisonPlot(new Plot());
             vdc.LoadTelemetryData(telemetryData);
@@ -780,7 +789,7 @@ public partial class SessionViewModel : ItemViewModelBase
             Dispatcher.UIThread.Post(() => { DamperPage.VelocityDistributionComparison = SourceToImage(velDistCompSrc); });
         }));
 
-        tasks.Add(ThrottledPlotTask(() =>
+        tasks.Add(ThrottledPlotTask("posVelComp", () =>
         {
             var pvc = new PositionVelocityComparisonPlot(new Plot());
             pvc.LoadTelemetryData(telemetryData);
@@ -791,7 +800,7 @@ public partial class SessionViewModel : ItemViewModelBase
 
         if (telemetryData.Front.Present)
         {
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("frontPosVel", () =>
             {
                 var fpv = new PositionVelocityPlot(new Plot(), SuspensionType.Front);
                 fpv.LoadTelemetryData(telemetryData);
@@ -803,7 +812,7 @@ public partial class SessionViewModel : ItemViewModelBase
 
         if (telemetryData.Rear.Present)
         {
-            tasks.Add(ThrottledPlotTask(() =>
+            tasks.Add(ThrottledPlotTask("rearPosVel", () =>
             {
                 var rpv = new PositionVelocityPlot(new Plot(), SuspensionType.Rear);
                 rpv.LoadTelemetryData(telemetryData);
@@ -823,6 +832,7 @@ public partial class SessionViewModel : ItemViewModelBase
         await Task.WhenAll(tasks);
 
         await databaseService.PutSessionCacheAsync(sessionCache);
+        PerfLog.Log("cache/total", swCache.Elapsed.TotalMilliseconds);
     }
 
     private sealed record SuspensionSummaryStats(
@@ -1482,10 +1492,14 @@ public partial class SessionViewModel : ItemViewModelBase
 
     // Called after import to pre-generate the plot cache in the background,
     // before the user opens the session. Uses the last known bounds (updated on each Loaded call).
-    internal async Task PrecomputeCache()
+    // A freshly imported session can hand over its in-memory TelemetryData via `preloaded`,
+    // skipping the DB blob read + full deserialize (fresh imports are never cropped and always
+    // carry the current ProcessingVersion, so the GetSessionPsstAsync migration path is moot).
+    internal async Task PrecomputeCache(TelemetryData? preloaded = null)
     {
         try
         {
+            var swTotal = Stopwatch.StartNew();
             if (!IsComplete) return;
             var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
             if (databaseService is null) return;
@@ -1493,18 +1507,27 @@ public partial class SessionViewModel : ItemViewModelBase
             var cacheExists = await databaseService.GetSessionCacheAsync(Id) is not null;
             if (cacheExists) return;
 
-            var telemetryData = await databaseService.GetSessionPsstAsync(Id);
+            var telemetryData = preloaded;
+            if (telemetryData is null)
+            {
+                var swLoad = Stopwatch.StartNew();
+                telemetryData = await databaseService.GetSessionPsstAsync(Id);
+                PerfLog.Log("cache/loadPsst", swLoad.Elapsed.TotalMilliseconds);
+            }
             if (telemetryData is null) return;
 
             if (session.CropStartSample.HasValue && session.CropEndSample.HasValue)
             {
+                var swCrop = Stopwatch.StartNew();
                 var cropped = telemetryData.CreateCroppedCopy(session.CropStartSample.Value, session.CropEndSample.Value);
+                PerfLog.Log("cache/crop", swCrop.Elapsed.TotalMilliseconds);
                 await CreateCache(LastKnownBounds, cropped, telemetryData);
             }
             else
             {
                 await CreateCache(LastKnownBounds, telemetryData);
             }
+            PerfLog.Log($"cache/precompute {Id}", swTotal.Elapsed.TotalMilliseconds);
         }
         catch
         {
