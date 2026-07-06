@@ -251,6 +251,8 @@ public class SqLiteDatabaseService : IDatabaseService
         await AddColumnIfMissing("pitch_balance");
         await AddColumnIfMissing("pitch_coherence");
         await AddColumnIfMissing("gout_scatter");
+        await AddColumnIfMissing("pitch_expected_min_deg", "REAL");
+        await AddColumnIfMissing("pitch_expected_max_deg", "REAL");
     }
 
     private class TableInfoRecord

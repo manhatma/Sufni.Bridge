@@ -49,4 +49,10 @@ public class SessionCache
     [Column("pitch_coherence")] public string? PitchCoherence { get; set; }
     [Column("gout_scatter")] public string? GoutScatter { get; set; }
     [Column("balance_metrics_json")] public string? BalanceMetricsJson { get; set; }
+    // Input signature of the PitchBalance SVG (like plot_version/crop_*): the expected pitch
+    // band baked into it. Balance-target overrides are edited per discipline, so LoadCache
+    // compares this against the band implied by the CURRENT overrides and treats a mismatch
+    // as a cache miss — otherwise the plot would contradict the live μ traffic light.
+    [Column("pitch_expected_min_deg")] public double? PitchExpectedMinDeg { get; set; }
+    [Column("pitch_expected_max_deg")] public double? PitchExpectedMaxDeg { get; set; }
 }

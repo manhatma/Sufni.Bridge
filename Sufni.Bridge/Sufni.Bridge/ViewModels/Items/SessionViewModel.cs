@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 200;
+    private const int CurrentPlotVersion = 201;
 
     // Approximate rendered height of the VelocityBandView control (margin + title text +
     // 44 px band grid). Used to size the low-speed velocity histograms so the
@@ -124,6 +124,25 @@ public partial class SessionViewModel : ItemViewModelBase
             cache.CropEndSample   != session.CropEndSample)
         {
             return (false, false, false);
+        }
+
+        // Cache is stale when the balance-target overrides (per discipline) no longer imply the
+        // expected pitch band that was baked into the PitchBalance SVG — the μ row re-colors
+        // live from the current overrides, so a stale band would contradict it in the same view.
+        if (cache.PitchBalance is not null && cache.BalanceMetricsJson is not null)
+        {
+            try
+            {
+                var m = JsonSerializer.Deserialize<BalanceMetrics>(cache.BalanceMetricsJson);
+                if (m is not null && !PitchBandMatchesCache(await ComputeExpectedPitchBandAsync(m), cache))
+                {
+                    return (false, false, false);
+                }
+            }
+            catch
+            {
+                // Corrupt metrics cache — the completeness checks below trigger a rebuild anyway
+            }
         }
 
         // Load TravelTimeHistory (full data, always in cache)
@@ -324,6 +343,25 @@ public partial class SessionViewModel : ItemViewModelBase
             return overrides.ToDictionary(o => o.MetricKey, o => (o.GreenMin, o.GreenMax));
         }
         catch { return null; }
+    }
+
+    // Expected pitch band implied by the CURRENT per-discipline overrides and the session's
+    // cached geometry — the counterpart to the band signature stored in session_cache.
+    private async Task<(double minDeg, double maxDeg)?> ComputeExpectedPitchBandAsync(BalanceMetrics m)
+    {
+        var discipline = await GetSessionDisciplineAsync();
+        var overrides = await GetBalanceOverridesAsync(discipline);
+        return BalanceTargetDefaults.ExpectedPitchBand(
+            BalanceTargetDefaults.EffectiveGreen(overrides, "FrontSag", discipline),
+            BalanceTargetDefaults.EffectiveGreen(overrides, "RearSag", discipline),
+            m.MaxFrontTravelMm, m.MaxRearTravelMm, m.WheelbaseMm);
+    }
+
+    private static bool PitchBandMatchesCache((double minDeg, double maxDeg)? band, SessionCache cache)
+    {
+        static bool Eq(double? a, double? b) =>
+            (a is null && b is null) || (a.HasValue && b.HasValue && Math.Abs(a.Value - b.Value) < 1e-9);
+        return Eq(band?.minDeg, cache.PitchExpectedMinDeg) && Eq(band?.maxDeg, cache.PitchExpectedMaxDeg);
     }
 
     private static Task ThrottledPlotTask(Action work)
@@ -675,6 +713,11 @@ public partial class SessionViewModel : ItemViewModelBase
                     BalanceTargetDefaults.EffectiveGreen(balanceOverrides, "FrontSag", discipline),
                     BalanceTargetDefaults.EffectiveGreen(balanceOverrides, "RearSag", discipline),
                     metrics.MaxFrontTravelMm, metrics.MaxRearTravelMm, metrics.WheelbaseMm);
+                // Band signature for LoadCache's staleness check — the band is baked into the
+                // PitchBalance SVG below, so a later per-discipline override edit must be able
+                // to invalidate this cache row.
+                sessionCache.PitchExpectedMinDeg = expectedBand?.minDeg;
+                sessionCache.PitchExpectedMaxDeg = expectedBand?.maxDeg;
 
                 await Task.WhenAll(
                     ThrottledPlotTask(() =>
@@ -1278,6 +1321,7 @@ public partial class SessionViewModel : ItemViewModelBase
         ShareBalanceMetricsWithSummary();
         CropPage.ApplyCropCommand = new AsyncRelayCommand(HandleApplyCrop);
         CropPage.ResetCropCommand = new AsyncRelayCommand(HandleResetCrop);
+        BalancePage.Metrics.TargetsSaved = HandleBalanceTargetsSaved;
     }
 
     public SessionViewModel(Session session, bool fromDatabase)
@@ -1289,6 +1333,7 @@ public partial class SessionViewModel : ItemViewModelBase
         ShareBalanceMetricsWithSummary();
         CropPage.ApplyCropCommand = new AsyncRelayCommand(HandleApplyCrop);
         CropPage.ResetCropCommand = new AsyncRelayCommand(HandleResetCrop);
+        BalancePage.Metrics.TargetsSaved = HandleBalanceTargetsSaved;
 
         NotesPage.ForkSettings.PropertyChanged += (_, _) => EvaluateDirtiness();
         NotesPage.ShockSettings.PropertyChanged += (_, _) => EvaluateDirtiness();
@@ -1518,6 +1563,46 @@ public partial class SessionViewModel : ItemViewModelBase
         finally
         {
             IsAnalyzingData = false;
+        }
+    }
+
+    // Confirmed balance-target edits are stored per discipline; the FrontSag/RearSag green
+    // ranges feed the expected pitch band baked into the cached PitchBalance SVG. When an edit
+    // moves that band, rebuild this session's cache immediately (same flow as HandleApplyCrop)
+    // so the displayed plot doesn't contradict the freshly re-colored μ row. Every other
+    // session of the discipline heals via the band-signature check in LoadCache on next open.
+    private async Task HandleBalanceTargetsSaved()
+    {
+        var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
+        if (databaseService is null) return;
+
+        try
+        {
+            var cache = await databaseService.GetSessionCacheAsync(Id);
+            if (cache?.PitchBalance is null || cache.BalanceMetricsJson is null) return;
+            var metrics = JsonSerializer.Deserialize<BalanceMetrics>(cache.BalanceMetricsJson);
+            if (metrics is null) return;
+            if (PitchBandMatchesCache(await ComputeExpectedPitchBandAsync(metrics), cache)) return;
+
+            IsAnalyzingData = true;
+            try
+            {
+                var fullData = await databaseService.GetSessionPsstAsync(Id);
+                if (fullData is null) return;
+                if (session.CropStartSample.HasValue && session.CropEndSample.HasValue)
+                    await CreateCache(LastKnownBounds, fullData.CreateCroppedCopy(
+                        session.CropStartSample.Value, session.CropEndSample.Value), fullData);
+                else
+                    await CreateCache(LastKnownBounds, fullData);
+            }
+            finally
+            {
+                IsAnalyzingData = false;
+            }
+        }
+        catch (Exception e)
+        {
+            ErrorMessages.Add($"Could not refresh plots after target edit: {e.Message}");
         }
     }
 

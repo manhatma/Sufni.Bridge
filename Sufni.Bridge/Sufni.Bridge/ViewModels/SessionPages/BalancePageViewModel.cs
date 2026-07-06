@@ -111,6 +111,11 @@ public partial class BalanceMetricsViewModel : ObservableObject
 
     private BalanceMetricRow[] EditableRows => [FrontSag, RearSag, SagDiff, DamperSag, FrontP95, RearP95, RebMsd, PitchStability, GoutSymmetry];
 
+    // Set by the owning SessionViewModel (same injection style as CropPage.ApplyCropCommand).
+    // Invoked after a confirmed edit is persisted, so the session can rebuild plots whose
+    // cached SVGs bake the edited targets in (the PitchBalance expected band).
+    public Func<Task>? TargetsSaved { get; set; }
+
     partial void OnIsEditingChanged(bool value)
     {
         foreach (var row in EditableRows)
@@ -179,6 +184,7 @@ public partial class BalanceMetricsViewModel : ObservableObject
 
         IsEditing = false;
         if (lastMetrics is not null) Apply(lastMetrics, lastDiscipline);
+        if (TargetsSaved is not null) await TargetsSaved();
     }
 
     [RelayCommand]
