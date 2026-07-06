@@ -1851,46 +1851,49 @@ public partial class SessionViewModel : ItemViewModelBase
                 return;
             }
 
-            // Collect all SVG strings in tab display order
-            var svgEntries = new List<string?>();
+            // Collect all SVG entries in tab display order. Entries for the low-speed
+            // velocity histograms also carry the zone-percentage band data so RenderSvgsToPdf
+            // can render the VelocityBandView equivalent below the plot on the same page.
+            var svgEntries = new List<PdfSvgEntry?>();
 
             // Spring tab
-            svgEntries.Add(cache.TravelComparisonHistogram);
-            svgEntries.Add(cache.FrontRearTravelScatter);
-            svgEntries.Add(cache.FrontTravelHistogram);
-            svgEntries.Add(cache.RearTravelHistogram);
+            svgEntries.Add(PdfSvgEntry.For(cache.TravelComparisonHistogram));
+            svgEntries.Add(PdfSvgEntry.For(cache.FrontRearTravelScatter));
+            svgEntries.Add(PdfSvgEntry.For(cache.FrontTravelHistogram));
+            svgEntries.Add(PdfSvgEntry.For(cache.RearTravelHistogram));
 
             // Damper tab
-            svgEntries.Add(cache.VelocityDistributionComparison);
-            svgEntries.Add(cache.FrontVelocityHistogram);
-            svgEntries.Add(cache.FrontLowSpeedVelocityHistogram);
-            svgEntries.Add(cache.RearVelocityHistogram);
-            svgEntries.Add(cache.RearDamperVelocityHistogram);
-            svgEntries.Add(cache.RearLowSpeedVelocityHistogram);
+            svgEntries.Add(PdfSvgEntry.For(cache.VelocityDistributionComparison));
+            svgEntries.Add(PdfSvgEntry.For(cache.FrontVelocityHistogram));
+            svgEntries.Add(PdfSvgEntry.For(cache.FrontLowSpeedVelocityHistogram, "Front Zone %",
+                cache.FrontHsrPercentage, cache.FrontLsrPercentage, cache.FrontLscPercentage, cache.FrontHscPercentage));
+            svgEntries.Add(PdfSvgEntry.For(cache.RearVelocityHistogram));
+            svgEntries.Add(PdfSvgEntry.For(cache.RearDamperVelocityHistogram));
+            svgEntries.Add(PdfSvgEntry.For(cache.RearLowSpeedVelocityHistogram, "Rear Zone %",
+                cache.RearHsrPercentage, cache.RearLsrPercentage, cache.RearLscPercentage, cache.RearHscPercentage));
 
             // Balance tab
-            svgEntries.Add(cache.CombinedTravelFft);
-            svgEntries.Add(cache.CombinedTravelFftHigh);
-            svgEntries.Add(cache.CombinedVelocityFft);
-            svgEntries.Add(cache.CombinedBalance);
-            svgEntries.Add(cache.CompressionBalance);
-            svgEntries.Add(cache.ReboundBalance);
-            svgEntries.Add(cache.PitchBalance);
-            svgEntries.Add(cache.PitchCoherence);
-            svgEntries.Add(cache.GoutScatter);
+            svgEntries.Add(PdfSvgEntry.For(cache.CombinedTravelFft));
+            svgEntries.Add(PdfSvgEntry.For(cache.CombinedTravelFftHigh));
+            svgEntries.Add(PdfSvgEntry.For(cache.CombinedVelocityFft));
+            svgEntries.Add(PdfSvgEntry.For(cache.CombinedBalance));
+            svgEntries.Add(PdfSvgEntry.For(cache.CompressionBalance));
+            svgEntries.Add(PdfSvgEntry.For(cache.ReboundBalance));
+            svgEntries.Add(PdfSvgEntry.For(cache.PitchBalance));
+            svgEntries.Add(PdfSvgEntry.For(cache.PitchCoherence));
+            svgEntries.Add(PdfSvgEntry.For(cache.GoutScatter));
+            svgEntries.Add(PdfSvgEntry.For(cache.FrontPositionVelocity));
+            svgEntries.Add(PdfSvgEntry.For(cache.RearPositionVelocity));
 
-            // Misc tab
-            svgEntries.Add(cache.FrontTravelTimeCropped);
-            svgEntries.Add(cache.RearTravelTimeCropped);
-            svgEntries.Add(cache.FrontVelocityTimeCropped);
-            svgEntries.Add(cache.RearVelocityTimeCropped);
-            svgEntries.Add(cache.PositionVelocityComparison);
-            svgEntries.Add(cache.FrontPositionVelocity);
-            svgEntries.Add(cache.RearPositionVelocity);
-            svgEntries.Add(cache.FrontAccelerationTimeCropped);
-            svgEntries.Add(cache.RearAccelerationTimeCropped);
+            // Misc tab (time-series: travel -> velocity -> acceleration, front/rear)
+            svgEntries.Add(PdfSvgEntry.For(cache.FrontTravelTimeCropped));
+            svgEntries.Add(PdfSvgEntry.For(cache.RearTravelTimeCropped));
+            svgEntries.Add(PdfSvgEntry.For(cache.FrontVelocityTimeCropped));
+            svgEntries.Add(PdfSvgEntry.For(cache.RearVelocityTimeCropped));
+            svgEntries.Add(PdfSvgEntry.For(cache.FrontAccelerationTimeCropped));
+            svgEntries.Add(PdfSvgEntry.For(cache.RearAccelerationTimeCropped));
 
-            var validSvgs = svgEntries.Where(s => s is not null).Cast<string>().ToList();
+            var validSvgs = svgEntries.Where(s => s is not null).Cast<PdfSvgEntry>().ToList();
             if (validSvgs.Count == 0)
             {
                 ErrorMessages.Add("No plots to export.");
@@ -2146,7 +2149,40 @@ public partial class SessionViewModel : ItemViewModelBase
         document.EndPage();
     }
 
-    private string RenderSvgsToPdf(List<string> svgXmlList, SummaryPageViewModel summary, NotesPageViewModel notes)
+    // One PDF page's worth of content: an SVG plot, plus (optionally) the zone-percentage
+    // band data that mirrors VelocityBandView, rendered directly below the plot on export.
+    private sealed record PdfSvgEntry(string Svg, VelocityBandData? Band)
+    {
+        public static PdfSvgEntry? For(string? svg) => svg is null ? null : new PdfSvgEntry(svg, null);
+
+        public static PdfSvgEntry? For(string? svg, string bandTitle,
+            double? hsr, double? lsr, double? lsc, double? hsc)
+        {
+            if (svg is null) return null;
+            var band = VelocityBandData.Create(bandTitle, hsr, lsr, lsc, hsc);
+            return new PdfSvgEntry(svg, band);
+        }
+    }
+
+    // Mirrors VelocityBandView's HSR/LSR/LSC/HSC percentages. Only constructed when all four
+    // percentages are present, matching the app control's IsVisible-on-non-null pattern.
+    private sealed record VelocityBandData(string Title, double Hsr, double Lsr, double Lsc, double Hsc)
+    {
+        public static VelocityBandData? Create(string title, double? hsr, double? lsr, double? lsc, double? hsc)
+        {
+            if (hsr is null || lsr is null || lsc is null || hsc is null) return null;
+            return new VelocityBandData(title, hsr.Value, lsr.Value, lsc.Value, hsc.Value);
+        }
+    }
+
+    // Rendered height of the zone-band block appended below a low-speed velocity histogram
+    // page, mirroring VelocityBandView's layout (title text + 44px band grid + spacing).
+    private const float PdfBandBlockHeight = 62f;
+    private const float PdfBandLeftInset = 50f;   // Mirrors VelocityBandView's Margin="50,0,20,0"
+    private const float PdfBandRightInset = 20f;
+    private const float PdfBandGridHeight = 44f;
+
+    private string RenderSvgsToPdf(List<PdfSvgEntry> svgEntries, SummaryPageViewModel summary, NotesPageViewModel notes)
     {
         var tempDir = System.IO.Path.GetTempPath();
         // Strip characters that are invalid in filenames or URLs (space, #, %, &, etc.)
@@ -2155,14 +2191,14 @@ public partial class SessionViewModel : ItemViewModelBase
 
         // Parse all SVGs in parallel (expensive XML + Skia picture recording),
         // then write PDF pages sequentially (SKDocument is not thread-safe).
-        var svgObjects = svgXmlList
+        var pages = svgEntries
             .AsParallel()
             .AsOrdered()
-            .Select(xml =>
+            .Select(entry =>
             {
                 var svg = new Svg.Skia.SKSvg();
-                svg.FromSvg(xml);
-                return svg;
+                svg.FromSvg(entry.Svg);
+                return (Svg: svg, entry.Band);
             })
             .ToList();
 
@@ -2173,14 +2209,17 @@ public partial class SessionViewModel : ItemViewModelBase
 
             DrawSummaryPage(document, summary, (float)LastKnownBounds.Width);
 
-            foreach (var svg in svgObjects)
+            foreach (var (svg, band) in pages)
             {
                 var picture = svg.Picture;
                 if (picture is null) continue;
 
                 var bounds = picture.CullRect;
-                using var canvas = document.BeginPage(bounds.Width, bounds.Height);
+                var pageHeight = bounds.Height + (band is not null ? PdfBandBlockHeight : 0f);
+                using var canvas = document.BeginPage(bounds.Width, pageHeight);
                 canvas.DrawPicture(picture);
+                if (band is not null)
+                    DrawVelocityBand(canvas, band, bounds.Width, bounds.Height, pageHeight);
                 document.EndPage();
             }
 
@@ -2190,11 +2229,87 @@ public partial class SessionViewModel : ItemViewModelBase
         }
         finally
         {
-            foreach (var svg in svgObjects)
+            foreach (var (svg, _) in pages)
                 svg.Dispose();
         }
 
         return pdfPath;
+    }
+
+    // Draws the zone-percentage band block below a low-speed velocity histogram, mirroring
+    // VelocityBandView.axaml: bold title, then four columns (HSR/LSR/LSC/HSC) sized
+    // proportionally to their percentage, each with a border and a "LABEL / value" text.
+    private static void DrawVelocityBand(SkiaSharp.SKCanvas canvas, VelocityBandData band,
+        float pageWidth, float top, float pageHeight)
+    {
+        var titleColor = SkiaSharp.SKColor.Parse("#d0d0d0");
+        var borderColor = SkiaSharp.SKColor.Parse("#505558");
+        var outerBg = SkiaSharp.SKColor.Parse("#303030");
+        var innerBg = SkiaSharp.SKColor.Parse("#282828");
+        var textColor = SkiaSharp.SKColor.Parse("#d0d0d0");
+
+        using var titlePaint = new SkiaSharp.SKPaint
+        {
+            IsAntialias = true, TextSize = 12f, Color = titleColor,
+            Typeface = SkiaSharp.SKTypeface.FromFamilyName(null, SkiaSharp.SKFontStyle.Bold),
+        };
+        using var labelPaint = new SkiaSharp.SKPaint
+        {
+            IsAntialias = true, TextSize = 11f, Color = textColor, TextAlign = SkiaSharp.SKTextAlign.Center,
+            Typeface = SkiaSharp.SKTypeface.FromFamilyName(null, SkiaSharp.SKFontStyle.Bold),
+        };
+        using var fillPaint = new SkiaSharp.SKPaint { IsStroke = false };
+        using var strokePaint = new SkiaSharp.SKPaint { IsStroke = true, StrokeWidth = 1f, Color = borderColor };
+
+        // The SVG plot only covers its own CullRect; paint the appended band strip with the
+        // plots' figure background (#15191c) so the page reads as one continuous dark panel.
+        fillPaint.Color = SkiaSharp.SKColor.Parse("#15191c");
+        canvas.DrawRect(new SkiaSharp.SKRect(0f, top, pageWidth, pageHeight), fillPaint);
+
+        float left = PdfBandLeftInset;
+        float right = pageWidth - PdfBandRightInset;
+        float gridWidth = right - left;
+
+        // Title, left-aligned above the grid (mirrors Margin="0,4,0,0" + Margin="0,0,0,2")
+        float titleY = top + 4f + 12f;
+        canvas.DrawText(band.Title, left, titleY, titlePaint);
+
+        float gridTop = titleY + 2f;
+        float gridBottom = System.Math.Min(gridTop + PdfBandGridHeight, pageHeight);
+        float gridHeight = gridBottom - gridTop;
+
+        var segments = new (string Label, double Value, SkiaSharp.SKColor Bg)[]
+        {
+            ("HSR", band.Hsr, outerBg),
+            ("LSR", band.Lsr, innerBg),
+            ("LSC", band.Lsc, innerBg),
+            ("HSC", band.Hsc, outerBg),
+        };
+
+        double total = segments.Sum(s => s.Value);
+        if (total <= 0) total = 1; // guard against div-by-zero; degenerates to equal widths
+
+        float x = left;
+        for (int i = 0; i < segments.Length; i++)
+        {
+            var (label, value, bg) = segments[i];
+            float w = (float)(gridWidth * (value / total));
+            // Absorb rounding error into the last column so borders line up with `right`.
+            if (i == segments.Length - 1) w = right - x;
+
+            var rect = new SkiaSharp.SKRect(x, gridTop, x + w, gridBottom);
+            fillPaint.Color = bg;
+            canvas.DrawRect(rect, fillPaint);
+            canvas.DrawRect(rect, strokePaint);
+
+            float cx = x + w / 2f;
+            float labelY = gridTop + gridHeight / 2f - 2f;
+            float valueY = labelY + 13f;
+            canvas.DrawText(label, cx, labelY, labelPaint);
+            canvas.DrawText(value.ToString("0.0"), cx, valueY, labelPaint);
+
+            x += w;
+        }
     }
 
     #endregion
