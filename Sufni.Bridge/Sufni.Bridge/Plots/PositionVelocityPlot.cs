@@ -36,7 +36,10 @@ public class PositionVelocityPlot(Plot plot, SuspensionType type) : TelemetryPlo
         var velocityMaxNegative = 0.0;
         if (data.Travel.Length > 0)
         {
-            var scatter = Plot.Add.Scatter(data.Travel, data.Velocity);
+            // Decimate only the plotted polyline; axis-limit scan below stays on the full
+            // (memoized, shared-by-reference) arrays so limits/labels are unaffected.
+            var (plotTravel, plotVelocity) = PathDecimation.DecimatePolyline(data.Travel, data.Velocity);
+            var scatter = Plot.Add.Scatter(plotTravel, plotVelocity);
             scatter.MarkerStyle.IsVisible = false;
             scatter.LineStyle.IsVisible = true;
             scatter.LineStyle.Width = 1;
