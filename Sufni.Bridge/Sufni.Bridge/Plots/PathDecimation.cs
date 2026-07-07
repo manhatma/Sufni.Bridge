@@ -1,9 +1,10 @@
 using System;
+using System.Collections.Generic;
 
 namespace Sufni.Bridge.Plots;
 
 /// <summary>
-/// Grid-based decimation for phase-portrait polylines (travel vs. velocity).
+/// Curve-faithful decimation for phase-portrait polylines (travel vs. velocity).
 ///
 /// WHY: PositionVelocityPlot/PositionVelocityComparisonPlot plot every stroke sample —
 /// up to ~1M points on long sessions. ScottPlot emits one SVG path vertex per point, so the
@@ -12,30 +13,39 @@ namespace Sufni.Bridge.Plots;
 /// is opened. The rendered plot is only a few hundred pixels across, so almost every point
 /// lands on the same on-screen pixel as its neighbour and contributes nothing visible.
 ///
-/// GUARANTEE: this only drops points whose (quantized) grid cell is identical to the last
-/// KEPT point's cell within the same stroke segment — i.e. points that would land on the same
-/// pixel at (and well beyond) the actual render resolution. Segment boundaries (NaN separators)
-/// and each segment's first/last finite point are always preserved, so stroke topology and the
-/// data extents (and therefore axis limits computed from the full arrays) are unaffected. The
-/// output is visually equivalent to the input at any of this app's render sizes.
+/// HISTORY: an earlier version quantized points onto a pixel grid and, as a backstop for dense
+/// noise that defeats grid dedup, collapsed each stride window to its first/last/X-Y-extreme
+/// points. That backstop caps every window at 6 points regardless of the curve's actual shape,
+/// so sparse strokes (few samples spread over a window) lost interior points and rendered as
+/// visible straight-line polygons instead of the smooth loops the sensor data actually traces —
+/// unacceptable on-device. Rejected in favour of the algorithm below, which has no fixed
+/// point-per-window budget: it keeps exactly as many points as the curve's shape demands.
+///
+/// GUARANTEE: per-stroke-segment Ramer-Douglas-Peucker simplification in a normalized "virtual
+/// pixel" space (see constants below). RDP keeps a point iff it deviates from the straight line
+/// between its surviving neighbours by more than the tolerance — so every dropped point sat
+/// within that tolerance of the drawn line, and every segment's first/last point is always kept
+/// (RDP never discards segment endpoints). At the tolerance used here (0.4 virtual px = 0.1
+/// logical px at the cached 393x350 render size), no dropped point can ever be visually
+/// distinguishable from the line that replaces it, at any render size this app actually draws
+/// (including 2x-scale PDF export, where it is still ~0.2 px). Segment boundaries (NaN
+/// separators) are always preserved unchanged.
 ///
 /// Inputs are the memoized PositionVelocityData arrays shared by reference across multiple
 /// plots/consumers — this method must never mutate xs/ys, only return new arrays.
 /// </summary>
 internal static class PathDecimation
 {
-    // Quantization grid: comfortably above both the cached render (393x350ish logical px)
-    // and larger PDF-export renders, so dedup is imperceptible at any size we actually draw.
-    private const int GridColumns = 1600;
-    private const int GridRows = 1200;
+    // Virtual raster the tolerance below is defined against: 4x the cached render size (393x350
+    // logical px), comfortably above larger renders (e.g. 786x700 PDF export) too, so the
+    // permitted deviation stays sub-pixel at every size this app actually draws.
+    private const double VirtualPixelWidth = 1572.0;   // 4 * 393
+    private const double VirtualPixelHeight = 1400.0;  // 4 * 350
 
-    // Output cap. Phase-portrait velocity noise defeats consecutive-cell dedup (nearly every
-    // sample lands in a new cell), so the windowed-extremes pass below does the real reduction:
-    // it collapses each stride window to at most 6 ordered points (first, x/y extremes, last),
-    // which keeps the drawn envelope — and therefore the global extents any axis autoscaling
-    // derives from the plotted data — exact, while dense loop regions stay visually saturated.
-    private const int MaxKeptPoints = 48_000;
-    private const int PointsPerWindow = 6;
+    // Maximum perpendicular deviation a dropped point may have had from the line that replaces
+    // it, in virtual px on the raster above. 0.4 virtual px = 0.1 logical px at the cached
+    // render size, ~0.2 px even at a 786x700 (2x) PDF-export render — sub-pixel everywhere.
+    private const double Epsilon = 0.4;
 
     /// <summary>
     /// Decimates a travel/velocity polyline (NaN-separated segments) for plotting. Returns new
@@ -48,7 +58,7 @@ internal static class PathDecimation
         if (length == 0)
             return (xs, ys);
 
-        // Single pass: finite min/max of both axes.
+        // Single pass: finite min/max of both axes, to normalize onto the virtual raster.
         var minX = double.PositiveInfinity;
         var maxX = double.NegativeInfinity;
         var minY = double.PositiveInfinity;
@@ -69,155 +79,116 @@ internal static class PathDecimation
 
         var rangeX = maxX - minX;
         var rangeY = maxY - minY;
-        // Guard zero range (e.g. constant travel) — collapse that axis to one cell.
-        var scaleX = rangeX > 0 ? GridColumns / rangeX : 0.0;
-        var scaleY = rangeY > 0 ? GridRows / rangeY : 0.0;
+        // Guard zero range (e.g. constant travel) — collapse that axis to a single coordinate;
+        // RDP deviation is then driven entirely by the other axis, as intended.
+        var scaleX = rangeX > 0 ? VirtualPixelWidth / rangeX : 0.0;
+        var scaleY = rangeY > 0 ? VirtualPixelHeight / rangeY : 0.0;
 
-        var keptXs = new double[length];
-        var keptYs = new double[length];
-        var kept = 0;
-
-        var lastCellX = int.MinValue;
-        var lastCellY = int.MinValue;
-        var segmentStart = 0; // index into keptXs/keptYs of the current segment's first kept point.
-        var haveSegmentPoint = false;
-
-        void CloseSegment(int lastFiniteSourceIndex)
+        var keep = new bool[length];
+        var segmentStart = -1;
+        for (var i = 0; i <= length; i++)
         {
-            if (!haveSegmentPoint) return;
-            // Always keep the segment's final finite point, even if it shares a cell with the
-            // last kept point (guarantees exact extents/endpoint fidelity per stroke).
-            if (kept == segmentStart || keptXs[kept - 1] != xs[lastFiniteSourceIndex] || keptYs[kept - 1] != ys[lastFiniteSourceIndex])
+            var isSeparator = i == length || double.IsNaN(xs[i]) || double.IsNaN(ys[i]);
+            if (isSeparator)
             {
-                keptXs[kept] = xs[lastFiniteSourceIndex];
-                keptYs[kept] = ys[lastFiniteSourceIndex];
-                kept++;
+                if (segmentStart >= 0)
+                    MarkKeptRdp(xs, ys, segmentStart, i - 1, scaleX, scaleY, keep);
+                segmentStart = -1;
             }
-            haveSegmentPoint = false;
+            else if (segmentStart < 0)
+            {
+                segmentStart = i;
+            }
         }
 
-        var lastFiniteIndex = -1;
+        var keptCount = 0;
         for (var i = 0; i < length; i++)
         {
-            var x = xs[i];
-            var y = ys[i];
-            if (double.IsNaN(x) || double.IsNaN(y))
-            {
-                CloseSegment(lastFiniteIndex);
-                lastFiniteIndex = -1;
-                // Emit exactly one NaN pair between segments, matching the input separator.
-                if (kept > 0 && !(double.IsNaN(keptXs[kept - 1]) && double.IsNaN(keptYs[kept - 1])))
-                {
-                    keptXs[kept] = double.NaN;
-                    keptYs[kept] = double.NaN;
-                    kept++;
-                }
-                lastCellX = int.MinValue;
-                lastCellY = int.MinValue;
-                segmentStart = kept;
-                continue;
-            }
-
-            var cellX = rangeX > 0 ? (int)((x - minX) * scaleX) : 0;
-            var cellY = rangeY > 0 ? (int)((y - minY) * scaleY) : 0;
-
-            if (!haveSegmentPoint)
-            {
-                // Always keep the segment's first point.
-                keptXs[kept] = x;
-                keptYs[kept] = y;
-                kept++;
-                haveSegmentPoint = true;
-                lastCellX = cellX;
-                lastCellY = cellY;
-            }
-            else if (cellX != lastCellX || cellY != lastCellY)
-            {
-                keptXs[kept] = x;
-                keptYs[kept] = y;
-                kept++;
-                lastCellX = cellX;
-                lastCellY = cellY;
-            }
-
-            lastFiniteIndex = i;
+            if (keep[i] || double.IsNaN(xs[i]) || double.IsNaN(ys[i])) keptCount++;
         }
-        CloseSegment(lastFiniteIndex);
 
         // Nothing dropped — return the original arrays untouched.
-        if (kept == length)
+        if (keptCount == length)
             return (xs, ys);
 
-        if (kept > MaxKeptPoints)
-            return StridePerSegment(keptXs, keptYs, kept);
-
-        Array.Resize(ref keptXs, kept);
-        Array.Resize(ref keptYs, kept);
-        return (keptXs, keptYs);
+        var outXs = new double[keptCount];
+        var outYs = new double[keptCount];
+        var o = 0;
+        for (var i = 0; i < length; i++)
+        {
+            if (keep[i] || double.IsNaN(xs[i]) || double.IsNaN(ys[i]))
+            {
+                outXs[o] = xs[i];
+                outYs[o] = ys[i];
+                o++;
+            }
+        }
+        return (outXs, outYs);
     }
 
     /// <summary>
-    /// Backstop for pathological inputs where grid dedup alone still leaves too many points
-    /// (e.g. noise that keeps toggling between two adjacent cells). Walks each segment in
-    /// stride-sized windows and keeps every window's X/Y extremes (in original order) plus the
-    /// segment's first/last point and the NaN separators — so the drawn envelope, and therefore
-    /// any axis limits derived from the plotted data, never shrinks.
+    /// Ramer-Douglas-Peucker over a single NaN-free segment [lo, hi] (inclusive source indices).
+    /// Marks <paramref name="keep"/> for every point that survives simplification; lo and hi
+    /// (the segment's endpoints) are always kept. Iterative (explicit stack) rather than
+    /// recursive so pathologically long, noisy segments can't blow the call stack.
     /// </summary>
-    private static (double[] Xs, double[] Ys) StridePerSegment(double[] xs, double[] ys, int length)
+    private static void MarkKeptRdp(double[] xs, double[] ys, int lo, int hi,
+        double scaleX, double scaleY, bool[] keep)
     {
-        // Window size such that windowCount * PointsPerWindow stays within the cap.
-        var stride = (int)Math.Ceiling((double)PointsPerWindow * length / MaxKeptPoints);
-        if (stride < 1) stride = 1;
+        keep[lo] = true;
+        keep[hi] = true;
+        if (hi - lo < 2)
+            return; // No interior points to evaluate.
 
-        // Each input index is picked by at most one window and separators map 1:1,
-        // so `length` is a safe upper bound; the arrays are resized down at the end.
-        var outXs = new double[length];
-        var outYs = new double[length];
-        var count = 0;
-
-        void Keep(int index)
+        var stack = new Stack<(int Lo, int Hi)>();
+        stack.Push((lo, hi));
+        while (stack.Count > 0)
         {
-            if (count > 0 && outXs[count - 1] == xs[index] && outYs[count - 1] == ys[index]) return;
-            outXs[count] = xs[index];
-            outYs[count] = ys[index];
-            count++;
-        }
+            var (a, b) = stack.Pop();
+            if (b - a < 2) continue;
 
-        var segStart = 0;
-        for (var i = 0; i <= length; i++)
-        {
-            var isSeparator = i == length || (double.IsNaN(xs[i]) && double.IsNaN(ys[i]));
-            if (!isSeparator) continue;
+            var ax = xs[a] * scaleX;
+            var ay = ys[a] * scaleY;
+            var bx = xs[b] * scaleX;
+            var by = ys[b] * scaleY;
+            var dx = bx - ax;
+            var dy = by - ay;
+            var segLenSq = dx * dx + dy * dy;
+            var segLen = Math.Sqrt(segLenSq);
 
-            var lastIndex = i - 1;
-            for (var w = segStart; w <= lastIndex; w += stride)
+            var maxDist = -1.0;
+            var maxIndex = -1;
+            for (var i = a + 1; i < b; i++)
             {
-                var wEnd = Math.Min(w + stride - 1, lastIndex);
-                // Window extremes, emitted in original point order (indices sorted below).
-                int minXi = w, maxXi = w, minYi = w, maxYi = w;
-                for (var j = w + 1; j <= wEnd; j++)
+                var px = xs[i] * scaleX - ax;
+                var py = ys[i] * scaleY - ay;
+                double dist;
+                if (segLen > 0)
                 {
-                    if (xs[j] < xs[minXi]) minXi = j;
-                    if (xs[j] > xs[maxXi]) maxXi = j;
-                    if (ys[j] < ys[minYi]) minYi = j;
-                    if (ys[j] > ys[maxYi]) maxYi = j;
+                    // Perpendicular distance from point to the chord a-b.
+                    var cross = dx * py - dy * px;
+                    dist = Math.Abs(cross) / segLen;
                 }
-                Span<int> picks = [w, minXi, maxXi, minYi, maxYi, wEnd];
-                picks.Sort();
-                foreach (var p in picks) Keep(p);
+                else
+                {
+                    // Degenerate chord (a and b coincide in virtual-pixel space) — distance is
+                    // just the Euclidean distance to that shared point.
+                    dist = Math.Sqrt(px * px + py * py);
+                }
+
+                if (dist > maxDist)
+                {
+                    maxDist = dist;
+                    maxIndex = i;
+                }
             }
 
-            if (i < length)
+            if (maxDist > Epsilon)
             {
-                outXs[count] = double.NaN;
-                outYs[count] = double.NaN;
-                count++;
+                keep[maxIndex] = true;
+                stack.Push((a, maxIndex));
+                stack.Push((maxIndex, b));
             }
-            segStart = i + 1;
         }
-
-        Array.Resize(ref outXs, count);
-        Array.Resize(ref outYs, count);
-        return (outXs, outYs);
     }
 }

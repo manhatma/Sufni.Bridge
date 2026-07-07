@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 202;
+    private const int CurrentPlotVersion = 203;
 
     // Approximate rendered height of the VelocityBandView control (margin + title text +
     // 44 px band grid). Used to size the low-speed velocity histograms so the
@@ -153,7 +153,12 @@ public partial class SessionViewModel : ItemViewModelBase
         }
 
         var hasVdc = cache.VelocityDistributionComparison is not null;
-        var hasPvc = cache.PositionVelocityComparison is not null;
+
+        // Combined sessions never get the phase-portrait plots cached (CreateCache skips them
+        // and leaves the columns null by design) — treat that as "complete" rather than stale,
+        // or the cache would never be considered valid and CreateCache would rerun on every open.
+        var isCombined = (await databaseService.GetCombinedSourcesAsync(Id)).Count > 0;
+        var hasPvc = isCombined || cache.PositionVelocityComparison is not null;
 
         // 1. Summary: pure JSON, no SVG parsing — populate immediately
         if (cache.SummaryJson is not null)
@@ -387,6 +392,11 @@ public partial class SessionViewModel : ItemViewModelBase
         var swCache = Stopwatch.StartNew();
         var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
         Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
+
+        // Combined sessions have no telemetry of their own (they're a view over their source
+        // sessions' data) — the three phase-portrait plots below are skipped for them entirely
+        // (cache columns stay null, MiscPageView hides the images via IsVisible bindings).
+        var isCombined = (await databaseService.GetCombinedSourcesAsync(Id)).Count > 0;
 
         var b = (Rect)bounds!;
         var (width, height) = ((int)b.Width, (int)(b.Height / 2.0));
@@ -789,37 +799,51 @@ public partial class SessionViewModel : ItemViewModelBase
             Dispatcher.UIThread.Post(() => { DamperPage.VelocityDistributionComparison = SourceToImage(velDistCompSrc); });
         }));
 
-        tasks.Add(ThrottledPlotTask("posVelComp", () =>
+        // Combined sessions skip all three phase-portrait plots: cache columns stay null and
+        // MiscPageView hides the corresponding images via its IsVisible bindings.
+        if (isCombined)
         {
-            var pvc = new PositionVelocityComparisonPlot(new Plot());
-            pvc.LoadTelemetryData(telemetryData);
-            sessionCache.PositionVelocityComparison = pvc.Plot.GetSvgXml(width, height);
-            var posVelCompSrc = SvgToSource(sessionCache.PositionVelocityComparison);
-            Dispatcher.UIThread.Post(() => { MiscPage.PositionVelocityComparison = SourceToImage(posVelCompSrc); });
-        }));
-
-        if (telemetryData.Front.Present)
-        {
-            tasks.Add(ThrottledPlotTask("frontPosVel", () =>
+            Dispatcher.UIThread.Post(() =>
             {
-                var fpv = new PositionVelocityPlot(new Plot(), SuspensionType.Front);
-                fpv.LoadTelemetryData(telemetryData);
-                sessionCache.FrontPositionVelocity = fpv.Plot.GetSvgXml(width, height);
-                var frontPosVelSrc = SvgToSource(sessionCache.FrontPositionVelocity);
-                Dispatcher.UIThread.Post(() => { MiscPage.FrontPositionVelocity = SourceToImage(frontPosVelSrc); });
-            }));
+                MiscPage.PositionVelocityComparison = null;
+                MiscPage.FrontPositionVelocity = null;
+                MiscPage.RearPositionVelocity = null;
+            });
         }
-
-        if (telemetryData.Rear.Present)
+        else
         {
-            tasks.Add(ThrottledPlotTask("rearPosVel", () =>
+            tasks.Add(ThrottledPlotTask("posVelComp", () =>
             {
-                var rpv = new PositionVelocityPlot(new Plot(), SuspensionType.Rear);
-                rpv.LoadTelemetryData(telemetryData);
-                sessionCache.RearPositionVelocity = rpv.Plot.GetSvgXml(width, height);
-                var rearPosVelSrc = SvgToSource(sessionCache.RearPositionVelocity);
-                Dispatcher.UIThread.Post(() => { MiscPage.RearPositionVelocity = SourceToImage(rearPosVelSrc); });
+                var pvc = new PositionVelocityComparisonPlot(new Plot());
+                pvc.LoadTelemetryData(telemetryData);
+                sessionCache.PositionVelocityComparison = pvc.Plot.GetSvgXml(width, height);
+                var posVelCompSrc = SvgToSource(sessionCache.PositionVelocityComparison);
+                Dispatcher.UIThread.Post(() => { MiscPage.PositionVelocityComparison = SourceToImage(posVelCompSrc); });
             }));
+
+            if (telemetryData.Front.Present)
+            {
+                tasks.Add(ThrottledPlotTask("frontPosVel", () =>
+                {
+                    var fpv = new PositionVelocityPlot(new Plot(), SuspensionType.Front);
+                    fpv.LoadTelemetryData(telemetryData);
+                    sessionCache.FrontPositionVelocity = fpv.Plot.GetSvgXml(width, height);
+                    var frontPosVelSrc = SvgToSource(sessionCache.FrontPositionVelocity);
+                    Dispatcher.UIThread.Post(() => { MiscPage.FrontPositionVelocity = SourceToImage(frontPosVelSrc); });
+                }));
+            }
+
+            if (telemetryData.Rear.Present)
+            {
+                tasks.Add(ThrottledPlotTask("rearPosVel", () =>
+                {
+                    var rpv = new PositionVelocityPlot(new Plot(), SuspensionType.Rear);
+                    rpv.LoadTelemetryData(telemetryData);
+                    sessionCache.RearPositionVelocity = rpv.Plot.GetSvgXml(width, height);
+                    var rearPosVelSrc = SvgToSource(sessionCache.RearPositionVelocity);
+                    Dispatcher.UIThread.Post(() => { MiscPage.RearPositionVelocity = SourceToImage(rearPosVelSrc); });
+                }));
+            }
         }
 
         // Summary runs concurrently with all plots (reuses shared VelocityBands tasks)
@@ -1874,6 +1898,37 @@ public partial class SessionViewModel : ItemViewModelBase
                 return;
             }
 
+            // Combined sessions don't cache the phase-portrait plots (CreateCache skips them,
+            // see the isCombined gate there) — but the PDF must still include the fork/damper
+            // position-vs-velocity pages, so render them fresh from telemetry on demand here.
+            var frontPosVelSvg = cache.FrontPositionVelocity;
+            var rearPosVelSvg = cache.RearPositionVelocity;
+            if (frontPosVelSvg is null || rearPosVelSvg is null)
+            {
+                var pdfTelemetryData = await databaseService.GetSessionPsstAsync(Id);
+                if (pdfTelemetryData is not null)
+                {
+                    if (session.CropStartSample.HasValue && session.CropEndSample.HasValue)
+                        pdfTelemetryData = pdfTelemetryData.CreateCroppedCopy(
+                            session.CropStartSample.Value, session.CropEndSample.Value);
+
+                    var (pvWidth, pvHeight) = ((int)LastKnownBounds.Width, (int)(LastKnownBounds.Height / 2.0));
+
+                    if (frontPosVelSvg is null && pdfTelemetryData.Front.Present)
+                    {
+                        var fpv = new PositionVelocityPlot(new Plot(), SuspensionType.Front);
+                        fpv.LoadTelemetryData(pdfTelemetryData);
+                        frontPosVelSvg = fpv.Plot.GetSvgXml(pvWidth, pvHeight);
+                    }
+                    if (rearPosVelSvg is null && pdfTelemetryData.Rear.Present)
+                    {
+                        var rpv = new PositionVelocityPlot(new Plot(), SuspensionType.Rear);
+                        rpv.LoadTelemetryData(pdfTelemetryData);
+                        rearPosVelSvg = rpv.Plot.GetSvgXml(pvWidth, pvHeight);
+                    }
+                }
+            }
+
             // Collect all SVG entries in tab display order. Entries for the low-speed
             // velocity histograms also carry the zone-percentage band data so RenderSvgsToPdf
             // can render the VelocityBandView equivalent below the plot on the same page.
@@ -1905,8 +1960,8 @@ public partial class SessionViewModel : ItemViewModelBase
             svgEntries.Add(PdfSvgEntry.For(cache.PitchBalance));
             svgEntries.Add(PdfSvgEntry.For(cache.PitchCoherence));
             svgEntries.Add(PdfSvgEntry.For(cache.GoutScatter));
-            svgEntries.Add(PdfSvgEntry.For(cache.FrontPositionVelocity));
-            svgEntries.Add(PdfSvgEntry.For(cache.RearPositionVelocity));
+            svgEntries.Add(PdfSvgEntry.For(frontPosVelSvg));
+            svgEntries.Add(PdfSvgEntry.For(rearPosVelSvg));
 
             // Misc tab (time-series: travel -> velocity -> acceleration, front/rear)
             svgEntries.Add(PdfSvgEntry.For(cache.FrontTravelTimeCropped));
