@@ -21,6 +21,16 @@
         <vm:SessionViewModel />
     </Design.DataContext>
 
+    <UserControl.Styles>
+        <!--  The default FlyoutPresenter theme has a minimum width and generous padding,
+              which makes an icon-only flyout render as a wide, off-center box.  -->
+        <Style Selector="FlyoutPresenter.compact">
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="Padding" Value="5" />
+        </Style>
+    </UserControl.Styles>
+
     <Grid Margin="10,0,10,0" RowDefinitions="auto auto * auto auto">
 
         <!--  Name  -->
@@ -175,6 +185,7 @@
                     Source="{SvgImage /Assets/fa-crop.svg}" />
             </Button>
             <Button
+                Name="PdfExportButton"
                 Grid.Row="0"
                 Grid.Column="3"
                 Width="39"
@@ -182,9 +193,45 @@
                 Margin="0,0,5,0"
                 HorizontalContentAlignment="Center"
                 VerticalContentAlignment="Center"
-                Command="{Binding ExportPdfCommand}"
                 IsVisible="{Binding ShowPdfExportButton}"
                 Svg.Css=".default { fill: #a0a0a0; }">
+                <Button.Flyout>
+                    <Flyout FlyoutPresenterClasses="compact" Placement="Top">
+                        <StackPanel HorizontalAlignment="Center" Orientation="Vertical">
+                            <Button
+                                Name="FullReportButton"
+                                Width="39"
+                                Height="39"
+                                HorizontalContentAlignment="Center"
+                                VerticalContentAlignment="Center"
+                                Click="ExportPdfButton_Click"
+                                Command="{Binding ExportPdfCommand}"
+                                Svg.Css=".default { fill: #a0a0a0; }"
+                                ToolTip.Tip="Full report">
+                                <Image
+                                    Width="16"
+                                    Height="16"
+                                    Source="{SvgImage /Assets/fa-file-lines.svg}" />
+                            </Button>
+                            <Button
+                                Name="EssentialReportButton"
+                                Width="39"
+                                Height="39"
+                                Margin="0,5,0,0"
+                                HorizontalContentAlignment="Center"
+                                VerticalContentAlignment="Center"
+                                Click="ExportPdfButton_Click"
+                                Command="{Binding ExportPdfEssentialCommand}"
+                                Svg.Css=".default { fill: #a0a0a0; }"
+                                ToolTip.Tip="Essential report">
+                                <Image
+                                    Width="16"
+                                    Height="16"
+                                    Source="{SvgImage /Assets/fa-file-lines-reduced.svg}" />
+                            </Button>
+                        </StackPanel>
+                    </Flyout>
+                </Button.Flyout>
                 <Image
                     Width="16"
                     Height="16"

@@ -79,6 +79,15 @@ public partial class SessionView : UserControl
         DeleteButton?.Flyout?.Hide();
     }
 
+    private void ExportPdfButton_Click(object? sender, RoutedEventArgs e)
+    {
+        // Close the variant flyout after the picked report's command has run. Button raises
+        // Click before invoking Command, and hiding the flyout synchronously here detaches the
+        // popup content and deactivates its bindings — Command would read as null and the
+        // export would never start. Posting the Hide defers it past the command invocation.
+        Avalonia.Threading.Dispatcher.UIThread.Post(() => PdfExportButton?.Flyout?.Hide());
+    }
+
     private void TabScrollViewer_OnSizeChanged(object? sender, SizeChangedEventArgs e)
     {
         sizeChanging = true;

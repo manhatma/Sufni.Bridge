@@ -1882,7 +1882,19 @@ public partial class SessionViewModel : ItemViewModelBase
 
     protected override bool CanExportPdf() => IsComplete;
 
-    protected override async Task ExportPdf()
+    protected override Task ExportPdf() => ExportPdfCore(essential: false);
+
+    // Distinct name (rather than nameof(CanExportPdf) again) sidesteps MVVMTK0010: the source
+    // generator treats the inherited virtual and this type's override of CanExportPdf as two
+    // separate matches for a nameof() lookup within this class.
+    private bool CanExportPdfEssential() => CanExportPdf();
+
+    // Reduced customer-facing report: Spring/Damper/Balance highlights only, no FFTs,
+    // pitch/G-out diagnostics, phase-portrait plots, or Misc time-series pages.
+    [RelayCommand(CanExecute = nameof(CanExportPdfEssential))]
+    private Task ExportPdfEssential() => ExportPdfCore(essential: true);
+
+    private async Task ExportPdfCore(bool essential)
     {
         App.Current?.Services?.GetService<IHapticFeedback>()?.Click();
         IsGeneratingPdf = true;
@@ -1899,79 +1911,91 @@ public partial class SessionViewModel : ItemViewModelBase
             }
 
             // Combined sessions don't cache the phase-portrait plots (CreateCache skips them,
-            // see the isCombined gate there) — but the PDF must still include the fork/damper
-            // position-vs-velocity pages, so render them fresh from telemetry on demand here.
-            var frontPosVelSvg = cache.FrontPositionVelocity;
-            var rearPosVelSvg = cache.RearPositionVelocity;
-            if (frontPosVelSvg is null || rearPosVelSvg is null)
+            // see the isCombined gate there) — but the full report must still include the
+            // fork/damper position-vs-velocity pages, so render them fresh from telemetry on
+            // demand here. The essential report never includes these pages, so skip this
+            // (potentially expensive) regeneration entirely for that variant.
+            string? frontPosVelSvg = null;
+            string? rearPosVelSvg = null;
+            if (!essential)
             {
-                var pdfTelemetryData = await databaseService.GetSessionPsstAsync(Id);
-                if (pdfTelemetryData is not null)
+                frontPosVelSvg = cache.FrontPositionVelocity;
+                rearPosVelSvg = cache.RearPositionVelocity;
+                if (frontPosVelSvg is null || rearPosVelSvg is null)
                 {
-                    if (session.CropStartSample.HasValue && session.CropEndSample.HasValue)
-                        pdfTelemetryData = pdfTelemetryData.CreateCroppedCopy(
-                            session.CropStartSample.Value, session.CropEndSample.Value);
-
-                    var (pvWidth, pvHeight) = ((int)LastKnownBounds.Width, (int)(LastKnownBounds.Height / 2.0));
-
-                    if (frontPosVelSvg is null && pdfTelemetryData.Front.Present)
+                    var pdfTelemetryData = await databaseService.GetSessionPsstAsync(Id);
+                    if (pdfTelemetryData is not null)
                     {
-                        var fpv = new PositionVelocityPlot(new Plot(), SuspensionType.Front);
-                        fpv.LoadTelemetryData(pdfTelemetryData);
-                        frontPosVelSvg = fpv.Plot.GetSvgXml(pvWidth, pvHeight);
-                    }
-                    if (rearPosVelSvg is null && pdfTelemetryData.Rear.Present)
-                    {
-                        var rpv = new PositionVelocityPlot(new Plot(), SuspensionType.Rear);
-                        rpv.LoadTelemetryData(pdfTelemetryData);
-                        rearPosVelSvg = rpv.Plot.GetSvgXml(pvWidth, pvHeight);
+                        if (session.CropStartSample.HasValue && session.CropEndSample.HasValue)
+                            pdfTelemetryData = pdfTelemetryData.CreateCroppedCopy(
+                                session.CropStartSample.Value, session.CropEndSample.Value);
+
+                        var (pvWidth, pvHeight) = ((int)LastKnownBounds.Width, (int)(LastKnownBounds.Height / 2.0));
+
+                        if (frontPosVelSvg is null && pdfTelemetryData.Front.Present)
+                        {
+                            var fpv = new PositionVelocityPlot(new Plot(), SuspensionType.Front);
+                            fpv.LoadTelemetryData(pdfTelemetryData);
+                            frontPosVelSvg = fpv.Plot.GetSvgXml(pvWidth, pvHeight);
+                        }
+                        if (rearPosVelSvg is null && pdfTelemetryData.Rear.Present)
+                        {
+                            var rpv = new PositionVelocityPlot(new Plot(), SuspensionType.Rear);
+                            rpv.LoadTelemetryData(pdfTelemetryData);
+                            rearPosVelSvg = rpv.Plot.GetSvgXml(pvWidth, pvHeight);
+                        }
                     }
                 }
             }
 
-            // Collect all SVG entries in tab display order. Entries for the low-speed
-            // velocity histograms also carry the zone-percentage band data so RenderSvgsToPdf
-            // can render the VelocityBandView equivalent below the plot on the same page.
-            var svgEntries = new List<PdfSvgEntry?>();
+            // Collect all SVG entries in tab display order, each tagged with whether it's part
+            // of the reduced "essential" (customer) report. Entries for the low-speed velocity
+            // histograms also carry the zone-percentage band data so RenderSvgsToPdf can render
+            // the VelocityBandView equivalent below the plot on the same page.
+            var svgEntries = new List<(PdfSvgEntry? Entry, bool Essential)>
+            {
+                // Spring tab
+                (PdfSvgEntry.For(cache.TravelComparisonHistogram), true),
+                (PdfSvgEntry.For(cache.FrontRearTravelScatter), true),
+                (PdfSvgEntry.For(cache.FrontTravelHistogram), true),
+                (PdfSvgEntry.For(cache.RearTravelHistogram), true),
 
-            // Spring tab
-            svgEntries.Add(PdfSvgEntry.For(cache.TravelComparisonHistogram));
-            svgEntries.Add(PdfSvgEntry.For(cache.FrontRearTravelScatter));
-            svgEntries.Add(PdfSvgEntry.For(cache.FrontTravelHistogram));
-            svgEntries.Add(PdfSvgEntry.For(cache.RearTravelHistogram));
+                // Damper tab
+                (PdfSvgEntry.For(cache.VelocityDistributionComparison), true),
+                (PdfSvgEntry.For(cache.FrontVelocityHistogram), true),
+                (PdfSvgEntry.For(cache.FrontLowSpeedVelocityHistogram, "Front Zone %",
+                    cache.FrontHsrPercentage, cache.FrontLsrPercentage, cache.FrontLscPercentage, cache.FrontHscPercentage), true),
+                (PdfSvgEntry.For(cache.RearVelocityHistogram), true),
+                (PdfSvgEntry.For(cache.RearLowSpeedVelocityHistogram, "Rear Zone %",
+                    cache.RearHsrPercentage, cache.RearLsrPercentage, cache.RearLscPercentage, cache.RearHscPercentage), true),
+                (PdfSvgEntry.For(cache.RearDamperVelocityHistogram), false),
 
-            // Damper tab
-            svgEntries.Add(PdfSvgEntry.For(cache.VelocityDistributionComparison));
-            svgEntries.Add(PdfSvgEntry.For(cache.FrontVelocityHistogram));
-            svgEntries.Add(PdfSvgEntry.For(cache.FrontLowSpeedVelocityHistogram, "Front Zone %",
-                cache.FrontHsrPercentage, cache.FrontLsrPercentage, cache.FrontLscPercentage, cache.FrontHscPercentage));
-            svgEntries.Add(PdfSvgEntry.For(cache.RearVelocityHistogram));
-            svgEntries.Add(PdfSvgEntry.For(cache.RearDamperVelocityHistogram));
-            svgEntries.Add(PdfSvgEntry.For(cache.RearLowSpeedVelocityHistogram, "Rear Zone %",
-                cache.RearHsrPercentage, cache.RearLsrPercentage, cache.RearLscPercentage, cache.RearHscPercentage));
+                // Balance tab
+                (PdfSvgEntry.For(cache.CombinedTravelFft), false),
+                (PdfSvgEntry.For(cache.CombinedTravelFftHigh), false),
+                (PdfSvgEntry.For(cache.CombinedVelocityFft), false),
+                (PdfSvgEntry.For(cache.CombinedBalance), true),
+                (PdfSvgEntry.For(cache.CompressionBalance), true),
+                (PdfSvgEntry.For(cache.ReboundBalance), true),
+                (PdfSvgEntry.For(cache.PitchBalance), false),
+                (PdfSvgEntry.For(cache.PitchCoherence), false),
+                (PdfSvgEntry.For(cache.GoutScatter), false),
+                (PdfSvgEntry.For(frontPosVelSvg), false),
+                (PdfSvgEntry.For(rearPosVelSvg), false),
 
-            // Balance tab
-            svgEntries.Add(PdfSvgEntry.For(cache.CombinedTravelFft));
-            svgEntries.Add(PdfSvgEntry.For(cache.CombinedTravelFftHigh));
-            svgEntries.Add(PdfSvgEntry.For(cache.CombinedVelocityFft));
-            svgEntries.Add(PdfSvgEntry.For(cache.CombinedBalance));
-            svgEntries.Add(PdfSvgEntry.For(cache.CompressionBalance));
-            svgEntries.Add(PdfSvgEntry.For(cache.ReboundBalance));
-            svgEntries.Add(PdfSvgEntry.For(cache.PitchBalance));
-            svgEntries.Add(PdfSvgEntry.For(cache.PitchCoherence));
-            svgEntries.Add(PdfSvgEntry.For(cache.GoutScatter));
-            svgEntries.Add(PdfSvgEntry.For(frontPosVelSvg));
-            svgEntries.Add(PdfSvgEntry.For(rearPosVelSvg));
+                // Misc tab (time-series: travel -> velocity -> acceleration, front/rear)
+                (PdfSvgEntry.For(cache.FrontTravelTimeCropped), false),
+                (PdfSvgEntry.For(cache.RearTravelTimeCropped), false),
+                (PdfSvgEntry.For(cache.FrontVelocityTimeCropped), false),
+                (PdfSvgEntry.For(cache.RearVelocityTimeCropped), false),
+                (PdfSvgEntry.For(cache.FrontAccelerationTimeCropped), false),
+                (PdfSvgEntry.For(cache.RearAccelerationTimeCropped), false),
+            };
 
-            // Misc tab (time-series: travel -> velocity -> acceleration, front/rear)
-            svgEntries.Add(PdfSvgEntry.For(cache.FrontTravelTimeCropped));
-            svgEntries.Add(PdfSvgEntry.For(cache.RearTravelTimeCropped));
-            svgEntries.Add(PdfSvgEntry.For(cache.FrontVelocityTimeCropped));
-            svgEntries.Add(PdfSvgEntry.For(cache.RearVelocityTimeCropped));
-            svgEntries.Add(PdfSvgEntry.For(cache.FrontAccelerationTimeCropped));
-            svgEntries.Add(PdfSvgEntry.For(cache.RearAccelerationTimeCropped));
-
-            var validSvgs = svgEntries.Where(s => s is not null).Cast<PdfSvgEntry>().ToList();
+            var validSvgs = svgEntries
+                .Where(s => s.Entry is not null && (!essential || s.Essential))
+                .Select(s => s.Entry!)
+                .ToList();
             if (validSvgs.Count == 0)
             {
                 ErrorMessages.Add("No plots to export.");
