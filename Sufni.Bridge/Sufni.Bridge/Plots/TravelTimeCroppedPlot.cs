@@ -43,5 +43,12 @@ public class TravelTimeCroppedPlot(Plot plot, SuspensionType type, bool isCroppe
         var top    = 0.0;
         Plot.Axes.SetLimitsY(bottom: bottom, top: top);
         Plot.Axes.SetLimitsX(left: 0, right: maxDuration);
+
+        // Airtimes are session-global (front and rear share the same jumps), so both the front
+        // and rear plot draw the same overlay.
+        if (actualMax > 0)
+        {
+            AddAirtimeOverlays(telemetryData.Airtimes, yTop: top, yBottom: bottom, maxDuration: maxDuration);
+        }
     }
 }

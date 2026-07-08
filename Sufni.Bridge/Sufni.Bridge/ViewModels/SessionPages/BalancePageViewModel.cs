@@ -470,6 +470,7 @@ public partial class BalancePageViewModel() : PageViewModelBase("Balance")
     [ObservableProperty] private SvgImage? pitchBalance;
     [ObservableProperty] private SvgImage? pitchCoherence;
     [ObservableProperty] private SvgImage? goutScatter;
+    [ObservableProperty] private SvgImage? cumulativeTravel;
 
     public BalanceMetricsViewModel Metrics { get; } = new();
 }

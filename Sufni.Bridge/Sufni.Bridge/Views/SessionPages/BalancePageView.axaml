@@ -397,6 +397,7 @@
             <Image IsVisible="{Binding PitchBalance, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding PitchBalance}" />
             <Image IsVisible="{Binding PitchCoherence, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding PitchCoherence}" />
             <Image IsVisible="{Binding GoutScatter, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding GoutScatter}" />
+            <Image IsVisible="{Binding CumulativeTravel, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CumulativeTravel}" />
             <Image IsVisible="{Binding CombinedVelocityFft, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CombinedVelocityFft}" />
             <Image IsVisible="{Binding CombinedTravelFft, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CombinedTravelFft}" />
             <Image IsVisible="{Binding CombinedTravelFftHigh, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CombinedTravelFftHigh}" />

@@ -48,6 +48,7 @@ public class SessionCache
     [Column("pitch_balance")] public string? PitchBalance { get; set; }
     [Column("pitch_coherence")] public string? PitchCoherence { get; set; }
     [Column("gout_scatter")] public string? GoutScatter { get; set; }
+    [Column("cumulative_travel")] public string? CumulativeTravel { get; set; }
     [Column("balance_metrics_json")] public string? BalanceMetricsJson { get; set; }
     // Input signature of the PitchBalance SVG (like plot_version/crop_*): the expected pitch
     // band baked into it. Balance-target overrides are edited per discipline, so LoadCache

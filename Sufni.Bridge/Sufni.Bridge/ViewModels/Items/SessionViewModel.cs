@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 203;
+    private const int CurrentPlotVersion = 210;
 
     // Approximate rendered height of the VelocityBandView control (margin + title text +
     // 44 px band grid). Used to size the low-speed velocity histograms so the
@@ -174,6 +174,7 @@ public partial class SessionViewModel : ItemViewModelBase
                         summary.ForkShockRows.Select(r => new SummaryComparisonRow(r[0], r[1], r[2])));
                     SummaryPage.WheelRows = new ObservableCollection<SummaryComparisonRow>(
                         summary.WheelRows.Select(r => new SummaryComparisonRow(r[0], r[1], r[2])));
+                    SummaryPage.Airtime = summary.Airtime;
                 }
             }
             catch
@@ -226,6 +227,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 var pitchBalanceTask    = Task.Run(() => SvgToSource(cache.PitchBalance));
                 var pitchCoherenceTask  = Task.Run(() => SvgToSource(cache.PitchCoherence));
                 var goutScatterTask     = Task.Run(() => SvgToSource(cache.GoutScatter));
+                var cumulativeTravelTask = Task.Run(() => SvgToSource(cache.CumulativeTravel));
 
                 await Task.WhenAll(frontVelHistTask, frontLsVelHistTask, rearVelHistTask, rearDamperVelHistTask, rearLsVelHistTask,
                     combBalTask, compBalTask, rebBalTask,
@@ -233,7 +235,7 @@ public partial class SessionViewModel : ItemViewModelBase
                     frontTravelCropTask, rearTravelCropTask, frontVelCropTask, rearVelCropTask,
                     frontAccelCropTask, rearAccelCropTask,
                     combinedFftTask, combinedFftHighTask,
-                    pitchBalanceTask, pitchCoherenceTask, goutScatterTask);
+                    pitchBalanceTask, pitchCoherenceTask, goutScatterTask, cumulativeTravelTask);
 
                 var frontVelHistSrc   = frontVelHistTask.Result;
                 var frontLsVelHistSrc = frontLsVelHistTask.Result;
@@ -282,6 +284,7 @@ public partial class SessionViewModel : ItemViewModelBase
                         BalancePage.PitchBalance          = SourceToImage(pitchBalanceTask.Result);
                         BalancePage.PitchCoherence        = SourceToImage(pitchCoherenceTask.Result);
                         BalancePage.GoutScatter           = SourceToImage(goutScatterTask.Result);
+                        BalancePage.CumulativeTravel      = SourceToImage(cumulativeTravelTask.Result);
                         if (cache.BalanceMetricsJson is not null)
                         {
                             try
@@ -614,6 +617,15 @@ public partial class SessionViewModel : ItemViewModelBase
                 var reboundBalanceSrc = SvgToSource(sessionCache.ReboundBalance);
                 Dispatcher.UIThread.Post(() => { BalancePage.ReboundBalance = SourceToImage(reboundBalanceSrc); });
             }));
+
+            tasks.Add(ThrottledPlotTask("cumulativeTravel", () =>
+            {
+                var ct = new CumulativeTravelPlot(new Plot());
+                ct.LoadTelemetryData(telemetryData);
+                sessionCache.CumulativeTravel = ct.Plot.GetSvgXml(width, height);
+                var cumulativeTravelSrc = SvgToSource(sessionCache.CumulativeTravel);
+                Dispatcher.UIThread.Post(() => { BalancePage.CumulativeTravel = SourceToImage(cumulativeTravelSrc); });
+            }));
         }
         else
         {
@@ -874,7 +886,8 @@ public partial class SessionViewModel : ItemViewModelBase
     private sealed record CachedSummaryData(
         string[][] RunDataRows,
         string[][] ForkShockRows,
-        string[][] WheelRows);
+        string[][] WheelRows,
+        string Airtime = "-");
 
     private static string FormatTravel(double value, double maxTravel)
     {
@@ -898,6 +911,29 @@ public partial class SessionViewModel : ItemViewModelBase
     }
 
     private static string FormatBottomouts(int value) => $"{value} times";
+
+    private static string FormatCumulativeTravel(TelemetryData telemetryData, SuspensionType type)
+    {
+        var cum = telemetryData.CalculateCumulativeTravel(type);
+        if (cum.Length == 0)
+        {
+            return "-";
+        }
+
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{cum[^1] / 1000.0:F1}");
+    }
+
+    private static string FormatAirtime(Airtime[]? airtimes)
+    {
+        if (airtimes is null)
+        {
+            return "-";
+        }
+
+        var total = airtimes.Sum(a => a.End - a.Start);
+        return string.Create(System.Globalization.CultureInfo.InvariantCulture,
+            $"{total:0.0} s ({airtimes.Length}×)");
+    }
 
     private static double EvaluatePolynomial(IReadOnlyList<double> coefficients, double x)
     {
@@ -1326,20 +1362,27 @@ public partial class SessionViewModel : ItemViewModelBase
                 rearBands is null ? "-" : FormatPercent(rearBands.LowSpeedCompression)),
             new SummaryComparisonRow("HSC [%]",
                 frontBands is null ? "-" : FormatPercent(frontBands.HighSpeedCompression),
-                rearBands is null ? "-" : FormatPercent(rearBands.HighSpeedCompression))
+                rearBands is null ? "-" : FormatPercent(rearBands.HighSpeedCompression)),
+            new SummaryComparisonRow("Cum. Travel [m]",
+                telemetryData.Front.Present ? FormatCumulativeTravel(telemetryData, SuspensionType.Front) : "-",
+                telemetryData.Rear.Present ? FormatCumulativeTravel(telemetryData, SuspensionType.Rear) : "-")
         ]);
+
+        var airtime = FormatAirtime(telemetryData.Airtimes);
 
         Dispatcher.UIThread.Post(() =>
         {
             SummaryPage.RunDataRows = runDataRows;
             SummaryPage.ForkShockRows = forkShockRows;
             SummaryPage.WheelRows = wheelRows;
+            SummaryPage.Airtime = airtime;
         });
 
         return new CachedSummaryData(
             runDataRows.Select(r => new[] { r.Label, r.Value }).ToArray(),
             forkShockRows.Select(r => new[] { r.Label, r.LeftValue, r.RightValue }).ToArray(),
-            wheelRows.Select(r => new[] { r.Label, r.LeftValue, r.RightValue }).ToArray());
+            wheelRows.Select(r => new[] { r.Label, r.LeftValue, r.RightValue }).ToArray(),
+            airtime);
     }
 
     #endregion
@@ -1980,6 +2023,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 (PdfSvgEntry.For(cache.PitchBalance), false),
                 (PdfSvgEntry.For(cache.PitchCoherence), false),
                 (PdfSvgEntry.For(cache.GoutScatter), false),
+                (PdfSvgEntry.For(cache.CumulativeTravel), false),
                 (PdfSvgEntry.For(frontPosVelSvg), false),
                 (PdfSvgEntry.For(rearPosVelSvg), false),
 

@@ -81,11 +81,17 @@ public class Strokes
     public Stroke[] Rebounds { get; set; }
     [IgnoreMember] public Stroke[] Idlings { get; private set; }
 
-    public void Categorize(Stroke[] strokes)
+    public void Categorize(Stroke[] strokes, double maxTravel)
     {
         var compressions = new List<Stroke>();
         var rebounds = new List<Stroke>();
         var idlings = new List<Stroke>();
+
+        // Relative to the spring element's own travel, so short- and long-travel setups get
+        // comparable sensitivity; the fixed AirtimeTravelThreshold remains a floor for very
+        // short-travel setups (see its doc comment in Parameters.cs).
+        var airtimeTravelThreshold = Math.Max(
+            Parameters.AirtimeTravelThreshold, Parameters.AirtimeTravelThresholdRatio * maxTravel);
 
         for (var i = 0; i < strokes.Length; i++)
         {
@@ -98,7 +104,7 @@ public class Strokes
                 // further heuristics based on both front and rear
                 // candidates.
                 if (i > 0 && i < strokes.Length - 1 &&
-                    stroke.Stat.MaxTravel <= Parameters.AirtimeTravelThreshold &&
+                    stroke.Stat.MaxTravel <= airtimeTravelThreshold &&
                     stroke.Duration >= Parameters.AirtimeDurationThreshold &&
                     strokes[i + 1].Stat.MaxVelocity >= Parameters.AirtimeVelocityThreshold)
                 {

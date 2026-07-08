@@ -22,6 +22,13 @@ public static class Parameters
     // (mm) maximum travel to consider stroke an airtime
     public const double AirtimeTravelThreshold = 3;
 
+    // fraction of max travel to consider stroke an airtime — scales the fixed-mm threshold
+    // above to the bike's own travel so short- and long-travel setups get comparable
+    // sensitivity, and so a fork/shock that stays slightly compressed from stiction after
+    // a long-held load (and doesn't spring all the way back to 0 mm once airborne) is still
+    // tolerated. The effective threshold is max(AirtimeTravelThreshold, this * maxTravel).
+    public const double AirtimeTravelThresholdRatio = 0.025;
+
     // (mm) minimum length to consider stroke a compression/rebound
     public const double StrokeLengthThreshold = 0.5;
 

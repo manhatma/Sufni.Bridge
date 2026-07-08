@@ -146,7 +146,7 @@ public class TelemetryData
 
     // Increment when velocity processing parameters change (e.g. smoother lambda).
     // Blobs with a lower version are automatically re-processed from Travel arrays on load.
-    public const int CurrentProcessingVersion = 21;
+    public const int CurrentProcessingVersion = 22;
 
     #region Public properties
 
@@ -283,9 +283,15 @@ public class TelemetryData
         }
         else if (Front.Present)
         {
+            // Single-sensor setup: no other side to overlap-match against, so guard against
+            // false positives (e.g. the bike being picked up/carried) with the same mean-travel
+            // plausibility check the dual-sensor path applies, evaluated one-sided.
             foreach (var f in Front.Strokes.Idlings)
             {
                 if (!f.AirCandidate) continue;
+                var fMean = Front.Travel[f.Start..(f.End + 1)].Mean();
+
+                if (!(fMean <= Linkage.MaxFrontTravel * Parameters.AirtimeTravelMeanThresholdRatio)) continue;
                 var at = new Airtime
                 {
                     Start = f.Start / (double)SampleRate,
@@ -299,6 +305,9 @@ public class TelemetryData
             foreach (var r in Rear.Strokes.Idlings)
             {
                 if (!r.AirCandidate) continue;
+                var rMean = Rear.Travel[r.Start..(r.End + 1)].Mean();
+
+                if (!(rMean <= Linkage.MaxRearTravel * Parameters.AirtimeTravelMeanThresholdRatio)) continue;
                 var at = new Airtime
                 {
                     Start = r.Start / (double)SampleRate,
@@ -482,7 +491,7 @@ public class TelemetryData
             Front.FineVelocityBins = vbinsFine;
 
             var strokes = Strokes.FilterStrokes(v, Front.Travel, Linkage.MaxFrontTravel, SampleRate);
-            Front.Strokes.Categorize(strokes);
+            Front.Strokes.Categorize(strokes, Linkage.MaxFrontTravel);
             if (Front.Strokes.Compressions.Length == 0 && Front.Strokes.Rebounds.Length == 0)
             {
                 Front.Present = false;
@@ -539,7 +548,7 @@ public class TelemetryData
             Rear.FineVelocityBins = vbinsFine;
 
             var strokes = Strokes.FilterStrokes(v, Rear.Travel, Linkage.MaxRearTravel, SampleRate);
-            Rear.Strokes.Categorize(strokes);
+            Rear.Strokes.Categorize(strokes, Linkage.MaxRearTravel);
             if (Rear.Strokes.Compressions.Length == 0 && Rear.Strokes.Rebounds.Length == 0)
             {
                 Rear.Present = false;
@@ -609,7 +618,7 @@ public class TelemetryData
 
             Front.Strokes = new Strokes();
             var strokes = Strokes.FilterStrokes(v, Front.Travel, Linkage.MaxFrontTravel, SampleRate);
-            Front.Strokes.Categorize(strokes);
+            Front.Strokes.Categorize(strokes, Linkage.MaxFrontTravel);
             if (Front.Strokes.Compressions.Length == 0 && Front.Strokes.Rebounds.Length == 0)
                 Front.Present = false;
             else
@@ -644,7 +653,7 @@ public class TelemetryData
 
             Rear.Strokes = new Strokes();
             var strokes = Strokes.FilterStrokes(v, Rear.Travel, Linkage.MaxRearTravel, SampleRate);
-            Rear.Strokes.Categorize(strokes);
+            Rear.Strokes.Categorize(strokes, Linkage.MaxRearTravel);
             if (Rear.Strokes.Compressions.Length == 0 && Rear.Strokes.Rebounds.Length == 0)
                 Rear.Present = false;
             else
@@ -764,7 +773,7 @@ public class TelemetryData
             cropped.Front.FineVelocityBins = vbinsFine;
 
             var strokes = Strokes.FilterStrokes(v, cropped.Front.Travel, Linkage.MaxFrontTravel, SampleRate);
-            cropped.Front.Strokes.Categorize(strokes);
+            cropped.Front.Strokes.Categorize(strokes, Linkage.MaxFrontTravel);
             if (cropped.Front.Strokes.Compressions.Length == 0 && cropped.Front.Strokes.Rebounds.Length == 0)
                 cropped.Front.Present = false;
             else
@@ -796,7 +805,7 @@ public class TelemetryData
             cropped.Rear.FineVelocityBins = vbinsFine;
 
             var strokes = Strokes.FilterStrokes(v, cropped.Rear.Travel, Linkage.MaxRearTravel, SampleRate);
-            cropped.Rear.Strokes.Categorize(strokes);
+            cropped.Rear.Strokes.Categorize(strokes, Linkage.MaxRearTravel);
             if (cropped.Rear.Strokes.Compressions.Length == 0 && cropped.Rear.Strokes.Rebounds.Length == 0)
                 cropped.Rear.Present = false;
             else
@@ -862,7 +871,7 @@ public class TelemetryData
 
             var strokes = FilterStrokesSegmented(v, combined.Front.Travel,
                 first.Linkage.MaxFrontTravel, first.SampleRate, frontSegments);
-            combined.Front.Strokes.Categorize(strokes);
+            combined.Front.Strokes.Categorize(strokes, first.Linkage.MaxFrontTravel);
             if (combined.Front.Strokes.Compressions.Length == 0 && combined.Front.Strokes.Rebounds.Length == 0)
                 combined.Front.Present = false;
             else
@@ -898,7 +907,7 @@ public class TelemetryData
 
             var strokes = FilterStrokesSegmented(v, combined.Rear.Travel,
                 first.Linkage.MaxRearTravel, first.SampleRate, rearSegments);
-            combined.Rear.Strokes.Categorize(strokes);
+            combined.Rear.Strokes.Categorize(strokes, first.Linkage.MaxRearTravel);
             if (combined.Rear.Strokes.Compressions.Length == 0 && combined.Rear.Strokes.Rebounds.Length == 0)
                 combined.Rear.Present = false;
             else
@@ -1277,6 +1286,40 @@ public class TelemetryData
         var bo = suspension.Strokes.Compressions.Sum(s => s.Stat.Bottomouts);
 
         return new TravelStatistics(mx, sum / count, bo);
+    }
+
+    /// <summary>
+    /// Cumulative distance travelled by the suspension over the session, in mm, as a running
+    /// sum of |Velocity[i]| * dt. Uses the smoothed Wheel-domain Velocity (not the raw Travel
+    /// array) so ADC noise doesn't accumulate into phantom distance over long sessions.
+    /// Shared by the summary "Cum. Travel" row and CumulativeTravelPlot so both report the
+    /// same number — the plot's final sample equals cum[^1] / 1000.0 in meters.
+    /// </summary>
+    public double[] CalculateCumulativeTravel(SuspensionType type) =>
+        Memo($"cumulativeTravel/{type}", () => CalculateCumulativeTravelCore(type));
+
+    private double[] CalculateCumulativeTravelCore(SuspensionType type)
+    {
+        var suspension = type == SuspensionType.Front ? Front : Rear;
+        if (!suspension.Present || suspension.Velocity is not { Length: > 0 })
+        {
+            return [];
+        }
+
+        var dt = 1.0 / SampleRate;
+        var velocity = suspension.Velocity;
+        var cum = new double[velocity.Length];
+        var sum = 0.0;
+        for (var i = 0; i < velocity.Length; i++)
+        {
+            var v = velocity[i];
+            if (!double.IsNaN(v))
+            {
+                sum += Math.Abs(v) * dt;
+            }
+            cum[i] = sum;
+        }
+        return cum;
     }
 
     public DetailedTravelStatistics CalculateDetailedTravelStatistics(SuspensionType type) =>

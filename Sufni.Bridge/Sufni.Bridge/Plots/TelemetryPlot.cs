@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 using ScottPlot;
 using Sufni.Bridge.Models.Telemetry;
 
@@ -9,7 +10,89 @@ public class TelemetryPlot(Plot plot) : SufniPlot(plot)
     protected Color FrontColor = Color.FromHex("#3288bd");
     protected Color RearColor = Color.FromHex("#66c2a5");
 
+    // Approximate SVG render width (in px) used for the on-screen plots that call
+    // AddAirtimeOverlays — matches SessionViewModel's `width` passed to GetSvgXml (derived from
+    // LastKnownBounds, whose default matches the iPhone 15 Pro logical width). Only used for a
+    // conservative label-collision estimate below, not for actual layout.
+    private const double PlotSvgRenderWidthPx = 393;
+
+    // Matches the Fixed PixelPadding(55, 14, 50, 40) used by the time-history plots; height is
+    // SessionViewModel's `height` (b.Height / 2, default bounds 393x700 → 350 px).
+    private const double PlotPixelPaddingLeft = 55;
+    private const double PlotPixelPaddingRight = 14;
+    private const double PlotSvgRenderHeightPx = 350;
+    private const double PlotPixelPaddingBottom = 50;
+    private const double PlotPixelPaddingTop = 40;
+
     public virtual void LoadTelemetryData(TelemetryData telemetryData) { }
+
+    /// <summary>
+    /// Draws a translucent red rectangle plus a duration label for every airtime interval,
+    /// staggering labels across up to six vertical levels so closely-spaced jumps don't get
+    /// overlapping text. Assumes an inverted Y-axis (yTop=0 at the top, yBottom at the bottom
+    /// edge): level 0 sits 1 em above the bottom edge, further levels stack upward.
+    /// </summary>
+    protected void AddAirtimeOverlays(Airtime[]? airtimes, double yTop, double yBottom, double maxDuration)
+    {
+        if (airtimes is not { Length: > 0 } || maxDuration <= 0) return;
+
+        var plotDataWidthPx = PlotSvgRenderWidthPx - PlotPixelPaddingLeft - PlotPixelPaddingRight;
+
+        // Matches the axis tick label size (SufniPlot) minus 2, bold for contrast on the band.
+        const int fontSize = 10;
+
+        // Label rows in data coordinates, derived from the px geometry: MiddleCenter anchor,
+        // so 1 em gap to the bottom edge plus half a line height; rows step one line + gap up.
+        var plotDataHeightPx = PlotSvgRenderHeightPx - PlotPixelPaddingBottom - PlotPixelPaddingTop;
+        var pxToData = (yBottom - yTop) / plotDataHeightPx;
+        var labelY0 = yBottom - fontSize * 1.5 * pxToData;
+        var labelStep = (fontSize + 6) * pxToData;
+
+        const int levelCount = 6;
+        var levelLastLabelEnd = new double[levelCount];
+        for (var k = 0; k < levelCount; k++) levelLastLabelEnd[k] = double.NegativeInfinity;
+
+        foreach (var airtime in airtimes.OrderBy(a => a.Start))
+        {
+            var rect = Plot.Add.Rectangle(airtime.Start, airtime.End, yTop, yBottom);
+            rect.FillStyle.Color = Color.FromHex("#d53e4f").WithAlpha(0.2);
+            rect.LineStyle.IsVisible = false;
+
+            var text = $"{airtime.End - airtime.Start:F1} s";
+            var center = (airtime.Start + airtime.End) / 2;
+
+            // Conservative estimate of the label's on-screen width, converted back to data
+            // (seconds) coordinates so it can be compared against neighbouring label centers.
+            var labelWidthSeconds = text.Length * fontSize * 0.6 / plotDataWidthPx * maxDuration;
+            var halfWidth = labelWidthSeconds / 2.0;
+
+            var level = -1;
+            for (var k = 0; k < levelCount; k++)
+            {
+                if (levelLastLabelEnd[k] <= center - halfWidth)
+                {
+                    level = k;
+                    break;
+                }
+            }
+            if (level == -1)
+            {
+                // All levels collide — fall back to the one whose last label ends furthest
+                // to the left (least overlap).
+                level = 0;
+                for (var k = 1; k < levelCount; k++)
+                    if (levelLastLabelEnd[k] < levelLastLabelEnd[level]) level = k;
+            }
+
+            levelLastLabelEnd[level] = center + halfWidth;
+
+            var label = Plot.Add.Text(text, center, labelY0 - level * labelStep);
+            label.LabelFontColor = Color.FromHex("#fefefe");
+            label.LabelFontSize = fontSize;
+            label.LabelBold = true;
+            label.LabelAlignment = Alignment.MiddleCenter;
+        }
+    }
 
     /// <summary>
     /// Minimal "travel position" colour key for the stacked velocity histograms: a thin vertical
