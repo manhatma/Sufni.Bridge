@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 210;
+    private const int CurrentPlotVersion = 212;
 
     // Approximate rendered height of the VelocityBandView control (margin + title text +
     // 44 px band grid). Used to size the low-speed velocity histograms so the
@@ -51,6 +51,15 @@ public partial class SessionViewModel : ItemViewModelBase
     private void ShareBalanceMetricsWithSummary() =>
         SummaryPage.EffectiveHeadAngle = BalancePage.Metrics.EffectiveHeadAngle;
     public CropPageViewModel CropPage { get; } = new();
+
+    // Shared session-wide time-zoom state, bound by the TimeZoomControl on the Spring/Damper/Misc
+    // pages; one instance keeps the window in sync across all three. See the time-zoom region below.
+    private readonly TimeZoomViewModel _timeZoom = new();
+    private TelemetryData? _analysisData;
+    private CancellationTokenSource? _zoomRenderCts;
+    private SvgImage? _fullFrontTravel, _fullRearTravel, _fullFrontVelocity, _fullRearVelocity, _fullFrontAccel, _fullRearAccel;
+    private bool _timeZoomSnapshotTaken;
+
     private NotesPageViewModel NotesPage { get; } = new();
     public ObservableCollection<PageViewModelBase> Pages { get; }
     public string Description => NotesPage.Description ?? "";
@@ -96,6 +105,202 @@ public partial class SessionViewModel : ItemViewModelBase
     }
 
     #region Private methods
+
+    // ---- Session-wide time-zoom -------------------------------------------------------------
+    //
+    // The Spring/Damper/Misc pages each host a TimeZoomControl bound to the shared _timeZoom. When
+    // the user picks a 2/5/10 s window and pans it, the six time-series plots (travel, velocity,
+    // acceleration × front/rear) re-render zoomed to that window. Renders are debounced, cancellable
+    // and never written to the DB cache — zoom is a transient view state, so no PlotVersion bump.
+
+    // Analysis data actually plotted in the time-series charts: the cropped copy when the session is
+    // cropped, else the full data. Derived once from CropPage.FullData and memoized (CreateCroppedCopy
+    // re-smooths, so it is not free); _analysisData is nulled whenever the crop changes.
+    private TelemetryData? EnsureAnalysisData()
+    {
+        if (_analysisData is not null) return _analysisData;
+        var full = CropPage.FullData;
+        if (full is null) return null;
+        _analysisData = session.CropStartSample.HasValue && session.CropEndSample.HasValue
+            ? full.CreateCroppedCopy(session.CropStartSample.Value, session.CropEndSample.Value)
+            : full;
+        return _analysisData;
+    }
+
+    // Runs once per data-load: EnsureAnalysisData sets _analysisData on first success, so later Loaded
+    // re-entries skip. Crop apply/reset null _analysisData to force a rebuild.
+    private void InitializeTimeZoomIfNeeded()
+    {
+        if (_analysisData is not null) return;
+        InitializeTimeZoom();
+    }
+
+    // (Re)initialises the shared zoom state for the current analysis data: session duration, context
+    // mini-map, and window reset to full/off. Call on the UI thread.
+    private void InitializeTimeZoom()
+    {
+        _timeZoomSnapshotTaken = false;
+        _fullFrontTravel = _fullRearTravel = _fullFrontVelocity = _fullRearVelocity = _fullFrontAccel = _fullRearAccel = null;
+
+        var data = EnsureAnalysisData();
+        var len = data is null ? 0
+            : data.Front.Present ? data.Front.Travel.Length
+            : data.Rear.Present ? data.Rear.Travel.Length : 0;
+        var rate = data?.SampleRate ?? 0;
+
+        if (data is null || len == 0 || rate <= 0)
+        {
+            _timeZoom.IsEnabled = false;
+            return;
+        }
+
+        var duration = len / (double)rate;
+        _timeZoom.WindowSeconds = 0;
+        _timeZoom.StartSeconds = 0;
+        _timeZoom.TotalDurationSeconds = duration;
+        _timeZoom.IsEnabled = duration > 2.0;   // needs room for at least the smallest (2 s) window
+
+        GenerateMiniMap(data);
+    }
+
+    // Renders the full-session context strip (front+rear travel over time) that the TimeZoomControl
+    // overlays the highlight band on. Uses TravelTimeHistoryPlot so its PixelPadding(55,14,50,40)
+    // matches the control's overlay Margin(55,40,14,50). Background thread → posts to _timeZoom.
+    private void GenerateMiniMap(TelemetryData data)
+    {
+        var b = LastKnownBounds;
+        var width = (int)b.Width;
+        const double CollapsedTabBarHeight = 30.0;
+        var miniHeight = (int)(((b.Height - CollapsedTabBarHeight) * 0.4 + b.Width / 2.0 + CollapsedTabBarHeight) / 2.0);
+        if (width <= 0 || miniHeight <= 0) return;
+
+        Task.Run(() =>
+        {
+            try
+            {
+                // One overview strip per domain (travel / velocity / acceleration), each with prominent
+                // airtime bands for navigation. The TimeZoomControl on each page shows the matching one.
+                var travelSrc = SvgToSource(RenderOverviewXml(new TravelTimeHistoryPlot(new Plot(), showAirtimeBands: true), data, width, miniHeight));
+                var velocitySrc = SvgToSource(RenderOverviewXml(new VelocityTimeHistoryPlot(new Plot(), showAirtimeBands: true), data, width, miniHeight));
+                var accelSrc = SvgToSource(RenderOverviewXml(new AccelerationTimeHistoryPlot(new Plot(), showAirtimeBands: true), data, width, miniHeight));
+                Dispatcher.UIThread.Post(() =>
+                {
+                    _timeZoom.MiniMapTravel = SourceToImage(travelSrc);
+                    _timeZoom.MiniMapVelocity = SourceToImage(velocitySrc);
+                    _timeZoom.MiniMapAcceleration = SourceToImage(accelSrc);
+                });
+            }
+            catch
+            {
+                // Best-effort context strips; the selector/slider still work without them.
+            }
+        });
+    }
+
+    private static string RenderOverviewXml(TelemetryPlot plot, TelemetryData data, int width, int height)
+    {
+        plot.LoadTelemetryData(data);
+        plot.Plot.Axes.Title.Label.Text = "Session overview";
+        return plot.Plot.GetSvgXml(width, height);
+    }
+
+    // Debounced, cancellable reaction to the shared zoom window changing. Off → restore the snapshot;
+    // on → schedule a windowed re-render of the six time-series plots.
+    private void OnZoomWindowChanged(object? sender, EventArgs e)
+    {
+        _zoomRenderCts?.Cancel();
+
+        if (!_timeZoom.IsZoomActive)
+        {
+            RestoreFullTimePlots();
+            return;
+        }
+
+        SnapshotFullTimePlotsIfNeeded();
+
+        var cts = new CancellationTokenSource();
+        _zoomRenderCts = cts;
+        var token = cts.Token;
+        var winStart = _timeZoom.StartSeconds;
+        var winEnd = _timeZoom.WindowEndSeconds;
+
+        Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(280, token);   // settle after the last pan/selection
+                if (token.IsCancellationRequested) return;
+                RenderTimePlotsForWindow(winStart, winEnd, token);
+            }
+            catch (OperationCanceledException) { }
+        }, token);
+    }
+
+    // Captures the current full-range time-plot images once (before the first windowed overwrite) so
+    // RestoreFullTimePlots can put them back instantly on reset. UI thread.
+    private void SnapshotFullTimePlotsIfNeeded()
+    {
+        if (_timeZoomSnapshotTaken) return;
+        _fullFrontTravel   = SpringPage.FrontTravelTimeCropped;
+        _fullRearTravel    = SpringPage.RearTravelTimeCropped;
+        _fullFrontVelocity = DamperPage.FrontVelocityTimeCropped;
+        _fullRearVelocity  = DamperPage.RearVelocityTimeCropped;
+        _fullFrontAccel    = MiscPage.FrontAccelerationTimeCropped;
+        _fullRearAccel     = MiscPage.RearAccelerationTimeCropped;
+        _timeZoomSnapshotTaken = true;
+    }
+
+    private void RestoreFullTimePlots()
+    {
+        if (!_timeZoomSnapshotTaken) return;
+        Dispatcher.UIThread.Post(() =>
+        {
+            SpringPage.FrontTravelTimeCropped     = _fullFrontTravel;
+            SpringPage.RearTravelTimeCropped      = _fullRearTravel;
+            DamperPage.FrontVelocityTimeCropped   = _fullFrontVelocity;
+            DamperPage.RearVelocityTimeCropped    = _fullRearVelocity;
+            MiscPage.FrontAccelerationTimeCropped = _fullFrontAccel;
+            MiscPage.RearAccelerationTimeCropped  = _fullRearAccel;
+            SpringPage.CombinedTravelTimeZoomed     = null;
+            DamperPage.CombinedVelocityTimeZoomed   = null;
+            MiscPage.CombinedAccelerationTimeZoomed = null;
+        });
+    }
+
+    // Renders the six time-series plots zoomed to [winStart, winEnd] from the in-memory analysis data.
+    // Background thread; each plot is posted to its page as it finishes, with the token checked between
+    // plots so a superseding pan abandons stale work. Does not touch the DB cache.
+    private void RenderTimePlotsForWindow(double winStart, double winEnd, CancellationToken token)
+    {
+        var data = _analysisData;
+        if (data is null) return;
+
+        var b = LastKnownBounds;
+        var (width, height) = ((int)b.Width, (int)(b.Height / 2.0));
+        if (width <= 0 || height <= 0) return;
+
+        void Render(Func<string> makeSvg, Action<SvgImage?> assign)
+        {
+            if (token.IsCancellationRequested) return;
+            var src = SvgToSource(makeSvg());
+            if (token.IsCancellationRequested) return;
+            Dispatcher.UIThread.Post(() => { if (!token.IsCancellationRequested) assign(SourceToImage(src)); });
+        }
+
+        // Each domain (travel / velocity / acceleration) is shown as ONE combined front+rear plot
+        // while zoomed; the separate per-side plots are hidden by nulling them (IsNotNull bindings).
+        if (data.Front.Present || data.Rear.Present)
+        {
+            Render(() => { var p = new TravelTimeCombinedPlot(new Plot(), winStart, winEnd); p.LoadTelemetryData(data); return p.Plot.GetSvgXml(width, height); },
+                   img => { SpringPage.CombinedTravelTimeZoomed = img; SpringPage.FrontTravelTimeCropped = null; SpringPage.RearTravelTimeCropped = null; });
+
+            Render(() => { var p = new VelocityTimeCombinedPlot(new Plot(), winStart, winEnd); p.LoadTelemetryData(data); return p.Plot.GetSvgXml(width, height); },
+                   img => { DamperPage.CombinedVelocityTimeZoomed = img; DamperPage.FrontVelocityTimeCropped = null; DamperPage.RearVelocityTimeCropped = null; });
+
+            Render(() => { var p = new AccelerationTimeCombinedPlot(new Plot(), winStart, winEnd); p.LoadTelemetryData(data); return p.Plot.GetSvgXml(width, height); },
+                   img => { MiscPage.CombinedAccelerationTimeZoomed = img; MiscPage.FrontAccelerationTimeCropped = null; MiscPage.RearAccelerationTimeCropped = null; });
+        }
+    }
 
     // Call on background thread — SvgSource : Object, thread-safe
     private static SvgSource? SvgToSource(string? svgXml) =>
@@ -636,7 +841,7 @@ public partial class SessionViewModel : ItemViewModelBase
         {
             tasks.Add(ThrottledPlotTask("frontTravelTimeCropped", () =>
             {
-                var ttc = new TravelTimeCroppedPlot(new Plot(), SuspensionType.Front, session.CropStartSample.HasValue && session.CropEndSample.HasValue);
+                var ttc = new TravelTimeCroppedPlot(new Plot(), SuspensionType.Front);
                 ttc.LoadTelemetryData(telemetryData);
                 sessionCache.FrontTravelTimeCropped = ttc.Plot.GetSvgXml(width, height);
                 var src = SvgToSource(sessionCache.FrontTravelTimeCropped);
@@ -658,7 +863,7 @@ public partial class SessionViewModel : ItemViewModelBase
         {
             tasks.Add(ThrottledPlotTask("rearTravelTimeCropped", () =>
             {
-                var ttc = new TravelTimeCroppedPlot(new Plot(), SuspensionType.Rear, session.CropStartSample.HasValue && session.CropEndSample.HasValue);
+                var ttc = new TravelTimeCroppedPlot(new Plot(), SuspensionType.Rear);
                 ttc.LoadTelemetryData(telemetryData);
                 sessionCache.RearTravelTimeCropped = ttc.Plot.GetSvgXml(width, height);
                 var src = SvgToSource(sessionCache.RearTravelTimeCropped);
@@ -1399,6 +1604,11 @@ public partial class SessionViewModel : ItemViewModelBase
         CropPage.ApplyCropCommand = new AsyncRelayCommand(HandleApplyCrop);
         CropPage.ResetCropCommand = new AsyncRelayCommand(HandleResetCrop);
         BalancePage.Metrics.TargetsSaved = HandleBalanceTargetsSaved;
+
+        SpringPage.TimeZoom = _timeZoom;
+        DamperPage.TimeZoom = _timeZoom;
+        MiscPage.TimeZoom = _timeZoom;
+        _timeZoom.WindowChanged += OnZoomWindowChanged;
     }
 
     public SessionViewModel(Session session, bool fromDatabase)
@@ -1411,6 +1621,11 @@ public partial class SessionViewModel : ItemViewModelBase
         CropPage.ApplyCropCommand = new AsyncRelayCommand(HandleApplyCrop);
         CropPage.ResetCropCommand = new AsyncRelayCommand(HandleResetCrop);
         BalancePage.Metrics.TargetsSaved = HandleBalanceTargetsSaved;
+
+        SpringPage.TimeZoom = _timeZoom;
+        DamperPage.TimeZoom = _timeZoom;
+        MiscPage.TimeZoom = _timeZoom;
+        _timeZoom.WindowChanged += OnZoomWindowChanged;
 
         NotesPage.ForkSettings.PropertyChanged += (_, _) => EvaluateDirtiness();
         NotesPage.ShockSettings.PropertyChanged += (_, _) => EvaluateDirtiness();
@@ -1644,6 +1859,10 @@ public partial class SessionViewModel : ItemViewModelBase
             await CreateCache(LastKnownBounds, cropped, fullData);
             CropPage.OriginalStartSample = start;
             CropPage.OriginalEndSample   = end;
+
+            // New crop → new analysis data: rebuild zoom state + mini-map and reset the window.
+            _analysisData = null;
+            InitializeTimeZoom();
             IsCropVisible = false;
         }
         catch (Exception e)
@@ -1722,6 +1941,10 @@ public partial class SessionViewModel : ItemViewModelBase
             await CreateCache(LastKnownBounds, fullData);
             CropPage.OriginalStartSample = 0;
             CropPage.OriginalEndSample   = CropPage.TotalSamples;
+
+            // Crop cleared → analysis data is the full session again: rebuild zoom state + mini-map.
+            _analysisData = null;
+            InitializeTimeZoom();
             IsCropVisible = false;
         }
         catch (Exception e)
@@ -1916,6 +2139,10 @@ public partial class SessionViewModel : ItemViewModelBase
                     CropPage.ViewBounds  = LastKnownBounds;
                 }
             }
+
+            // Data (CropPage.FullData) is now populated — (re)initialise the shared time-zoom state
+            // and context mini-map. Idempotent: no-ops once initialised for the current data/crop.
+            InitializeTimeZoomIfNeeded();
         }
         catch (Exception e)
         {

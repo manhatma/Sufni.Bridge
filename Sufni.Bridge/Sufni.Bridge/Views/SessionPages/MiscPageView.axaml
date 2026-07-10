@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:controls="clr-namespace:Sufni.Bridge.Views.Controls"
     xmlns:vm="clr-namespace:Sufni.Bridge.ViewModels.SessionPages"
     d:DesignHeight="600"
     d:DesignWidth="500"
@@ -19,8 +20,13 @@
             <Image IsVisible="{Binding PositionVelocityComparison, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding PositionVelocityComparison}" />
             <Image IsVisible="{Binding FrontPositionVelocity, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontPositionVelocity}" />
             <Image IsVisible="{Binding RearPositionVelocity, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearPositionVelocity}" />
+            <!--  Combined front+rear acceleration — shown only while zoomed, replaces the two separate plots below  -->
+            <Image IsVisible="{Binding CombinedAccelerationTimeZoomed, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CombinedAccelerationTimeZoomed}" />
             <Image IsVisible="{Binding FrontAccelerationTimeCropped, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontAccelerationTimeCropped}" />
             <Image IsVisible="{Binding RearAccelerationTimeCropped, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearAccelerationTimeCropped}" />
+
+            <!--  Session-wide time-zoom (shared instance across Spring/Damper/Misc)  -->
+            <controls:TimeZoomControl DataContext="{Binding TimeZoom}" MiniMap="{Binding MiniMapAcceleration}" IsVisible="{Binding IsEnabled, FallbackValue=False}" />
         </StackPanel>
     </ScrollViewer>
 

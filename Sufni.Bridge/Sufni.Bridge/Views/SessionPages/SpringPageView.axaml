@@ -4,6 +4,7 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:controls="clr-namespace:Sufni.Bridge.Views.Controls"
     xmlns:vm="clr-namespace:Sufni.Bridge.ViewModels.SessionPages"
     d:DesignHeight="600"
     d:DesignWidth="500"
@@ -20,8 +21,13 @@
             <Image IsVisible="{Binding TravelComparisonHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding TravelComparisonHistogram}" />
             <Image IsVisible="{Binding FrontTravelHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontTravelHistogram}" />
             <Image IsVisible="{Binding RearTravelHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearTravelHistogram}" />
+            <!--  Combined front+rear travel — shown only while zoomed, replaces the two separate plots below  -->
+            <Image IsVisible="{Binding CombinedTravelTimeZoomed, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CombinedTravelTimeZoomed}" />
             <Image IsVisible="{Binding FrontTravelTimeCropped, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontTravelTimeCropped}" />
             <Image IsVisible="{Binding RearTravelTimeCropped, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearTravelTimeCropped}" />
+
+            <!--  Session-wide time-zoom: interval selector + context mini-map + pan slider (shared across Spring/Damper/Misc)  -->
+            <controls:TimeZoomControl DataContext="{Binding TimeZoom}" MiniMap="{Binding MiniMapTravel}" IsVisible="{Binding IsEnabled, FallbackValue=False}" />
         </StackPanel>
     </ScrollViewer>
 

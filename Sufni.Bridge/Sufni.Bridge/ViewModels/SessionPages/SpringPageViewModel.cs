@@ -11,4 +11,12 @@ public partial class SpringPageViewModel() : PageViewModelBase("Spring")
     [ObservableProperty] private SvgImage? rearTravelHistogram;
     [ObservableProperty] private SvgImage? frontTravelTimeCropped;
     [ObservableProperty] private SvgImage? rearTravelTimeCropped;
+
+    // While zoomed, front+rear travel are drawn together in this single plot; the two separate
+    // travel images above are nulled to hide them (IsNotNull visibility bindings).
+    [ObservableProperty] private SvgImage? combinedTravelTimeZoomed;
+
+    // Shared session-wide time-zoom state (one instance across Spring/Damper/Misc), assigned by
+    // SessionViewModel. Drives the TimeZoomControl placed under the travel-over-time plots.
+    [ObservableProperty] private TimeZoomViewModel? timeZoom;
 }

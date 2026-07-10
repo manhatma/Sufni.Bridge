@@ -5,6 +5,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:plots="clr-namespace:Sufni.Bridge.Views.Plots"
+    xmlns:controls="clr-namespace:Sufni.Bridge.Views.Controls"
     xmlns:vm="clr-namespace:Sufni.Bridge.ViewModels.SessionPages"
     d:DesignHeight="600"
     d:DesignWidth="500"
@@ -53,8 +54,13 @@
             <!--  Rear shaft velocity histogram (damper domain)  -->
             <Image IsVisible="{Binding RearDamperVelocityHistogram, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearDamperVelocityHistogram}" Margin="0,16,0,0" />
 
+            <!--  Combined front+rear velocity — shown only while zoomed, replaces the two separate plots below  -->
+            <Image IsVisible="{Binding CombinedVelocityTimeZoomed, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding CombinedVelocityTimeZoomed}" />
             <Image IsVisible="{Binding FrontVelocityTimeCropped, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontVelocityTimeCropped}" />
             <Image IsVisible="{Binding RearVelocityTimeCropped, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearVelocityTimeCropped}" />
+
+            <!--  Session-wide time-zoom (shared instance across Spring/Damper/Misc)  -->
+            <controls:TimeZoomControl DataContext="{Binding TimeZoom}" MiniMap="{Binding MiniMapVelocity}" IsVisible="{Binding IsEnabled, FallbackValue=False}" />
 
         </StackPanel>
     </ScrollViewer>

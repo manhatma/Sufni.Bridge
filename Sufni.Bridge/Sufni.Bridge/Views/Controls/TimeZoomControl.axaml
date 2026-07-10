@@ -1,0 +1,178 @@
+<UserControl
+    x:Class="Sufni.Bridge.Views.Controls.TimeZoomControl"
+    x:Name="ZoomRoot"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vm="clr-namespace:Sufni.Bridge.ViewModels.SessionPages"
+    d:DesignHeight="220"
+    d:DesignWidth="393"
+    x:DataType="vm:TimeZoomViewModel"
+    mc:Ignorable="d">
+
+    <Design.DataContext>
+        <vm:TimeZoomViewModel />
+    </Design.DataContext>
+
+    <UserControl.Styles>
+        <!--  Small vertically-stacked segmented interval selector — one shared-border pill.  -->
+        <Style Selector="Button.seg">
+            <Setter Property="MinHeight" Value="24" />
+            <Setter Property="MinWidth" Value="46" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="Foreground" Value="{StaticResource SufniForeground}" />
+            <Setter Property="HorizontalAlignment" Value="Stretch" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.seg.segFirst">
+            <Setter Property="CornerRadius" Value="12,12,0,0" />
+        </Style>
+        <Style Selector="Button.seg.segLast">
+            <Setter Property="CornerRadius" Value="0,0,12,12" />
+        </Style>
+        <Style Selector="Button.seg.active">
+            <Setter Property="Background" Value="{StaticResource SufniAccentColor}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="Button.seg:disabled">
+            <Setter Property="Foreground" Value="{StaticResource SufniForegroundDisabled}" />
+        </Style>
+
+        <!--  Monospace start/end time readout, styled like CropPageView's "crop-value".  -->
+        <Style Selector="TextBlock.zoom-value">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="#66c2a5" />
+            <Setter Property="FontFamily" Value="Courier New, Courier, monospace" />
+        </Style>
+    </UserControl.Styles>
+
+    <StackPanel
+        Background="{StaticResource SufniRegion}"
+        IsEnabled="{Binding IsEnabled}"
+        Orientation="Vertical"
+        Spacing="6">
+
+        <!--  Mini-map context strip (Session overview). OverlayGrid Margin matches the plots' fixed
+             PixelPadding(left=55, right=14, bottom=50, top=40) so the highlight band clips to the
+             data area only. Visible only while zoomed.  -->
+        <Grid IsVisible="{Binding IsZoomActive}">
+            <Image Source="{Binding #ZoomRoot.MiniMap}" />
+            <Grid x:Name="OverlayGrid" Margin="55,40,14,50" IsHitTestVisible="False">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="0" />
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="0" />
+                </Grid.ColumnDefinitions>
+                <Border Grid.Column="0" Background="#30000000" />
+                <Border
+                    Grid.Column="1"
+                    Background="#400078D7"
+                    BorderBrush="{StaticResource SufniAccentColor}"
+                    BorderThickness="1,0,1,0" />
+                <Border Grid.Column="2" Background="#30000000" />
+            </Grid>
+        </Grid>
+
+        <!--  Controls row: small vertical 2s/5s/10s selector on the left, pan slider on the right.  -->
+        <Grid ColumnDefinitions="Auto,*" Margin="8,0,14,6">
+
+            <!--  Small vertical segmented selector, bottom-left. Tapping the active segment again
+                 clears the selection (SelectWindow toggles), so no separate reset button is needed.  -->
+            <Border
+                Grid.Column="0"
+                Margin="0,0,12,0"
+                HorizontalAlignment="Left"
+                VerticalAlignment="Center"
+                Background="{StaticResource SufniBackground}"
+                BorderBrush="#25FFFFFF"
+                BorderThickness="1"
+                ClipToBounds="True"
+                CornerRadius="12">
+                <StackPanel Orientation="Vertical" Spacing="1">
+                    <Button
+                        Classes="seg segFirst"
+                        Classes.active="{Binding Is2sActive}"
+                        Command="{Binding SelectWindowCommand}"
+                        CommandParameter="{x:Static vm:TimeZoomViewModel.Window2Seconds}"
+                        Content="2s"
+                        IsEnabled="{Binding Allow2s}" />
+                    <Button
+                        Classes="seg"
+                        Classes.active="{Binding Is5sActive}"
+                        Command="{Binding SelectWindowCommand}"
+                        CommandParameter="{x:Static vm:TimeZoomViewModel.Window5Seconds}"
+                        Content="5s"
+                        IsEnabled="{Binding Allow5s}" />
+                    <Button
+                        Classes="seg segLast"
+                        Classes.active="{Binding Is10sActive}"
+                        Command="{Binding SelectWindowCommand}"
+                        CommandParameter="{x:Static vm:TimeZoomViewModel.Window10Seconds}"
+                        Content="10s"
+                        IsEnabled="{Binding Allow10s}" />
+                </StackPanel>
+            </Border>
+
+            <!--  Pan slider + start/end readout, only while zoomed.  -->
+            <StackPanel
+                Grid.Column="1"
+                VerticalAlignment="Center"
+                IsVisible="{Binding IsZoomActive}"
+                Orientation="Vertical"
+                Spacing="0">
+                <Slider
+                    MinHeight="40"
+                    VerticalAlignment="Center"
+                    Classes="pan"
+                    Maximum="{Binding MaxStartSeconds}"
+                    Minimum="0"
+                    Value="{Binding StartSeconds, Mode=TwoWay}">
+                    <!--  Fluent's Slider template drives the thumb/track purely off DynamicResource
+                         lookups (verified against Avalonia 11.2.5 source) — no ordinary Style setter
+                         can reach the thumb's CornerRadius, so the resource keys are overridden here,
+                         scoped to just this Slider instance via Slider.Resources.  -->
+                    <Slider.Resources>
+                        <x:Double x:Key="SliderHorizontalThumbWidth">30</x:Double>
+                        <x:Double x:Key="SliderHorizontalThumbHeight">30</x:Double>
+                        <CornerRadius x:Key="SliderThumbCornerRadius">15</CornerRadius>
+                        <SolidColorBrush x:Key="SliderThumbBackground" Color="{StaticResource SufniAccentColor}" />
+                        <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="{StaticResource SufniAccentColor}" />
+                        <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="{StaticResource SufniAccentColor}" />
+                        <SolidColorBrush x:Key="SliderThumbBackgroundDisabled" Color="{StaticResource SufniForegroundDisabled}" />
+                        <x:Double x:Key="SliderTrackThemeHeight">6</x:Double>
+                        <SolidColorBrush x:Key="SliderTrackFill" Color="{StaticResource SufniBackground}" />
+                        <SolidColorBrush x:Key="SliderTrackValueFill" Color="{StaticResource SufniAccentColor}" />
+                        <SolidColorBrush x:Key="SliderTrackFillPointerOver" Color="{StaticResource SufniBackground}" />
+                        <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="{StaticResource SufniAccentColor}" />
+                        <SolidColorBrush x:Key="SliderTrackFillPressed" Color="{StaticResource SufniBackground}" />
+                        <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="{StaticResource SufniAccentColor}" />
+                        <SolidColorBrush x:Key="SliderTrackFillDisabled" Color="{StaticResource SufniBackgroundDisabled}" />
+                        <SolidColorBrush x:Key="SliderTrackValueFillDisabled" Color="{StaticResource SufniForegroundDisabled}" />
+                        <GridLength x:Key="SliderPreContentMargin">6</GridLength>
+                        <GridLength x:Key="SliderPostContentMargin">6</GridLength>
+                    </Slider.Resources>
+                    <!--  BorderBrush/BorderThickness are hardcoded (not resource-bound) in Fluent's
+                         template, so a /template/ style override is the only way to reach them.  -->
+                    <Slider.Styles>
+                        <Style Selector="Slider /template/ Thumb">
+                            <Setter Property="BorderBrush" Value="#40FFFFFF" />
+                            <Setter Property="BorderThickness" Value="2" />
+                        </Style>
+                    </Slider.Styles>
+                </Slider>
+                <Grid ColumnDefinitions="*,*" Margin="0,-2,0,0">
+                    <TextBlock Grid.Column="0" HorizontalAlignment="Left" Classes="zoom-value" Text="{Binding StartLabel}" />
+                    <TextBlock Grid.Column="1" HorizontalAlignment="Right" Classes="zoom-value" Text="{Binding EndLabel}" />
+                </Grid>
+            </StackPanel>
+        </Grid>
+
+    </StackPanel>
+</UserControl>

@@ -7,7 +7,7 @@ namespace Sufni.Bridge.Plots;
 /// Time-history line chart showing raw front and rear travel over the full session duration.
 /// Always uses the full (uncompressed) TelemetryData — crop overlays are handled in the UI.
 /// </summary>
-public class TravelTimeHistoryPlot(Plot plot) : TelemetryPlot(plot)
+public class TravelTimeHistoryPlot(Plot plot, bool showAirtimeBands = false) : TelemetryPlot(plot)
 {
     public override void LoadTelemetryData(TelemetryData telemetryData)
     {
@@ -49,5 +49,11 @@ public class TravelTimeHistoryPlot(Plot plot) : TelemetryPlot(plot)
         // X-axis always starts at 0
         if (maxDuration > 0)
             Plot.Axes.SetLimitsX(left: 0, right: maxDuration);
+
+        // Session-overview mini-map: draw airtime bands (no labels) so jumps are visible and the
+        // zoom window can be moved onto them. yTop/yBottom span the plot's inverted Y range.
+        if (showAirtimeBands && maxTravel > 0 && maxDuration > 0)
+            AddAirtimeOverlays(telemetryData.Airtimes, yTop: -maxTravel * 0.05, yBottom: maxTravel * 1.05,
+                maxDuration: maxDuration, withLabels: false, fillAlpha: 0.45, minWidthPx: 3);
     }
 }
