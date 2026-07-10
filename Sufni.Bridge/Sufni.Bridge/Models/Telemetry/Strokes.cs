@@ -65,9 +65,16 @@ public class Stroke
         };
     }
 
+    /// <summary>
+    /// Whether two strokes describe the same event. Measured against the SHORTER of the two:
+    /// the front and rear hover strokes of one jump routinely differ in length by 2-3x (the
+    /// fork snaps to top-out, the shock creeps there), and demanding that the short one cover
+    /// half of the long one would leave both unmatched — each then reaching the single-sided
+    /// fallback and reporting the jump twice.
+    /// </summary>
     public bool Overlaps(Stroke other)
     {
-        var l = Math.Max(End - Start, other.End - other.Start);
+        var l = Math.Min(End - Start, other.End - other.Start);
         var s = Math.Max(Start, other.Start);
         var e = Math.Min(End, other.End);
         return e - s >= Parameters.AirtimeOverlapThreshold * l;
@@ -81,36 +88,79 @@ public class Strokes
     public Stroke[] Rebounds { get; set; }
     [IgnoreMember] public Stroke[] Idlings { get; private set; }
 
-    public void Categorize(Stroke[] strokes, double maxTravel)
+    /// <summary>
+    /// Strokes during which the suspension plausibly hung unloaded near its top-out position.
+    /// Deliberately a separate list from <see cref="Idlings"/>: an airborne element is only
+    /// quasi-static (it keeps creeping out), so this test is looser than the idling test and
+    /// admits strokes that are also booked as compressions or rebounds. Whether a candidate
+    /// really is an airtime is decided in TelemetryData.CalculateAirTimes(), which cross-checks
+    /// the front and rear candidates against each other.
+    /// </summary>
+    [IgnoreMember] public Stroke[] AirCandidates { get; private set; }
+
+    /// <summary>
+    /// The travel this element reads when fully extended. See Parameters.TopOutQuantile.
+    /// </summary>
+    [IgnoreMember] public double TopOut { get; private set; }
+
+    /// <summary>
+    /// Estimates the fully-extended ("topped out") travel reading of a suspension element as a
+    /// low quantile of its travel distribution, so that airtime detection can be expressed
+    /// relative to the element's own extension floor rather than to an absolute 0 mm that
+    /// calibration offsets and top-out bumpers make unreachable.
+    /// </summary>
+    public static double EstimateTopOut(double[] travel, double maxTravel)
+    {
+        if (travel.Length == 0) return 0;
+
+        var sorted = travel.Where(t => !double.IsNaN(t)).ToArray();
+        if (sorted.Length == 0) return 0;
+        Array.Sort(sorted);
+
+        var index = (int)Math.Clamp(
+            Parameters.TopOutQuantile * (sorted.Length - 1), 0, sorted.Length - 1);
+        return Math.Clamp(sorted[index], 0, maxTravel * Parameters.TopOutMaxRatio);
+    }
+
+    public void Categorize(Stroke[] strokes, double[] travel, double maxTravel)
     {
         var compressions = new List<Stroke>();
         var rebounds = new List<Stroke>();
         var idlings = new List<Stroke>();
+        var airCandidates = new List<Stroke>();
+
+        TopOut = EstimateTopOut(travel, maxTravel);
 
         // Relative to the spring element's own travel, so short- and long-travel setups get
         // comparable sensitivity; the fixed AirtimeTravelThreshold remains a floor for very
         // short-travel setups (see its doc comment in Parameters.cs).
-        var airtimeTravelThreshold = Math.Max(
+        var airtimeTravelThreshold = TopOut + Math.Max(
             Parameters.AirtimeTravelThreshold, Parameters.AirtimeTravelThresholdRatio * maxTravel);
 
         for (var i = 0; i < strokes.Length; i++)
         {
             var stroke = strokes[i];
+
+            // A stroke is a possible airtime if the element hovered near its top-out position
+            // (mean travel, so the initial extension ramp doesn't disqualify it), barely moved
+            // over the stroke's duration, and was slammed by a landing right afterwards.
+            // Independent of the compression/rebound/idling split below, because a slowly
+            // extending shock is booked as a rebound yet is very much airborne.
+            if (i > 0 && i < strokes.Length - 1 &&
+                stroke.Duration >= Parameters.AirtimeDurationThreshold &&
+                stroke.Duration <= Parameters.AirtimeDurationMax &&
+                Math.Abs(stroke.Length) <=
+                    Parameters.StrokeLengthThreshold + Parameters.AirtimeCreepRate * stroke.Duration &&
+                stroke.Stat.SumTravel / stroke.Stat.Count <= airtimeTravelThreshold &&
+                strokes[i + 1].Stat.MaxVelocity >= Parameters.AirtimeVelocityThreshold)
+            {
+                stroke.AirCandidate = true;
+                airCandidates.Add(stroke);
+            }
+
             if (Math.Abs(stroke.Length) < Parameters.StrokeLengthThreshold &&
                 stroke.Duration >= Parameters.IdlingDurationThreshold)
             {
-                // If suitable, tag this idling stroke as a possible airtime.
-                // Whether or not it really is one will be decided with
-                // further heuristics based on both front and rear
-                // candidates.
-                if (i > 0 && i < strokes.Length - 1 &&
-                    stroke.Stat.MaxTravel <= airtimeTravelThreshold &&
-                    stroke.Duration >= Parameters.AirtimeDurationThreshold &&
-                    strokes[i + 1].Stat.MaxVelocity >= Parameters.AirtimeVelocityThreshold)
-                {
-                    stroke.AirCandidate = true;
-                }
-
                 idlings.Add(stroke);
             }
             else if (stroke.Length >= Parameters.StrokeLengthThreshold)
@@ -126,6 +176,7 @@ public class Strokes
         Compressions = [.. compressions];
         Rebounds = [.. rebounds];
         Idlings = [.. idlings];
+        AirCandidates = [.. airCandidates];
     }
 
     public void Digitize(int[] dt, int[] dv, int[] dvFine)

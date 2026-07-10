@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 212;
+    private const int CurrentPlotVersion = 213;
 
     // Approximate rendered height of the VelocityBandView control (margin + title text +
     // 44 px band grid). Used to size the low-speed velocity histograms so the
@@ -1092,7 +1092,9 @@ public partial class SessionViewModel : ItemViewModelBase
         string[][] RunDataRows,
         string[][] ForkShockRows,
         string[][] WheelRows,
-        string Airtime = "-");
+        // Em dash, matching the placeholder BalancePageViewModel uses for an unknown metric —
+        // the two sit next to each other in the Summary tab's run-data grid.
+        string Airtime = "—");
 
     private static string FormatTravel(double value, double maxTravel)
     {
@@ -1132,7 +1134,7 @@ public partial class SessionViewModel : ItemViewModelBase
     {
         if (airtimes is null)
         {
-            return "-";
+            return "—";
         }
 
         var total = airtimes.Sum(a => a.End - a.Start);

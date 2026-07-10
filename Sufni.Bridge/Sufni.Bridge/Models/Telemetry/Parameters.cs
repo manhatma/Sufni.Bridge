@@ -10,24 +10,76 @@ public static class Parameters
     // (s) minimum duration to consider stroke an airtime
     public const double AirtimeDurationThreshold = 0.20;
 
+    // (s) maximum duration. A bike leaning, hanging or being carried has both elements extended
+    // and dead still, and is set down hard enough to look like a landing — indistinguishable
+    // from flight in a two-channel travel recording except by how long it lasts. Ballistics
+    // bounds the real thing: 1.2 s of hang time needs a 1.8 m vertical launch. In the reference
+    // corpus (307 sessions, 2859 airtimes) the longest hand-verified airtime is 1.05 s and this
+    // bound rejects exactly one interval, a 1.45 s rest period.
+    public const double AirtimeDurationMax = 1.2;
+
     // (mm/s) minimum velocity after stroke to consider it an airtime
     public const double AirtimeVelocityThreshold = 500;
 
-    // f&r airtime candidates must overlap at least this amount to be an airtime
+    // f&r airtime candidates must overlap at least this fraction of the SHORTER one's duration
     public const double AirtimeOverlapThreshold = 0.5;
 
-    // stroke f&r mean travel must be below max*this to be an airtime
-    public const double AirtimeTravelMeanThresholdRatio = 0.08;
+    // For an unpaired candidate, EACH end must come to rest within max travel * this of its own
+    // top-out. Generous, because stiction leaves the shock resting anywhere within ~5 mm of
+    // top-out (measured: the same shock rests at 6.1 mm on one jump and 11.3 mm on the next).
+    public const double AirtimeSettledTravelRatio = 0.08;
 
-    // (mm) maximum travel to consider stroke an airtime
+    // Fraction of the stroke each end must spend CONTIGUOUSLY at rest at its top-out. A run
+    // rather than an average or a tail sample, because both ends of the bike are busy at the
+    // stroke's edges and neither is at rest there: the far end is still unloading when the near
+    // end tops out (a shock needs ~0.3 s to extend its last centimetre), and on a rear-wheel-
+    // first landing it touches down again while the near end is still airborne. Only in between
+    // is the bike unambiguously flying.
+    public const double AirtimeSettleFraction = 0.25;
+
+    // (mm/s) speed below which a suspension element counts as being at rest. This, not travel,
+    // is what separates a wheel hanging in the air from one working the ground: an airborne
+    // element only creeps towards top-out (measured: 2-50 mm/s), a grounded one is driven by the
+    // terrain (measured: 400-1200 mm/s on a manual whose fork was pinned at top-out and whose
+    // travel therefore looked airborne).
+    public const double AirtimeQuiescentVelocity = 150;
+
+    // (mm) how far ABOVE THE TOP-OUT POSITION a stroke's mean travel may sit and still be
+    // an airtime. Measured against the mean, not the maximum: an airborne stroke begins
+    // while the element is still extending, so its maximum includes that approach ramp
+    // (up to 14 mm on the reference bike's shock, whose leverage ratio and low spring
+    // force near top-out make the last centimetre of extension slow).
     public const double AirtimeTravelThreshold = 3;
 
     // fraction of max travel to consider stroke an airtime — scales the fixed-mm threshold
     // above to the bike's own travel so short- and long-travel setups get comparable
     // sensitivity, and so a fork/shock that stays slightly compressed from stiction after
-    // a long-held load (and doesn't spring all the way back to 0 mm once airborne) is still
-    // tolerated. The effective threshold is max(AirtimeTravelThreshold, this * maxTravel).
+    // a long-held load (and doesn't spring all the way back to the top-out position once
+    // airborne) is still tolerated. The effective threshold is
+    // topOut + max(AirtimeTravelThreshold, this * maxTravel).
     public const double AirtimeTravelThresholdRatio = 0.025;
+
+    // (mm/s) drift rate tolerated inside an airborne stroke. Being airborne is a *rate*
+    // property, not a displacement one: an unloaded element keeps creeping towards top-out
+    // for a few hundred ms (measured: 13 mm/s mean over 0.77 s on the reference bike's
+    // shock). Judging a 0.8 s hover by the same fixed 0.5 mm budget as a 0.1 s one demands
+    // a drift below 0.6 mm/s — far under the measurement noise floor, let alone real
+    // suspension behaviour. The budget is StrokeLengthThreshold + this * duration.
+    public const double AirtimeCreepRate = 15.0;
+
+    // Top-out estimation. A suspension element does not necessarily read 0 mm when fully
+    // extended: calibration offsets, coil preload, top-out bumpers and the shock→wheel
+    // polynomial all shift the fully-extended position (measured: 0.3 mm fork / 6.3 mm shock
+    // on one bike, 4.2 mm / 5.0 mm on another). Absolute travel is therefore a poor airtime
+    // criterion — the reference must be the element's OWN extended position, estimated as a
+    // low quantile of the recorded travel. Every ride tops out repeatedly, so the low tail
+    // of the travel distribution clusters around that position.
+    public const double TopOutQuantile = 0.005;
+
+    // The quantile above degenerates into "sag" if a session never tops out (e.g. a short
+    // recording of seated pedalling). Capping it at this fraction of max travel keeps a
+    // never-extended session from opening the airtime gate at its sag point.
+    public const double TopOutMaxRatio = 0.06;
 
     // (mm) minimum length to consider stroke a compression/rebound
     public const double StrokeLengthThreshold = 0.5;

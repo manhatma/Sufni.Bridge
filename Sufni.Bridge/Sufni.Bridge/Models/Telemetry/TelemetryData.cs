@@ -146,7 +146,7 @@ public class TelemetryData
 
     // Increment when velocity processing parameters change (e.g. smoother lambda).
     // Blobs with a lower version are automatically re-processed from Travel arrays on load.
-    public const int CurrentProcessingVersion = 22;
+    public const int CurrentProcessingVersion = 23;
 
     #region Public properties
 
@@ -224,16 +224,58 @@ public class TelemetryData
         return inds;
     }
 
+    private static bool CoveredByAirtime(List<Airtime> airtimes, Stroke stroke, int sampleRate)
+    {
+        var start = stroke.Start / (double)sampleRate;
+        var end = stroke.End / (double)sampleRate;
+        return airtimes.Any(a => start < a.End && end > a.Start);
+    }
+
+    /// <summary>
+    /// Whether a suspension element hung motionless near its top-out for a long enough unbroken
+    /// stretch of a stroke to have been unloaded — i.e. off the ground. Evaluated on either
+    /// element over the same sample range, so a front candidate can be tested against what the
+    /// rear was doing at the same moment.
+    /// </summary>
+    private static bool RestsAtTopOut(
+        double[] travel, double[] velocity, Stroke stroke, double topOut, double threshold)
+    {
+        var required = Math.Max(
+            1, (int)((stroke.End - stroke.Start + 1) * Parameters.AirtimeSettleFraction));
+
+        var run = 0;
+        for (var i = stroke.Start; i <= stroke.End; i++)
+        {
+            if (travel[i] - topOut <= threshold &&
+                Math.Abs(velocity[i]) <= Parameters.AirtimeQuiescentVelocity)
+            {
+                if (++run >= required) return true;
+            }
+            else
+            {
+                run = 0;
+            }
+        }
+
+        return false;
+    }
+
     private void CalculateAirTimes()
     {
         var airtimes = new List<Airtime>();
 
+        // Travel is measured above each element's own top-out position, so a shock that reads
+        // 6 mm when fully extended doesn't spend most of its plausibility budget before the bike
+        // has even left the ground.
+        var frontTopOut = Front.Present ? Front.Strokes.TopOut : 0;
+        var rearTopOut = Rear.Present ? Rear.Strokes.TopOut : 0;
+
         if (Front.Present && Rear.Present)
         {
-            foreach (var f in Front.Strokes.Idlings)
+            foreach (var f in Front.Strokes.AirCandidates)
             {
                 if (!f.AirCandidate) continue;
-                foreach (var r in Rear.Strokes.Idlings)
+                foreach (var r in Rear.Strokes.AirCandidates)
                 {
                     if (!r.AirCandidate || !f.Overlaps(r)) continue;
                     f.AirCandidate = false;
@@ -249,15 +291,27 @@ public class TelemetryData
                 }
             }
 
-            var maxMean = (Linkage.MaxFrontTravel + Linkage.MaxRearTravel) / 2.0;
+            // Both ends must have come to rest at their own top-out — checked per side, not on the
+            // average of the two. Averaging lets a topped-out fork mask a loaded shock, so a
+            // manual or a front wheel lifted over a lip (fork pinned at 0.5 mm while the shock
+            // bounces around 20 mm) reads as an airtime.
+            var frontSettledThreshold = Linkage.MaxFrontTravel * Parameters.AirtimeSettledTravelRatio;
+            var rearSettledThreshold = Linkage.MaxRearTravel * Parameters.AirtimeSettledTravelRatio;
 
-            foreach (var f in Front.Strokes.Idlings)
+            bool BothEndsAtRest(Stroke stroke) =>
+                RestsAtTopOut(Front.Travel, Front.Velocity, stroke, frontTopOut, frontSettledThreshold) &&
+                RestsAtTopOut(Rear.Travel, Rear.Velocity, stroke, rearTopOut, rearSettledThreshold);
+
+            // Candidates the overlap pass above could not pair up still describe a real jump if
+            // the other end of the bike had come to rest at its top-out too — that is what these
+            // two loops recover. A leftover front and a leftover rear candidate can be the two
+            // halves of one such jump, though, so anything already covered is skipped rather than
+            // reported a second time.
+            foreach (var f in Front.Strokes.AirCandidates)
             {
-                if (!f.AirCandidate) continue;
-                var fMean = Front.Travel[f.Start..(f.End + 1)].Mean();
-                var rMean = Rear.Travel[f.Start..(f.End + 1)].Mean();
+                if (!f.AirCandidate || CoveredByAirtime(airtimes, f, SampleRate)) continue;
+                if (!BothEndsAtRest(f)) continue;
 
-                if (!((fMean + rMean) / 2 <= maxMean * Parameters.AirtimeTravelMeanThresholdRatio)) continue;
                 var at = new Airtime
                 {
                     Start = f.Start / (double)SampleRate,
@@ -266,13 +320,11 @@ public class TelemetryData
                 airtimes.Add(at);
             }
 
-            foreach (var r in Rear.Strokes.Idlings)
+            foreach (var r in Rear.Strokes.AirCandidates)
             {
-                if (!r.AirCandidate) continue;
-                var fMean = Front.Travel[r.Start..(r.End + 1)].Mean();
-                var rMean = Rear.Travel[r.Start..(r.End + 1)].Mean();
+                if (!r.AirCandidate || CoveredByAirtime(airtimes, r, SampleRate)) continue;
+                if (!BothEndsAtRest(r)) continue;
 
-                if (!((fMean + rMean) / 2 <= maxMean * Parameters.AirtimeTravelMeanThresholdRatio)) continue;
                 var at = new Airtime
                 {
                     Start = r.Start / (double)SampleRate,
@@ -284,14 +336,14 @@ public class TelemetryData
         else if (Front.Present)
         {
             // Single-sensor setup: no other side to overlap-match against, so guard against
-            // false positives (e.g. the bike being picked up/carried) with the same mean-travel
+            // false positives (e.g. the bike being picked up/carried) with the same settled-travel
             // plausibility check the dual-sensor path applies, evaluated one-sided.
-            foreach (var f in Front.Strokes.Idlings)
+            foreach (var f in Front.Strokes.AirCandidates)
             {
                 if (!f.AirCandidate) continue;
-                var fMean = Front.Travel[f.Start..(f.End + 1)].Mean();
+                if (!RestsAtTopOut(Front.Travel, Front.Velocity, f, frontTopOut,
+                        Linkage.MaxFrontTravel * Parameters.AirtimeSettledTravelRatio)) continue;
 
-                if (!(fMean <= Linkage.MaxFrontTravel * Parameters.AirtimeTravelMeanThresholdRatio)) continue;
                 var at = new Airtime
                 {
                     Start = f.Start / (double)SampleRate,
@@ -302,12 +354,12 @@ public class TelemetryData
         }
         else if (Rear.Present)
         {
-            foreach (var r in Rear.Strokes.Idlings)
+            foreach (var r in Rear.Strokes.AirCandidates)
             {
                 if (!r.AirCandidate) continue;
-                var rMean = Rear.Travel[r.Start..(r.End + 1)].Mean();
+                if (!RestsAtTopOut(Rear.Travel, Rear.Velocity, r, rearTopOut,
+                        Linkage.MaxRearTravel * Parameters.AirtimeSettledTravelRatio)) continue;
 
-                if (!(rMean <= Linkage.MaxRearTravel * Parameters.AirtimeTravelMeanThresholdRatio)) continue;
                 var at = new Airtime
                 {
                     Start = r.Start / (double)SampleRate,
@@ -491,7 +543,7 @@ public class TelemetryData
             Front.FineVelocityBins = vbinsFine;
 
             var strokes = Strokes.FilterStrokes(v, Front.Travel, Linkage.MaxFrontTravel, SampleRate);
-            Front.Strokes.Categorize(strokes, Linkage.MaxFrontTravel);
+            Front.Strokes.Categorize(strokes, Front.Travel, Linkage.MaxFrontTravel);
             if (Front.Strokes.Compressions.Length == 0 && Front.Strokes.Rebounds.Length == 0)
             {
                 Front.Present = false;
@@ -548,7 +600,7 @@ public class TelemetryData
             Rear.FineVelocityBins = vbinsFine;
 
             var strokes = Strokes.FilterStrokes(v, Rear.Travel, Linkage.MaxRearTravel, SampleRate);
-            Rear.Strokes.Categorize(strokes, Linkage.MaxRearTravel);
+            Rear.Strokes.Categorize(strokes, Rear.Travel, Linkage.MaxRearTravel);
             if (Rear.Strokes.Compressions.Length == 0 && Rear.Strokes.Rebounds.Length == 0)
             {
                 Rear.Present = false;
@@ -618,7 +670,7 @@ public class TelemetryData
 
             Front.Strokes = new Strokes();
             var strokes = Strokes.FilterStrokes(v, Front.Travel, Linkage.MaxFrontTravel, SampleRate);
-            Front.Strokes.Categorize(strokes, Linkage.MaxFrontTravel);
+            Front.Strokes.Categorize(strokes, Front.Travel, Linkage.MaxFrontTravel);
             if (Front.Strokes.Compressions.Length == 0 && Front.Strokes.Rebounds.Length == 0)
                 Front.Present = false;
             else
@@ -653,7 +705,7 @@ public class TelemetryData
 
             Rear.Strokes = new Strokes();
             var strokes = Strokes.FilterStrokes(v, Rear.Travel, Linkage.MaxRearTravel, SampleRate);
-            Rear.Strokes.Categorize(strokes, Linkage.MaxRearTravel);
+            Rear.Strokes.Categorize(strokes, Rear.Travel, Linkage.MaxRearTravel);
             if (Rear.Strokes.Compressions.Length == 0 && Rear.Strokes.Rebounds.Length == 0)
                 Rear.Present = false;
             else
@@ -773,7 +825,7 @@ public class TelemetryData
             cropped.Front.FineVelocityBins = vbinsFine;
 
             var strokes = Strokes.FilterStrokes(v, cropped.Front.Travel, Linkage.MaxFrontTravel, SampleRate);
-            cropped.Front.Strokes.Categorize(strokes, Linkage.MaxFrontTravel);
+            cropped.Front.Strokes.Categorize(strokes, cropped.Front.Travel, Linkage.MaxFrontTravel);
             if (cropped.Front.Strokes.Compressions.Length == 0 && cropped.Front.Strokes.Rebounds.Length == 0)
                 cropped.Front.Present = false;
             else
@@ -805,7 +857,7 @@ public class TelemetryData
             cropped.Rear.FineVelocityBins = vbinsFine;
 
             var strokes = Strokes.FilterStrokes(v, cropped.Rear.Travel, Linkage.MaxRearTravel, SampleRate);
-            cropped.Rear.Strokes.Categorize(strokes, Linkage.MaxRearTravel);
+            cropped.Rear.Strokes.Categorize(strokes, cropped.Rear.Travel, Linkage.MaxRearTravel);
             if (cropped.Rear.Strokes.Compressions.Length == 0 && cropped.Rear.Strokes.Rebounds.Length == 0)
                 cropped.Rear.Present = false;
             else
@@ -871,7 +923,7 @@ public class TelemetryData
 
             var strokes = FilterStrokesSegmented(v, combined.Front.Travel,
                 first.Linkage.MaxFrontTravel, first.SampleRate, frontSegments);
-            combined.Front.Strokes.Categorize(strokes, first.Linkage.MaxFrontTravel);
+            combined.Front.Strokes.Categorize(strokes, combined.Front.Travel, first.Linkage.MaxFrontTravel);
             if (combined.Front.Strokes.Compressions.Length == 0 && combined.Front.Strokes.Rebounds.Length == 0)
                 combined.Front.Present = false;
             else
@@ -907,7 +959,7 @@ public class TelemetryData
 
             var strokes = FilterStrokesSegmented(v, combined.Rear.Travel,
                 first.Linkage.MaxRearTravel, first.SampleRate, rearSegments);
-            combined.Rear.Strokes.Categorize(strokes, first.Linkage.MaxRearTravel);
+            combined.Rear.Strokes.Categorize(strokes, combined.Rear.Travel, first.Linkage.MaxRearTravel);
             if (combined.Rear.Strokes.Compressions.Length == 0 && combined.Rear.Strokes.Rebounds.Length == 0)
                 combined.Rear.Present = false;
             else
