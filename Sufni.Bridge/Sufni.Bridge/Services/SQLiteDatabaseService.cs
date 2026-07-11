@@ -590,7 +590,7 @@ public class SqLiteDatabaseService : IDatabaseService
     {
         await Initialization;
         var sessions = await connection.QueryAsync<Session>(
-            "SELECT data FROM session WHERE deleted IS null AND id = ?", id);
+            "SELECT data, setup_id FROM session WHERE deleted IS null AND id = ?", id);
         if (sessions.Count != 1) return null;
 
         var td = MessagePackSerializer.Deserialize<TelemetryData>(sessions[0].ProcessedData);
@@ -608,11 +608,42 @@ public class SqLiteDatabaseService : IDatabaseService
                 if (rebuilt is not null) return rebuilt;
             }
 
+            await RehydrateLinkageAsync(td, sessions[0].Setup);
             var updatedBlob = td.ReprocessVelocity();
             await connection.ExecuteAsync("UPDATE session SET data=? WHERE id=?", [updatedBlob, id]);
         }
 
         return td;
+    }
+
+    /// <summary>
+    /// Blobs written by builds that didn't serialize the linkage's leverage curve (or
+    /// stripped it) deserialize with an unusable zero polynomial, which would blank the
+    /// rear channel on migration. Re-attach the leverage CSV from the linkage table so
+    /// ReprocessVelocity runs against the real curve and the migrated blob carries the
+    /// curve again. Only the curve is restored — the blob keeps its historical geometry
+    /// (head angle, strokes) from import time.
+    /// </summary>
+    private async Task RehydrateLinkageAsync(TelemetryData td, Guid? setupId)
+    {
+        // A cubic fit needs at least 4 points; anything less degrades to the zero polynomial.
+        if (td.Linkage.LeverageRatio is { Length: >= 4 } || setupId is null) return;
+
+        // Deliberately ignore the deleted flag: a session may still reference a
+        // soft-deleted setup, and its linkage curve is the correct historical one.
+        var setups = await connection.QueryAsync<Setup>(
+            "SELECT linkage_id FROM setup WHERE id = ?", setupId.Value);
+        if (setups.Count != 1) return;
+        var linkages = await connection.QueryAsync<Linkage>(
+            "SELECT raw_lr_data FROM linkage WHERE id = ?", setups[0].LinkageId);
+        if (linkages.Count != 1 || linkages[0].RawData is null) return;
+
+        // Fresh instance: the deserialized Linkage's lazily-cached derivations
+        // (MaxRearTravel, ShockWheelCoeffs) may already hold the zero-polynomial
+        // values and cannot be reset through their setters.
+        var old = td.Linkage;
+        td.Linkage = new Linkage(old.Id, old.Name, old.HeadAngle,
+            old.MaxFrontStroke, old.MaxRearStroke, old.Wheelbase, linkages[0].RawData);
     }
 
     /// <summary>

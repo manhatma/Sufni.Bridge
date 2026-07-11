@@ -264,18 +264,25 @@ public class TelemetryData
     {
         var airtimes = new List<Airtime>();
 
+        // AirCandidates/TopOut are not serialized — they only exist after stroke
+        // categorization ran in this pass. A side whose reprocessing was skipped
+        // (e.g. unusable linkage polynomial) keeps its stored data but cannot take
+        // part in airtime detection.
+        var frontAir = Front.Present ? Front.Strokes?.AirCandidates : null;
+        var rearAir = Rear.Present ? Rear.Strokes?.AirCandidates : null;
+
         // Travel is measured above each element's own top-out position, so a shock that reads
         // 6 mm when fully extended doesn't spend most of its plausibility budget before the bike
         // has even left the ground.
-        var frontTopOut = Front.Present ? Front.Strokes.TopOut : 0;
-        var rearTopOut = Rear.Present ? Rear.Strokes.TopOut : 0;
+        var frontTopOut = frontAir is not null ? Front.Strokes!.TopOut : 0;
+        var rearTopOut = rearAir is not null ? Rear.Strokes!.TopOut : 0;
 
-        if (Front.Present && Rear.Present)
+        if (frontAir is not null && rearAir is not null)
         {
-            foreach (var f in Front.Strokes.AirCandidates)
+            foreach (var f in frontAir)
             {
                 if (!f.AirCandidate) continue;
-                foreach (var r in Rear.Strokes.AirCandidates)
+                foreach (var r in rearAir)
                 {
                     if (!r.AirCandidate || !f.Overlaps(r)) continue;
                     f.AirCandidate = false;
@@ -307,7 +314,7 @@ public class TelemetryData
             // two loops recover. A leftover front and a leftover rear candidate can be the two
             // halves of one such jump, though, so anything already covered is skipped rather than
             // reported a second time.
-            foreach (var f in Front.Strokes.AirCandidates)
+            foreach (var f in frontAir)
             {
                 if (!f.AirCandidate || CoveredByAirtime(airtimes, f, SampleRate)) continue;
                 if (!BothEndsAtRest(f)) continue;
@@ -320,7 +327,7 @@ public class TelemetryData
                 airtimes.Add(at);
             }
 
-            foreach (var r in Rear.Strokes.AirCandidates)
+            foreach (var r in rearAir)
             {
                 if (!r.AirCandidate || CoveredByAirtime(airtimes, r, SampleRate)) continue;
                 if (!BothEndsAtRest(r)) continue;
@@ -333,12 +340,12 @@ public class TelemetryData
                 airtimes.Add(at);
             }
         }
-        else if (Front.Present)
+        else if (frontAir is not null)
         {
             // Single-sensor setup: no other side to overlap-match against, so guard against
             // false positives (e.g. the bike being picked up/carried) with the same settled-travel
             // plausibility check the dual-sensor path applies, evaluated one-sided.
-            foreach (var f in Front.Strokes.AirCandidates)
+            foreach (var f in frontAir)
             {
                 if (!f.AirCandidate) continue;
                 if (!RestsAtTopOut(Front.Travel, Front.Velocity, f, frontTopOut,
@@ -352,9 +359,9 @@ public class TelemetryData
                 airtimes.Add(at);
             }
         }
-        else if (Rear.Present)
+        else if (rearAir is not null)
         {
-            foreach (var r in Rear.Strokes.AirCandidates)
+            foreach (var r in rearAir)
             {
                 if (!r.AirCandidate) continue;
                 if (!RestsAtTopOut(Rear.Travel, Rear.Velocity, r, rearTopOut,
@@ -677,7 +684,13 @@ public class TelemetryData
                 Front.Strokes.Digitize(dt, dv, dvFine);
         }
 
-        if (Rear.Present)
+        // A linkage whose leverage curve didn't survive serialization degrades to the
+        // no-op zero polynomial (MaxRearTravel == 0). Re-baking against it would peg
+        // ShockTravel at MaxRearStroke and flatten Travel to 0 — permanently destroying
+        // the rear channel once the blob is written back. Leave the stored rear data
+        // untouched instead; the caller is expected to rehydrate the linkage from the
+        // database before invoking this migration.
+        if (Rear.Present && Linkage.MaxRearTravel > 0)
         {
             // Sessions imported before ShockTravel was persisted reconstruct it from the
             // stored wheel travel via numerical inversion of the polynomial. After Reprocess
