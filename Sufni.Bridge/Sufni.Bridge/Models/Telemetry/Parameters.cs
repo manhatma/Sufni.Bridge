@@ -24,9 +24,14 @@ public static class Parameters
     // f&r airtime candidates must overlap at least this fraction of the SHORTER one's duration
     public const double AirtimeOverlapThreshold = 0.5;
 
-    // For an unpaired candidate, EACH end must come to rest within max travel * this of its own
-    // top-out. Generous, because stiction leaves the shock resting anywhere within ~5 mm of
-    // top-out (measured: the same shock rests at 6.1 mm on one jump and 11.3 mm on the next).
+    // How far above its own top-out (as a fraction of max travel) an element may sit and still
+    // count as resting there. Used both for the per-sample settled check (RestsAtTopOut) and
+    // for the candidate gate on a stroke's mean travel in Strokes.Categorize. Generous, because
+    // stiction leaves an element resting anywhere within ~5-10 mm of top-out (measured: the
+    // same shock rests at 6.1 mm on one jump and 11.3 mm on the next; a fork whose session-wide
+    // top-out is 0.0 mm stuck at 7.8 mm during a jump). The two gates deliberately share this
+    // value: when the candidate gate was tighter (2.5%), jumps whose element stuck mid-band
+    // passed the settled check but never became candidates in the first place.
     public const double AirtimeSettledTravelRatio = 0.08;
 
     // Fraction of the stroke each end must spend CONTIGUOUSLY at rest at its top-out. A run
@@ -50,14 +55,6 @@ public static class Parameters
     // (up to 14 mm on the reference bike's shock, whose leverage ratio and low spring
     // force near top-out make the last centimetre of extension slow).
     public const double AirtimeTravelThreshold = 3;
-
-    // fraction of max travel to consider stroke an airtime — scales the fixed-mm threshold
-    // above to the bike's own travel so short- and long-travel setups get comparable
-    // sensitivity, and so a fork/shock that stays slightly compressed from stiction after
-    // a long-held load (and doesn't spring all the way back to the top-out position once
-    // airborne) is still tolerated. The effective threshold is
-    // topOut + max(AirtimeTravelThreshold, this * maxTravel).
-    public const double AirtimeTravelThresholdRatio = 0.025;
 
     // (mm/s) drift rate tolerated inside an airborne stroke. Being airborne is a *rate*
     // property, not a displacement one: an unloaded element keeps creeping towards top-out

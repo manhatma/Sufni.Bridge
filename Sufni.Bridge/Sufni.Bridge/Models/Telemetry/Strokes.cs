@@ -133,9 +133,12 @@ public class Strokes
 
         // Relative to the spring element's own travel, so short- and long-travel setups get
         // comparable sensitivity; the fixed AirtimeTravelThreshold remains a floor for very
-        // short-travel setups (see its doc comment in Parameters.cs).
+        // short-travel setups (see its doc comment in Parameters.cs). Same ratio as the
+        // settled check in RestsAtTopOut: stiction leaves an airborne element resting
+        // anywhere within that band, and a candidate gate tighter than the settled gate
+        // rejected real jumps whose fork stuck ~8 mm above an otherwise-reachable 0 mm.
         var airtimeTravelThreshold = TopOut + Math.Max(
-            Parameters.AirtimeTravelThreshold, Parameters.AirtimeTravelThresholdRatio * maxTravel);
+            Parameters.AirtimeTravelThreshold, Parameters.AirtimeSettledTravelRatio * maxTravel);
 
         for (var i = 0; i < strokes.Length; i++)
         {
