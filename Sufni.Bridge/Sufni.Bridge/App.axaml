@@ -107,6 +107,17 @@
             <Setter Property="Opacity" Value="0.8" />
         </Style>
 
+        <!--  Global styles for toolbar action Buttons (e.g. "Import", "Add")  -->
+        <Style Selector="Button.toolbar-action">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#D0D0D0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="8,4" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="#505558" />
+        </Style>
+
         <!--  Global styles for "dangerous" Buttons  -->
         <Style Selector="Button.dangerous">
             <Setter Property="Foreground" Value="{StaticResource SufniDangerColor}" />

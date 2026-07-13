@@ -18,11 +18,20 @@
         <vml:SetupListViewModel />
     </Design.DataContext>
 
-    <Grid ColumnDefinitions="*" RowDefinitions="* auto auto">
+    <Grid ColumnDefinitions="*" RowDefinitions="auto * auto auto">
+
+        <!--  Add button toolbar  -->
+        <Grid Grid.Row="0" Margin="10,8,10,0" ColumnDefinitions="auto *">
+            <Button Grid.Column="0"
+                    Classes="toolbar-action"
+                    Command="{Binding AddCommand}">
+                <TextBlock Text="Add" />
+            </Button>
+        </Grid>
 
         <!--  List of Setups  -->
         <controls:PullableMenuScrollViewer
-            Grid.Row="0"
+            Grid.Row="1"
             Grid.Column="0"
             Margin="0,15,0,5"
             Items="{Binding Items}"
@@ -34,14 +43,14 @@
 
         <!--  Notifications  -->
         <controls:NotificationsBar
-            Grid.Row="1"
+            Grid.Row="2"
             Grid.Column="0"
             Margin="5,0"
             IsVisible="{Binding Notifications.Count}" />
 
         <!--  Error messages  -->
         <controls:ErrorMessagesBar
-            Grid.Row="2"
+            Grid.Row="3"
             Grid.Column="0"
             Margin="5,0"
             IsVisible="{Binding ErrorMessages.Count}" />

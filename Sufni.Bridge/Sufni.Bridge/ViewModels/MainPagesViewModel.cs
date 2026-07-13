@@ -43,11 +43,8 @@ public partial class MainPagesViewModel : ViewModelBase
         pages = [SessionsPage, LinkagesPage, CalibrationsPage, SetupsPage];
 
         CalibrationsPage.MenuItems.Add(new("sync", SyncCommand));
-        CalibrationsPage.MenuItems.Add(new("add", CalibrationsPage.AddCommand));
         LinkagesPage.MenuItems.Add(new("sync", SyncCommand));
-        LinkagesPage.MenuItems.Add(new("add", LinkagesPage.AddCommand));
         SetupsPage.MenuItems.Add(new("sync", SyncCommand));
-        SetupsPage.MenuItems.Add(new("add", SetupsPage.AddCommand));
         SessionsPage.MenuItems.Add(new("sync", SyncCommand));
         SessionsPage.MenuItems.Add(new("import", ShowImportPageCommand));
 

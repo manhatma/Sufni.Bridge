@@ -38,40 +38,6 @@
             </LinearGradientBrush>
         </StackPanel.Background>
         <MenuItem
-            Command="{Binding OpenPageCommand}"
-            CommandParameter="{Binding ImportSessionsPage}"
-            Header="import">
-            <MenuItem.Icon>
-                <Image Width="12" Source="{SvgImage /Assets/fa-file-import.svg}" />
-            </MenuItem.Icon>
-        </MenuItem>
-        <Separator />
-        <MenuItem Command="{Binding LinkagesPage.AddCommand}" Header="linkage">
-            <MenuItem.Icon>
-                <Image
-                    Width="12"
-                    Margin="0,1,0,0"
-                    Source="{SvgImage /Assets/fa-circle-plus.svg}" />
-            </MenuItem.Icon>
-        </MenuItem>
-        <MenuItem Command="{Binding CalibrationsPage.AddCommand}" Header="calibration">
-            <MenuItem.Icon>
-                <Image
-                    Width="12"
-                    Margin="0,1,0,0"
-                    Source="{SvgImage /Assets/fa-circle-plus.svg}" />
-            </MenuItem.Icon>
-        </MenuItem>
-        <MenuItem Command="{Binding SetupsPage.AddCommand}" Header="setup">
-            <MenuItem.Icon>
-                <Image
-                    Width="12"
-                    Margin="0,1,0,0"
-                    Source="{SvgImage /Assets/fa-circle-plus.svg}" />
-            </MenuItem.Icon>
-        </MenuItem>
-        <Separator />
-        <MenuItem
             Command="{Binding SyncCommand}"
             Header="synchronize"
             IsVisible="{Binding SettingsPage.IsRegistered}">
