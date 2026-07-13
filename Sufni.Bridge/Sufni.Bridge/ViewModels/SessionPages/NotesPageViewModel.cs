@@ -22,10 +22,10 @@ public partial class SuspensionSettings : ObservableObject
                 VolSpc = rounded;
         }
     }
-    [ObservableProperty] private uint? highSpeedCompression;
-    [ObservableProperty] private uint? lowSpeedCompression;
-    [ObservableProperty] private uint? lowSpeedRebound;
-    [ObservableProperty] private uint? highSpeedRebound;
+    [ObservableProperty] private int? highSpeedCompression;
+    [ObservableProperty] private int? lowSpeedCompression;
+    [ObservableProperty] private int? lowSpeedRebound;
+    [ObservableProperty] private int? highSpeedRebound;
     [ObservableProperty] private double? tirePressure;
 
     [ObservableProperty] private bool springRateEditing;
@@ -38,10 +38,10 @@ public partial class SuspensionSettings : ObservableObject
 
     private string? springRateSnapshot;
     private double? volSpcSnapshot;
-    private uint? hscSnapshot;
-    private uint? lscSnapshot;
-    private uint? lsrSnapshot;
-    private uint? hsrSnapshot;
+    private int? hscSnapshot;
+    private int? lscSnapshot;
+    private int? lsrSnapshot;
+    private int? hsrSnapshot;
     private double? tirePressureSnapshot;
 
     public event EventHandler<(string FieldKey, object? Value)>? CommitRequested;
@@ -189,17 +189,17 @@ public partial class NotesPageViewModel : PageViewModelBase
             {
                 case "FrontSpringRate": p.FrontSpringRate = entry.Value as string; break;
                 case "FrontVolSpc": p.FrontVolSpc = entry.Value as double?; break;
-                case "FrontHSC": p.FrontHighSpeedCompression = entry.Value as uint?; break;
-                case "FrontLSC": p.FrontLowSpeedCompression = entry.Value as uint?; break;
-                case "FrontLSR": p.FrontLowSpeedRebound = entry.Value as uint?; break;
-                case "FrontHSR": p.FrontHighSpeedRebound = entry.Value as uint?; break;
+                case "FrontHSC": p.FrontHighSpeedCompression = entry.Value as int?; break;
+                case "FrontLSC": p.FrontLowSpeedCompression = entry.Value as int?; break;
+                case "FrontLSR": p.FrontLowSpeedRebound = entry.Value as int?; break;
+                case "FrontHSR": p.FrontHighSpeedRebound = entry.Value as int?; break;
                 case "FrontTirePressure": p.FrontTirePressure = entry.Value as double?; break;
                 case "RearSpringRate": p.RearSpringRate = entry.Value as string; break;
                 case "RearVolSpc": p.RearVolSpc = entry.Value as double?; break;
-                case "RearHSC": p.RearHighSpeedCompression = entry.Value as uint?; break;
-                case "RearLSC": p.RearLowSpeedCompression = entry.Value as uint?; break;
-                case "RearLSR": p.RearLowSpeedRebound = entry.Value as uint?; break;
-                case "RearHSR": p.RearHighSpeedRebound = entry.Value as uint?; break;
+                case "RearHSC": p.RearHighSpeedCompression = entry.Value as int?; break;
+                case "RearLSC": p.RearLowSpeedCompression = entry.Value as int?; break;
+                case "RearLSR": p.RearLowSpeedRebound = entry.Value as int?; break;
+                case "RearHSR": p.RearHighSpeedRebound = entry.Value as int?; break;
                 case "RearTirePressure": p.RearTirePressure = entry.Value as double?; break;
             }
         }

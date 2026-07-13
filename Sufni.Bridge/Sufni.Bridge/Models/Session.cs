@@ -78,35 +78,35 @@ public class Session : Synchronizable
 
     [JsonIgnore]
     [Column("front_hsc")]
-    public uint? FrontHighSpeedCompression { get; set; }
+    public int? FrontHighSpeedCompression { get; set; }
 
     [JsonIgnore]
     [Column("rear_hsc")]
-    public uint? RearHighSpeedCompression { get; set; }
+    public int? RearHighSpeedCompression { get; set; }
 
     [JsonIgnore]
     [Column("front_lsc")]
-    public uint? FrontLowSpeedCompression { get; set; }
+    public int? FrontLowSpeedCompression { get; set; }
 
     [JsonIgnore]
     [Column("rear_lsc")]
-    public uint? RearLowSpeedCompression { get; set; }
+    public int? RearLowSpeedCompression { get; set; }
 
     [JsonIgnore]
     [Column("front_lsr")]
-    public uint? FrontLowSpeedRebound { get; set; }
+    public int? FrontLowSpeedRebound { get; set; }
 
     [JsonIgnore]
     [Column("rear_lsr")]
-    public uint? RearLowSpeedRebound { get; set; }
+    public int? RearLowSpeedRebound { get; set; }
 
     [JsonIgnore]
     [Column("front_hsr")]
-    public uint? FrontHighSpeedRebound { get; set; }
+    public int? FrontHighSpeedRebound { get; set; }
 
     [JsonIgnore]
     [Column("rear_hsr")]
-    public uint? RearHighSpeedRebound { get; set; }
+    public int? RearHighSpeedRebound { get; set; }
 
     [JsonIgnore]
     [Column("front_tire_pressure")]

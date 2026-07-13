@@ -31,6 +31,12 @@
                 <Setter Property="Margin" Value="2" />
                 <Setter Property="FontSize" Value="12" />
             </Style>
+            <!--  Damping click counts (HSC/LSC/LSR/HSR) are counted from either the fully-closed
+                  or fully-open end, so negative values (e.g. "-3 clicks") are valid input.
+                  Override the page-wide Minimum="0" for just these fields.  -->
+            <Style Selector="NumericUpDown.clicks">
+                <Setter Property="Minimum" Value="-2147483648" />
+            </Style>
             <!--  Cap spinner button width so the value stays readable on touch screens.  -->
             <Style Selector="NumericUpDown /template/ ButtonSpinner /template/ RepeatButton">
                 <Setter Property="MinWidth" Value="0" />
@@ -174,6 +180,7 @@
         <NumericUpDown
             Grid.Row="3"
             Grid.Column="3"
+            Classes="clicks"
             Value="{Binding ForkSettings.HighSpeedCompression}" />
         <ToggleButton
             Grid.Row="3"
@@ -185,6 +192,7 @@
         <NumericUpDown
             Grid.Row="3"
             Grid.Column="6"
+            Classes="clicks"
             Value="{Binding ShockSettings.HighSpeedCompression}" />
         <ToggleButton
             Grid.Row="3"
@@ -204,6 +212,7 @@
         <NumericUpDown
             Grid.Row="4"
             Grid.Column="3"
+            Classes="clicks"
             Value="{Binding ForkSettings.LowSpeedCompression}" />
         <ToggleButton
             Grid.Row="4"
@@ -215,6 +224,7 @@
         <NumericUpDown
             Grid.Row="4"
             Grid.Column="6"
+            Classes="clicks"
             Value="{Binding ShockSettings.LowSpeedCompression}" />
         <ToggleButton
             Grid.Row="4"
@@ -234,6 +244,7 @@
         <NumericUpDown
             Grid.Row="5"
             Grid.Column="3"
+            Classes="clicks"
             Value="{Binding ForkSettings.LowSpeedRebound}" />
         <ToggleButton
             Grid.Row="5"
@@ -245,6 +256,7 @@
         <NumericUpDown
             Grid.Row="5"
             Grid.Column="6"
+            Classes="clicks"
             Value="{Binding ShockSettings.LowSpeedRebound}" />
         <ToggleButton
             Grid.Row="5"
@@ -264,6 +276,7 @@
         <NumericUpDown
             Grid.Row="6"
             Grid.Column="3"
+            Classes="clicks"
             Value="{Binding ForkSettings.HighSpeedRebound}" />
         <ToggleButton
             Grid.Row="6"
@@ -275,6 +288,7 @@
         <NumericUpDown
             Grid.Row="6"
             Grid.Column="6"
+            Classes="clicks"
             Value="{Binding ShockSettings.HighSpeedRebound}" />
         <ToggleButton
             Grid.Row="6"

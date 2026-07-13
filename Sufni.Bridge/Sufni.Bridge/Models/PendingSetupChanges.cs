@@ -12,18 +12,18 @@ public class PendingSetupChanges
 
     [Column("front_springrate")] public string? FrontSpringRate { get; set; }
     [Column("front_volspc")] public double? FrontVolSpc { get; set; }
-    [Column("front_hsc")] public uint? FrontHighSpeedCompression { get; set; }
-    [Column("front_lsc")] public uint? FrontLowSpeedCompression { get; set; }
-    [Column("front_lsr")] public uint? FrontLowSpeedRebound { get; set; }
-    [Column("front_hsr")] public uint? FrontHighSpeedRebound { get; set; }
+    [Column("front_hsc")] public int? FrontHighSpeedCompression { get; set; }
+    [Column("front_lsc")] public int? FrontLowSpeedCompression { get; set; }
+    [Column("front_lsr")] public int? FrontLowSpeedRebound { get; set; }
+    [Column("front_hsr")] public int? FrontHighSpeedRebound { get; set; }
     [Column("front_tire_pressure")] public double? FrontTirePressure { get; set; }
 
     [Column("rear_springrate")] public string? RearSpringRate { get; set; }
     [Column("rear_volspc")] public double? RearVolSpc { get; set; }
-    [Column("rear_hsc")] public uint? RearHighSpeedCompression { get; set; }
-    [Column("rear_lsc")] public uint? RearLowSpeedCompression { get; set; }
-    [Column("rear_lsr")] public uint? RearLowSpeedRebound { get; set; }
-    [Column("rear_hsr")] public uint? RearHighSpeedRebound { get; set; }
+    [Column("rear_hsc")] public int? RearHighSpeedCompression { get; set; }
+    [Column("rear_lsc")] public int? RearLowSpeedCompression { get; set; }
+    [Column("rear_lsr")] public int? RearLowSpeedRebound { get; set; }
+    [Column("rear_hsr")] public int? RearHighSpeedRebound { get; set; }
     [Column("rear_tire_pressure")] public double? RearTirePressure { get; set; }
 
     [Column("updated")] public int Updated { get; set; }
