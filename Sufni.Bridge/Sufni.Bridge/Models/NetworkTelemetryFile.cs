@@ -18,12 +18,18 @@ public class NetworkTelemetryFile : ITelemetryFile
 
     private readonly IPEndPoint ipEndPoint;
 
+    // Transfer whose "file received" ack is deferred until the session is in the
+    // database (OnImported). The DAQ only moves the file to "uploaded" on that
+    // ack, so a crash/kill mid-import leaves the file re-importable on the DAQ.
+    private SstTcpClient.PendingFile? pendingAck;
+
     public async Task<(TelemetryData Data, byte[] Psst)> GeneratePsstAsync(Linkage linkage, Calibration? frontCal, Calibration? rearCal)
     {
         var idString = FileName[..5].TrimStart('0');
         var idInt = int.Parse(idString);
-        var rawData = await SstTcpClient.GetFile(ipEndPoint, idInt);
-        var rawTelemetryData = new RawTelemetryData(rawData);
+        pendingAck?.Dispose();
+        pendingAck = await SstTcpClient.GetFileDeferred(ipEndPoint, idInt);
+        var rawTelemetryData = new RawTelemetryData(pendingAck.Data);
         var telemetryData = new TelemetryData(FileName,
             rawTelemetryData.Version, rawTelemetryData.SampleRate, rawTelemetryData.Timestamp,
             frontCal, rearCal, linkage);
@@ -31,9 +37,21 @@ public class NetworkTelemetryFile : ITelemetryFile
         return (telemetryData, psst);
     }
 
-    public Task OnImported()
+    public async Task OnImported()
     {
+        if (pendingAck is not null)
+        {
+            await pendingAck.AcknowledgeAsync();
+            pendingAck = null;
+        }
         Imported = true;
+    }
+
+    public Task OnImportFailed()
+    {
+        // Drop the connection without acknowledging — the DAQ keeps the file.
+        pendingAck?.Dispose();
+        pendingAck = null;
         return Task.CompletedTask;
     }
 

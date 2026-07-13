@@ -19,5 +19,8 @@ public interface ITelemetryFile
     // callers can reuse the object (duration, cache precomputation) without re-deserializing.
     public Task<(TelemetryData Data, byte[] Psst)> GeneratePsstAsync(Linkage linkage, Calibration? frontCal, Calibration? rearCal);
     public Task OnImported();
+    // Called when an import attempt for this file failed, so implementations can
+    // release per-transfer resources (e.g. an unacknowledged DAQ connection).
+    public Task OnImportFailed() => Task.CompletedTask;
     public Task OnTrashed();
 }

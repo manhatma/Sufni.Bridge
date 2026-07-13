@@ -330,6 +330,7 @@ public partial class ImportSessionsViewModel : ViewModelBase
             }
             catch (Exception e)
             {
+                await telemetryFile.OnImportFailed();
                 Dispatcher.UIThread.Post(() =>
                 {
                     ErrorMessages.Add($"Could not import {telemetryFile.Name}: {e.Message}");
@@ -344,7 +345,19 @@ public partial class ImportSessionsViewModel : ViewModelBase
 
         foreach (var telemetryFile in TelemetryFiles.Where(f => !f.ShouldBeImported.HasValue))
         {
-            await telemetryFile.OnTrashed();
+            try
+            {
+                await telemetryFile.OnTrashed();
+            }
+            catch (Exception e)
+            {
+                // A failed trash must not abort the run — the finish signal below
+                // still has to reach the DAQ so its server mode shuts down.
+                Dispatcher.UIThread.Post(() =>
+                {
+                    ErrorMessages.Add($"Could not trash {telemetryFile.Name}: {e.Message}");
+                });
+            }
         }
 
         if (SelectedDataStore is NetworkTelemetryDataStore networkStore)
