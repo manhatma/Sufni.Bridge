@@ -73,6 +73,56 @@ public partial class SessionListViewModel : ItemListViewModelBase
 
     public ObservableCollection<SessionDayGroupViewModel> DayGroups { get; } = [];
 
+    // ---- Compare-selection tree helpers -----------------------------------------------------
+    //
+    // Sub-sessions of a combined session live only inside their parent's SubSessions collection,
+    // never in Items/Source/DayGroups. Compare-mode selection (count/restore/gather/mutual
+    // exclusion) must therefore walk the whole tree, not just the top-level Items.
+
+    // All sessions reachable from Items: each top-level session plus every sub-session nested
+    // beneath it, at any depth.
+    private IEnumerable<SessionViewModel> AllSessionsFlat() =>
+        Items.OfType<SessionViewModel>().SelectMany(s => new[] { s }.Concat(Descendants(s)));
+
+    private static IEnumerable<SessionViewModel> Descendants(SessionViewModel node) =>
+        node.SubSessions.SelectMany(s => new[] { s }.Concat(Descendants(s)));
+
+    // The chain of combined-session ancestors of target, from some top-level session down to
+    // (but excluding) target itself. Empty if target is a top-level session or not found.
+    private IEnumerable<SessionViewModel> Ancestors(SessionViewModel target)
+    {
+        foreach (var top in Items.OfType<SessionViewModel>())
+        {
+            if (top == target) yield break;
+
+            var chain = new List<SessionViewModel>();
+            if (CollectAncestorChain(top, target, chain))
+            {
+                foreach (var a in chain)
+                    yield return a;
+                yield break;
+            }
+        }
+    }
+
+    private static bool CollectAncestorChain(SessionViewModel node, SessionViewModel target, List<SessionViewModel> chain)
+    {
+        foreach (var child in node.SubSessions)
+        {
+            if (child == target)
+            {
+                chain.Add(node);
+                return true;
+            }
+            if (CollectAncestorChain(child, target, chain))
+            {
+                chain.Add(node);
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void RebuildDayGroups()
     {
         // Save expand states
@@ -265,7 +315,10 @@ public partial class SessionListViewModel : ItemListViewModelBase
 
     private void ClearSelectionMode()
     {
-        foreach (var item in Items)
+        // Clear sub-session selections too — otherwise a stale compare-mode selection on a
+        // sub-session (invisible in combine/delete mode) would linger and corrupt counts.
+        // AllSessionsFlat() already covers every top-level item plus its sub-sessions.
+        foreach (var item in AllSessionsFlat())
             item.IsSelectedForCompare = false;
         CompareSelectionCount = 0;
         CombineSelectionCount = 0;
@@ -286,9 +339,9 @@ public partial class SessionListViewModel : ItemListViewModelBase
             IsDeleteMode = false;
             ClearSelectionMode();
 
-            // Restore previous selection
+            // Restore previous selection (may include sub-session ids)
             var count = 0;
-            foreach (var item in Items)
+            foreach (var item in AllSessionsFlat())
             {
                 if (_lastCompareSelection.Contains(item.Id))
                 {
@@ -301,7 +354,7 @@ public partial class SessionListViewModel : ItemListViewModelBase
         else
         {
             _lastCompareSelection.Clear();
-            foreach (var item in Items)
+            foreach (var item in AllSessionsFlat())
             {
                 if (item.IsSelectedForCompare)
                     _lastCompareSelection.Add(item.Id);
@@ -318,20 +371,34 @@ public partial class SessionListViewModel : ItemListViewModelBase
         {
             item.IsSelectedForCompare = false;
             CompareSelectionCount--;
+            return;
         }
-        else if (CompareSelectionCount < 3)
+
+        // A combined session and any of its own sub-sessions (ancestors or descendants,
+        // recursively) are mutually exclusive as compare candidates: selecting one deselects
+        // any already-selected relative first. Unrelated sessions — including sub-sessions of
+        // a *different* combined session — are unaffected.
+        if (item is SessionViewModel svm)
         {
-            item.IsSelectedForCompare = true;
-            CompareSelectionCount++;
+            var conflicts = Ancestors(svm).Concat(Descendants(svm)).Where(c => c.IsSelectedForCompare).ToList();
+            foreach (var conflict in conflicts)
+            {
+                conflict.IsSelectedForCompare = false;
+                CompareSelectionCount--;
+            }
         }
+
+        if (CompareSelectionCount >= 3) return;
+
+        item.IsSelectedForCompare = true;
+        CompareSelectionCount++;
     }
 
     [RelayCommand]
     private void OpenComparison()
     {
-        var selected = Items
-            .Where(i => i.IsSelectedForCompare)
-            .OfType<SessionViewModel>()
+        var selected = AllSessionsFlat()
+            .Where(s => s.IsSelectedForCompare)
             .ToList();
 
         if (selected.Count < 2) return;
@@ -349,7 +416,7 @@ public partial class SessionListViewModel : ItemListViewModelBase
 
         // Reset compare mode UI
         IsCompareMode = false;
-        foreach (var item in Items)
+        foreach (var item in AllSessionsFlat())
         {
             item.IsSelectedForCompare = false;
         }

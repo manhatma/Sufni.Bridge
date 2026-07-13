@@ -1,0 +1,68 @@
+<UserControl
+    x:Class="Sufni.Bridge.Views.Controls.CompareSubSessionRow"
+    xmlns="https://github.com/avaloniaui"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="clr-namespace:Sufni.Bridge.Views.Controls"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    xmlns:vli="clr-namespace:Sufni.Bridge.Views.ItemLists"
+    xmlns:vm="clr-namespace:Sufni.Bridge.ViewModels.Items"
+    xmlns:vml="clr-namespace:Sufni.Bridge.ViewModels.ItemLists"
+    d:DesignHeight="60"
+    d:DesignWidth="500"
+    x:DataType="vm:SessionViewModel"
+    mc:Ignorable="d">
+
+    <!-- Compare-mode counterpart to SubSessionRow: the whole row toggles this sub-session's
+         compare selection (instead of opening the session), and shows a display-only checkbox.
+         The command lives on SessionListViewModel, not on the row's own DataContext, so it is
+         reached via an ancestor binding typed to the concrete SessionListView (not the generic
+         UserControl) — otherwise, at deeper nesting levels, $parent[UserControl] would resolve
+         to the nearest enclosing CompareSubSessionRow instead of climbing past it. -->
+    <StackPanel>
+        <Button Height="28"
+                Padding="{Binding $parent[controls:CompareSubSessionRow].RowPadding}"
+                HorizontalAlignment="Stretch"
+                VerticalContentAlignment="Center"
+                Background="#1a1e21" CornerRadius="0"
+                Command="{Binding $parent[vli:SessionListView].((vml:SessionListViewModel)DataContext).ToggleCompareSelectionCommand}"
+                CommandParameter="{Binding}">
+            <Grid ColumnDefinitions="30 30 * auto" HorizontalAlignment="Stretch">
+                <CheckBox Grid.Column="0" IsChecked="{Binding IsSelectedForCompare}"
+                          IsHitTestVisible="False" VerticalAlignment="Center" />
+                <!-- Chain toggle for a combined session nested inside this row's parent -->
+                <Button Grid.Column="1" Background="Transparent" Padding="0"
+                        VerticalAlignment="Center" HorizontalAlignment="Left"
+                        Width="30" Height="28"
+                        Command="{Binding ToggleExpandCommand}"
+                        IsVisible="{Binding IsCombinedSession, FallbackValue=False}">
+                    <Image Width="15" Height="15"
+                           Source="{SvgImage /Assets/fa-link.svg}">
+                        <Image.RenderTransform>
+                            <RotateTransform Angle="{Binding ChainIconAngle, FallbackValue=90}" />
+                        </Image.RenderTransform>
+                    </Image>
+                </Button>
+                <TextBlock Grid.Column="2" Text="{Binding Name}"
+                           Foreground="#B0B0B0" FontSize="12"
+                           VerticalAlignment="Center" />
+                <TextBlock Grid.Column="3" Text="{Binding Timestamp}"
+                           Foreground="#606060" FontSize="12"
+                           VerticalAlignment="Center"
+                           IsVisible="{Binding !IsCombinedSession, FallbackValue=True}" />
+            </Grid>
+        </Button>
+        <Separator Height="1" Margin="{Binding $parent[controls:CompareSubSessionRow].SeparatorMargin}"
+                   Background="#2a2e32" />
+
+        <!-- Nested sub-sessions, one level deeper, when this row is itself a combined session -->
+        <ItemsRepeater ItemsSource="{Binding SubSessions}"
+                       IsVisible="{Binding IsExpanded, FallbackValue=False}">
+            <ItemsRepeater.ItemTemplate>
+                <DataTemplate x:DataType="vm:SessionViewModel">
+                    <controls:CompareSubSessionRow Level="{Binding $parent[controls:CompareSubSessionRow].NextLevel, FallbackValue=2}" />
+                </DataTemplate>
+            </ItemsRepeater.ItemTemplate>
+        </ItemsRepeater>
+    </StackPanel>
+</UserControl>

@@ -298,10 +298,24 @@
                                                     Classes="compare-item"
                                                     Command="{Binding $parent[UserControl].((vml:SessionListViewModel)DataContext).ToggleCompareSelectionCommand}"
                                                     CommandParameter="{Binding}">
-                                                <Grid ColumnDefinitions="30 auto * auto" HorizontalAlignment="Stretch">
+                                                <Grid ColumnDefinitions="30 30 * auto" HorizontalAlignment="Stretch">
                                                     <CheckBox Grid.Column="0" IsChecked="{Binding IsSelectedForCompare}"
                                                               IsHitTestVisible="False" VerticalAlignment="Center" />
-                                                    <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                                    <!-- Chain toggle: expand/collapse a combined session's sub-sessions
+                                                         so they can be selected as compare candidates too. -->
+                                                    <Button Grid.Column="1" Background="Transparent" Padding="0"
+                                                            VerticalAlignment="Center" HorizontalAlignment="Left"
+                                                            Width="30" Height="34"
+                                                            Command="{Binding ToggleExpandCommand}"
+                                                            IsVisible="{Binding IsCombinedSession, FallbackValue=False}">
+                                                        <Image Width="17" Height="17"
+                                                               Source="{SvgImage /Assets/fa-link.svg}">
+                                                            <Image.RenderTransform>
+                                                                <RotateTransform Angle="{Binding ChainIconAngle, FallbackValue=90}" />
+                                                            </Image.RenderTransform>
+                                                        </Image>
+                                                    </Button>
+                                                    <TextBlock Grid.Column="2" Text="{Binding Name}"
                                                                VerticalAlignment="Center" FontSize="13" />
                                                     <TextBlock Grid.Column="3" Text="{Binding Timestamp}"
                                                                VerticalAlignment="Center" Foreground="#808080" FontSize="13" />
@@ -309,6 +323,16 @@
                                             </Button>
                                             <Separator Height="1" Margin="0"
                                                        Background="{StaticResource SufniBackgroundDisabled}" />
+
+                                            <!-- Expanded sub-sessions, selectable as their own compare candidates. -->
+                                            <ItemsRepeater ItemsSource="{Binding SubSessions}"
+                                                           IsVisible="{Binding IsExpanded, FallbackValue=False}">
+                                                <ItemsRepeater.ItemTemplate>
+                                                    <DataTemplate x:DataType="vmi:SessionViewModel">
+                                                        <controls:CompareSubSessionRow Level="1" />
+                                                    </DataTemplate>
+                                                </ItemsRepeater.ItemTemplate>
+                                            </ItemsRepeater>
                                         </StackPanel>
                                     </DataTemplate>
                                 </ItemsRepeater.ItemTemplate>
