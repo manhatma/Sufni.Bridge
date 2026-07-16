@@ -123,7 +123,8 @@ public class SqLiteDatabaseService : IDatabaseService
             typeof(Synchronization),
             typeof(CombinedSessionSource),
             typeof(PendingSetupChanges),
-            typeof(BalanceTargetOverride)
+            typeof(BalanceTargetOverride),
+            typeof(DayLabel)
         });
 
         if (result.Results[typeof(CalibrationMethod)] == CreateTableResult.Created)
@@ -1027,5 +1028,23 @@ public class SqLiteDatabaseService : IDatabaseService
         await connection.ExecuteAsync(
             "DELETE FROM balance_target_override WHERE id = ?",
             BalanceTargetOverride.MakeId(discipline, metricKey));
+    }
+
+    public async Task<List<DayLabel>> GetDayLabelsAsync()
+    {
+        await Initialization;
+        return await connection.Table<DayLabel>().ToListAsync();
+    }
+
+    public async Task PutDayLabelAsync(DayLabel label)
+    {
+        await Initialization;
+        await connection.InsertOrReplaceAsync(label);
+    }
+
+    public async Task DeleteDayLabelAsync(string date)
+    {
+        await Initialization;
+        await connection.ExecuteAsync("DELETE FROM day_label WHERE date = ?", date);
     }
 }

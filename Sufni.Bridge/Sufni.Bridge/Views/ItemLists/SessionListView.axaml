@@ -45,6 +45,30 @@
         <Style Selector="Button.compare-item:pointerover /template/ ContentPresenter#PART_ContentPresenter">
             <Setter Property="Background" Value="#1f2327" />
         </Style>
+        <!--  Day-group label display + inline editing (same pencil pattern as BalancePageView)  -->
+        <Style Selector="TextBlock.day-label">
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Foreground" Value="#66c2a5" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+        </Style>
+        <Style Selector="ToggleButton.pencil">
+            <Setter Property="Padding" Value="4" />
+            <Setter Property="MinWidth" Value="0" />
+            <Setter Property="MinHeight" Value="0" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="HorizontalAlignment" Value="Center" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="ToggleButton.pencil /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderBrush" Value="Transparent" />
+        </Style>
+        <Style Selector="ToggleButton.pencil:pointerover /template/ ContentPresenter#PART_ContentPresenter">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Opacity" Value="0.8" />
+        </Style>
         <Style Selector="Button.compare-open">
             <Setter Property="Background" Value="#3288bd" />
             <Setter Property="Foreground" Value="#ffffff" />
@@ -227,11 +251,14 @@
             <controls:PullableMenuScrollViewer.ItemTemplate>
                 <DataTemplate x:DataType="vmi:SessionDayGroupViewModel">
                     <StackPanel>
-                        <!-- Day group header -->
+                        <!-- Day group header. The nested pencil starts editing the day's custom
+                             label; while editing, the whole row is swapped for the edit variant
+                             below so the TextBox never lives inside the expand button. -->
                         <Button Background="Transparent" Padding="10,8" CornerRadius="0"
                                 HorizontalAlignment="Stretch"
-                                Command="{Binding ToggleExpandCommand}">
-                            <Grid ColumnDefinitions="20 * auto" HorizontalAlignment="Stretch">
+                                Command="{Binding ToggleExpandCommand}"
+                                IsVisible="{Binding !IsEditingLabel}">
+                            <Grid ColumnDefinitions="20 Auto * Auto Auto" HorizontalAlignment="Stretch">
                                 <Image Grid.Column="0" Width="12" Height="12"
                                        Source="{SvgImage /Assets/fa-chevron-right.svg}">
                                     <Image.RenderTransform>
@@ -241,11 +268,41 @@
                                 <TextBlock Grid.Column="1" Text="{Binding Title}"
                                            VerticalAlignment="Center" FontSize="13"
                                            FontWeight="DemiBold" Foreground="#D0D0D0" />
-                                <TextBlock Grid.Column="2" Text="{Binding TimeRange}"
+                                <TextBlock Grid.Column="2" Classes="day-label" Margin="8,0"
+                                           HorizontalAlignment="Left"
+                                           Text="{Binding Label, StringFormat='· {0}'}"
+                                           IsVisible="{Binding HasLabel}" />
+                                <ToggleButton Grid.Column="3" Classes="pencil" Margin="0,0,8,0"
+                                              IsChecked="{Binding IsEditingLabel}"
+                                              IsVisible="{Binding CanEditLabel}">
+                                    <Image Width="13" Source="{SvgImage /Assets/fa-pen-square.svg}" />
+                                </ToggleButton>
+                                <TextBlock Grid.Column="4" Text="{Binding TimeRange}"
                                            VerticalAlignment="Center" FontSize="12"
                                            Foreground="#808080" />
                             </Grid>
                         </Button>
+                        <!-- Label edit variant of the header row -->
+                        <Grid ColumnDefinitions="20 Auto * Auto Auto" Margin="10,4"
+                              IsVisible="{Binding IsEditingLabel}">
+                            <TextBlock Grid.Column="1" Text="{Binding Title}"
+                                       VerticalAlignment="Center" FontSize="13"
+                                       FontWeight="DemiBold" Foreground="#D0D0D0" />
+                            <TextBox Grid.Column="2" Margin="8,0" MinHeight="30" FontSize="13"
+                                     VerticalContentAlignment="Center"
+                                     Text="{Binding LabelEditText}"
+                                     Watermark="Add label" />
+                            <Button Grid.Column="3" Classes="embedded"
+                                    Command="{Binding ConfirmEditLabelCommand}"
+                                    ToolTip.Tip="Save label">
+                                <Image Width="14" Source="{SvgImage /Assets/fa-check_green.svg}" />
+                            </Button>
+                            <Button Grid.Column="4" Classes="embedded" Margin="10,0,0,0"
+                                    Command="{Binding CancelEditLabelCommand}"
+                                    ToolTip.Tip="Discard changes">
+                                <Image Width="12" Source="{SvgImage /Assets/fa-xmark.svg}" />
+                            </Button>
+                        </Grid>
                         <Border Height="1" Background="#2e3438" />
                         <!-- Sessions in this day group -->
                         <ItemsRepeater ItemsSource="{Binding Sessions}"
@@ -282,9 +339,15 @@
                                             <RotateTransform Angle="{Binding ChevronAngle}" />
                                         </Image.RenderTransform>
                                     </Image>
-                                    <TextBlock Grid.Column="1" Text="{Binding Title}"
-                                               VerticalAlignment="Center" FontSize="13"
-                                               FontWeight="DemiBold" Foreground="#D0D0D0" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                                VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Title}"
+                                                   VerticalAlignment="Center" FontSize="13"
+                                                   FontWeight="DemiBold" Foreground="#D0D0D0" />
+                                        <TextBlock Classes="day-label" Margin="8,0,0,0"
+                                                   Text="{Binding Label, StringFormat='· {0}'}"
+                                                   IsVisible="{Binding HasLabel}" />
+                                    </StackPanel>
                                     <TextBlock Grid.Column="2" Text="{Binding TimeRange}"
                                                VerticalAlignment="Center" FontSize="12"
                                                Foreground="#808080" />
@@ -376,9 +439,15 @@
                                             <RotateTransform Angle="{Binding ChevronAngle}" />
                                         </Image.RenderTransform>
                                     </Image>
-                                    <TextBlock Grid.Column="1" Text="{Binding Title}"
-                                               VerticalAlignment="Center" FontSize="13"
-                                               FontWeight="DemiBold" Foreground="#D0D0D0" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                                VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Title}"
+                                                   VerticalAlignment="Center" FontSize="13"
+                                                   FontWeight="DemiBold" Foreground="#D0D0D0" />
+                                        <TextBlock Classes="day-label" Margin="8,0,0,0"
+                                                   Text="{Binding Label, StringFormat='· {0}'}"
+                                                   IsVisible="{Binding HasLabel}" />
+                                    </StackPanel>
                                     <TextBlock Grid.Column="2" Text="{Binding TimeRange}"
                                                VerticalAlignment="Center" FontSize="12"
                                                Foreground="#808080" />
@@ -463,9 +532,15 @@
                                             <RotateTransform Angle="{Binding ChevronAngle}" />
                                         </Image.RenderTransform>
                                     </Image>
-                                    <TextBlock Grid.Column="1" Text="{Binding Title}"
-                                               VerticalAlignment="Center" FontSize="13"
-                                               FontWeight="DemiBold" Foreground="#D0D0D0" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal"
+                                                VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Title}"
+                                                   VerticalAlignment="Center" FontSize="13"
+                                                   FontWeight="DemiBold" Foreground="#D0D0D0" />
+                                        <TextBlock Classes="day-label" Margin="8,0,0,0"
+                                                   Text="{Binding Label, StringFormat='· {0}'}"
+                                                   IsVisible="{Binding HasLabel}" />
+                                    </StackPanel>
                                     <TextBlock Grid.Column="2" Text="{Binding TimeRange}"
                                                VerticalAlignment="Center" FontSize="12"
                                                Foreground="#808080" />

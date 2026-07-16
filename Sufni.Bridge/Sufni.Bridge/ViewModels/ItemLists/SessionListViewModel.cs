@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.Diagnostics;
+using System.Globalization;
 using System.Linq;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -59,6 +60,11 @@ public partial class SessionListViewModel : ItemListViewModelBase
     private HashSet<Guid> _combinedIds = [];
     private readonly Dictionary<DateOnly, bool> _expandState = new();
     private bool _noDateExpanded;
+
+    // User-defined day-group labels, keyed by calendar day. Loaded once per LoadFromDatabase
+    // and kept in sync by PersistDayLabelAsync; RebuildDayGroups re-applies them because it
+    // recreates every group VM on each source change.
+    private readonly Dictionary<DateOnly, string> _dayLabels = new();
     private bool HasSelectedCombinedSessions
     {
         get
@@ -151,6 +157,9 @@ public partial class SessionListViewModel : ItemListViewModelBase
                 expanded = _noDateExpanded;
 
             var dayGroup = new SessionDayGroupViewModel(g.Key, expanded);
+            if (g.Key.HasValue && _dayLabels.TryGetValue(g.Key.Value, out var label))
+                dayGroup.Label = label;
+            dayGroup.PersistLabel = PersistDayLabelAsync;
             foreach (var s in g.OrderByDescending(s => s.Timestamp))
                 dayGroup.Sessions.Add(s);
             DayGroups.Add(dayGroup);
@@ -188,6 +197,16 @@ public partial class SessionListViewModel : ItemListViewModelBase
 
         try
         {
+            // Day labels must be in place before sessions hit Source: every Source change
+            // triggers RebuildDayGroups, which reads them.
+            _dayLabels.Clear();
+            foreach (var dayLabel in await databaseService.GetDayLabelsAsync())
+            {
+                if (DateOnly.TryParseExact(dayLabel.Date, "yyyy-MM-dd", CultureInfo.InvariantCulture,
+                        DateTimeStyles.None, out var date))
+                    _dayLabels[date] = dayLabel.Label;
+            }
+
             var sessionList = await databaseService.GetSessionsAsync();
             _combinedIds = await databaseService.GetAllCombinedIdsAsync();
 
@@ -229,6 +248,33 @@ public partial class SessionListViewModel : ItemListViewModelBase
         catch (Exception e)
         {
             ErrorMessages.Add($"Could not load Sessions: {e.Message}");
+        }
+    }
+
+    // Invoked by a day group when the user commits a label edit; writes through to the DB
+    // and keeps the lookup used by RebuildDayGroups in sync. An empty label deletes the row.
+    private async Task PersistDayLabelAsync(SessionDayGroupViewModel group)
+    {
+        Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
+        if (group.Date is not { } date) return;
+
+        try
+        {
+            var key = date.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture);
+            if (string.IsNullOrWhiteSpace(group.Label))
+            {
+                _dayLabels.Remove(date);
+                await databaseService.DeleteDayLabelAsync(key);
+            }
+            else
+            {
+                _dayLabels[date] = group.Label;
+                await databaseService.PutDayLabelAsync(new DayLabel { Date = key, Label = group.Label });
+            }
+        }
+        catch (Exception e)
+        {
+            ErrorMessages.Add($"Could not save day label: {e.Message}");
         }
     }
 

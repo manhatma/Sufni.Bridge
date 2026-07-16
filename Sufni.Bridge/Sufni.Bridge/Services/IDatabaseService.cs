@@ -61,4 +61,7 @@ public interface IDatabaseService
     public Task<List<BalanceTargetOverride>> GetBalanceTargetOverridesAsync(Discipline discipline);
     public Task PutBalanceTargetOverrideAsync(BalanceTargetOverride balanceTargetOverride);
     public Task DeleteBalanceTargetOverrideAsync(Discipline discipline, string metricKey);
+    public Task<List<DayLabel>> GetDayLabelsAsync();
+    public Task PutDayLabelAsync(DayLabel label);
+    public Task DeleteDayLabelAsync(string date);
 }
