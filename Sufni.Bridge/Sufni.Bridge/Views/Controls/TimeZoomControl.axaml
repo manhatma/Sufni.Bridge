@@ -51,6 +51,21 @@
             <Setter Property="Foreground" Value="#66c2a5" />
             <Setter Property="FontFamily" Value="Courier New, Courier, monospace" />
         </Style>
+
+        <!--  Fine pan-adjustment buttons flanking the pan slider (1 s step, see NudgePanBack/Forward).
+             Sized to match the slider's thumb (30x30, see Slider.Resources below) for a comfortable
+             touch target on phone, styled like CropPageView's nudge buttons otherwise.  -->
+        <Style Selector="Button.pan-nudge">
+            <Setter Property="MinWidth" Value="30" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="Padding" Value="4,2" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{StaticResource SufniForeground}" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
     </UserControl.Styles>
 
     <StackPanel
@@ -120,58 +135,75 @@
                 </StackPanel>
             </Border>
 
-            <!--  Pan slider + start/end readout, only while zoomed.  -->
-            <StackPanel
+            <!--  Pan slider + nudge buttons + start/end readout, only while zoomed. The ◀◀/▶▶ buttons
+                 flank the slider column so they stay clear of the thumb's travel range.  -->
+            <Grid
                 Grid.Column="1"
+                ColumnDefinitions="Auto,*,Auto"
                 VerticalAlignment="Center"
-                IsVisible="{Binding IsZoomActive}"
-                Orientation="Vertical"
-                Spacing="0">
-                <Slider
-                    MinHeight="40"
+                IsVisible="{Binding IsZoomActive}">
+                <Button
+                    Grid.Column="0"
+                    Classes="pan-nudge"
+                    Command="{Binding NudgePanBackCommand}"
+                    Content="◀◀" />
+                <StackPanel
+                    Grid.Column="1"
+                    Margin="4,0"
                     VerticalAlignment="Center"
-                    Classes="pan"
-                    Maximum="{Binding MaxStartSeconds}"
-                    Minimum="0"
-                    Value="{Binding StartSeconds, Mode=TwoWay}">
-                    <!--  Fluent's Slider template drives the thumb/track purely off DynamicResource
-                         lookups (verified against Avalonia 11.2.5 source) — no ordinary Style setter
-                         can reach the thumb's CornerRadius, so the resource keys are overridden here,
-                         scoped to just this Slider instance via Slider.Resources.  -->
-                    <Slider.Resources>
-                        <x:Double x:Key="SliderHorizontalThumbWidth">30</x:Double>
-                        <x:Double x:Key="SliderHorizontalThumbHeight">30</x:Double>
-                        <CornerRadius x:Key="SliderThumbCornerRadius">15</CornerRadius>
-                        <SolidColorBrush x:Key="SliderThumbBackground" Color="{StaticResource SufniAccentColor}" />
-                        <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="{StaticResource SufniAccentColor}" />
-                        <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="{StaticResource SufniAccentColor}" />
-                        <SolidColorBrush x:Key="SliderThumbBackgroundDisabled" Color="{StaticResource SufniForegroundDisabled}" />
-                        <x:Double x:Key="SliderTrackThemeHeight">6</x:Double>
-                        <SolidColorBrush x:Key="SliderTrackFill" Color="{StaticResource SufniBackground}" />
-                        <SolidColorBrush x:Key="SliderTrackValueFill" Color="{StaticResource SufniAccentColor}" />
-                        <SolidColorBrush x:Key="SliderTrackFillPointerOver" Color="{StaticResource SufniBackground}" />
-                        <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="{StaticResource SufniAccentColor}" />
-                        <SolidColorBrush x:Key="SliderTrackFillPressed" Color="{StaticResource SufniBackground}" />
-                        <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="{StaticResource SufniAccentColor}" />
-                        <SolidColorBrush x:Key="SliderTrackFillDisabled" Color="{StaticResource SufniBackgroundDisabled}" />
-                        <SolidColorBrush x:Key="SliderTrackValueFillDisabled" Color="{StaticResource SufniForegroundDisabled}" />
-                        <GridLength x:Key="SliderPreContentMargin">6</GridLength>
-                        <GridLength x:Key="SliderPostContentMargin">6</GridLength>
-                    </Slider.Resources>
-                    <!--  BorderBrush/BorderThickness are hardcoded (not resource-bound) in Fluent's
-                         template, so a /template/ style override is the only way to reach them.  -->
-                    <Slider.Styles>
-                        <Style Selector="Slider /template/ Thumb">
-                            <Setter Property="BorderBrush" Value="#40FFFFFF" />
-                            <Setter Property="BorderThickness" Value="2" />
-                        </Style>
-                    </Slider.Styles>
-                </Slider>
-                <Grid ColumnDefinitions="*,*" Margin="0,-2,0,0">
-                    <TextBlock Grid.Column="0" HorizontalAlignment="Left" Classes="zoom-value" Text="{Binding StartLabel}" />
-                    <TextBlock Grid.Column="1" HorizontalAlignment="Right" Classes="zoom-value" Text="{Binding EndLabel}" />
-                </Grid>
-            </StackPanel>
+                    Orientation="Vertical"
+                    Spacing="0">
+                    <Slider
+                        MinHeight="40"
+                        VerticalAlignment="Center"
+                        Classes="pan"
+                        Maximum="{Binding MaxStartSeconds}"
+                        Minimum="0"
+                        Value="{Binding StartSeconds, Mode=TwoWay}">
+                        <!--  Fluent's Slider template drives the thumb/track purely off DynamicResource
+                             lookups (verified against Avalonia 11.2.5 source) — no ordinary Style setter
+                             can reach the thumb's CornerRadius, so the resource keys are overridden here,
+                             scoped to just this Slider instance via Slider.Resources.  -->
+                        <Slider.Resources>
+                            <x:Double x:Key="SliderHorizontalThumbWidth">30</x:Double>
+                            <x:Double x:Key="SliderHorizontalThumbHeight">30</x:Double>
+                            <CornerRadius x:Key="SliderThumbCornerRadius">15</CornerRadius>
+                            <SolidColorBrush x:Key="SliderThumbBackground" Color="{StaticResource SufniAccentColor}" />
+                            <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="{StaticResource SufniAccentColor}" />
+                            <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="{StaticResource SufniAccentColor}" />
+                            <SolidColorBrush x:Key="SliderThumbBackgroundDisabled" Color="{StaticResource SufniForegroundDisabled}" />
+                            <x:Double x:Key="SliderTrackThemeHeight">6</x:Double>
+                            <SolidColorBrush x:Key="SliderTrackFill" Color="{StaticResource SufniBackground}" />
+                            <SolidColorBrush x:Key="SliderTrackValueFill" Color="{StaticResource SufniAccentColor}" />
+                            <SolidColorBrush x:Key="SliderTrackFillPointerOver" Color="{StaticResource SufniBackground}" />
+                            <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="{StaticResource SufniAccentColor}" />
+                            <SolidColorBrush x:Key="SliderTrackFillPressed" Color="{StaticResource SufniBackground}" />
+                            <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="{StaticResource SufniAccentColor}" />
+                            <SolidColorBrush x:Key="SliderTrackFillDisabled" Color="{StaticResource SufniBackgroundDisabled}" />
+                            <SolidColorBrush x:Key="SliderTrackValueFillDisabled" Color="{StaticResource SufniForegroundDisabled}" />
+                            <GridLength x:Key="SliderPreContentMargin">6</GridLength>
+                            <GridLength x:Key="SliderPostContentMargin">6</GridLength>
+                        </Slider.Resources>
+                        <!--  BorderBrush/BorderThickness are hardcoded (not resource-bound) in Fluent's
+                             template, so a /template/ style override is the only way to reach them.  -->
+                        <Slider.Styles>
+                            <Style Selector="Slider /template/ Thumb">
+                                <Setter Property="BorderBrush" Value="#40FFFFFF" />
+                                <Setter Property="BorderThickness" Value="2" />
+                            </Style>
+                        </Slider.Styles>
+                    </Slider>
+                    <Grid ColumnDefinitions="*,*" Margin="0,-2,0,0">
+                        <TextBlock Grid.Column="0" HorizontalAlignment="Left" Classes="zoom-value" Text="{Binding StartLabel}" />
+                        <TextBlock Grid.Column="1" HorizontalAlignment="Right" Classes="zoom-value" Text="{Binding EndLabel}" />
+                    </Grid>
+                </StackPanel>
+                <Button
+                    Grid.Column="2"
+                    Classes="pan-nudge"
+                    Command="{Binding NudgePanForwardCommand}"
+                    Content="▶▶" />
+            </Grid>
         </Grid>
 
     </StackPanel>
