@@ -811,7 +811,7 @@ public class SqLiteDatabaseService : IDatabaseService
             .FirstOrDefaultAsync() is not null;
     }
 
-    public async Task<Session?> GetMostRecentSessionAsync()
+    public async Task<Session?> GetMostRecentSessionAsync(Guid setupId)
     {
         await Initialization;
         const string query = """
@@ -822,11 +822,11 @@ public class SqLiteDatabaseService : IDatabaseService
                                  rear_springrate, rear_volspc, rear_hsc, rear_lsc, rear_lsr, rear_hsr,
                                  rear_tire_pressure
                              FROM session
-                             WHERE deleted IS NULL
+                             WHERE deleted IS NULL AND setup_id = ?
                              ORDER BY timestamp DESC
                              LIMIT 1
                              """;
-        var results = await connection.QueryAsync<Session>(query);
+        var results = await connection.QueryAsync<Session>(query, setupId);
         return results.Count == 1 ? results[0] : null;
     }
 

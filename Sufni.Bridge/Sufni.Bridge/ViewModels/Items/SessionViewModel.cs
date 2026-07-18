@@ -2008,6 +2008,11 @@ public partial class SessionViewModel : ItemViewModelBase
             foreach (var subSession in SubSessions)
                 subSession.SessionModel.Setup = newSetup.Id;
             SummaryPage.IsEditingSetup = false;
+
+            // The pending list shown in the Notes page belongs to the previous setup;
+            // reload it for the new one so stale entries are not re-persisted under it.
+            NotesPage.LoadPending(await databaseService.GetPendingSetupChangesAsync(newSetup.Id));
+
             var telemetryData = await databaseService.GetSessionPsstAsync(Id);
             if (telemetryData != null)
             {

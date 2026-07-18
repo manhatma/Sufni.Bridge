@@ -218,7 +218,7 @@ public partial class ImportSessionsViewModel : ViewModelBase
 
         ImportInProgress = true;
 
-        var lastSession = await databaseService.GetMostRecentSessionAsync();
+        var lastSession = await databaseService.GetMostRecentSessionAsync(SelectedSetup!.Value);
         var pendingChanges = await databaseService.GetPendingSetupChangesAsync(SelectedSetup!.Value);
         var pendingApplied = false;
 
