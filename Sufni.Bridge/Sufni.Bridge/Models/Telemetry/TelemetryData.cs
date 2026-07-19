@@ -2013,6 +2013,15 @@ public class TelemetryData
         _                   => 2.0, // Enduro / default
     };
 
+    // Peak search deliberately starts at 1.6 Hz to reject most pedaling-cadence content
+    // (typically 1.2-1.6 Hz). Its discipline-aware ceiling follows the existing Low/Mid split
+    // plus 0.7 Hz: XC 3.5, Trail 3.1, Enduro/default 2.7, DH 2.3. This covers the plausible
+    // sprung-mass mode, including stiff XC setups, without allowing >4 Hz transition/frame
+    // content to be reported as body resonance. The wider [1.0, fSplit] energy band below is
+    // intentionally unchanged because integration is not vulnerable to a single cadence peak.
+    public static (double MinHz, double MaxHz) BodyResonancePeakBandFor(Discipline? d) =>
+        (1.6, FrequencySplitFor(d) + 0.7);
+
     // Body-resonance peak detection in the velocity domain.
     //
     // The travel-amplitude spectrum is dominated by a 1/f-like trend, so finding
@@ -2713,6 +2722,7 @@ public class TelemetryData
         double? lowCoh = null, midCoh = null, wheelCoh = null, highCoh = null;
         double? haStaticDeg = null, haShiftDeg = null;
         double fSplit = FrequencySplitFor(discipline);
+        var (peakMinHz, peakMaxHz) = BodyResonancePeakBandFor(discipline);
 
         var maxF = Linkage?.MaxFrontTravel ?? 0;
         var maxR = Linkage?.MaxRearTravel ?? 0;
@@ -2819,7 +2829,7 @@ public class TelemetryData
             var spec = GetTravelSpectrum(SuspensionType.Front);
             if (spec.Amplitudes.Length > 0)
             {
-                var (f, a) = FindDominantPeak(spec, 1.3, 4.5);
+                var (f, a) = FindDominantPeak(spec, peakMinHz, peakMaxHz);
                 if (!double.IsNaN(f)) { fPeak = f; fAmp = a; }
             }
         }
@@ -2828,7 +2838,7 @@ public class TelemetryData
             var spec = GetTravelSpectrum(SuspensionType.Rear);
             if (spec.Amplitudes.Length > 0)
             {
-                var (f, a) = FindDominantPeak(spec, 1.3, 4.5);
+                var (f, a) = FindDominantPeak(spec, peakMinHz, peakMaxHz);
                 if (!double.IsNaN(f)) { rPeak = f; rAmp = a; }
             }
         }

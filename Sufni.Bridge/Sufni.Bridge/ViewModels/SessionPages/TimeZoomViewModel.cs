@@ -25,8 +25,15 @@ public partial class TimeZoomViewModel : ObservableObject
     public const int Window5Seconds = 5;
     public const int Window10Seconds = 10;
 
-    // Step size for the pan nudge buttons, which fine-adjust StartSeconds independently of the slider.
-    private const double PanNudgeSeconds = 1.0;
+    // Scale fine pan adjustments with the selected window; an unknown/off window keeps the
+    // legacy 1 s fallback. The buttons adjust StartSeconds independently of the slider.
+    private double PanNudgeStepSeconds => WindowSeconds switch
+    {
+        Window2Seconds => 0.25,
+        Window5Seconds => 0.5,
+        Window10Seconds => 1.0,
+        _ => 1.0,
+    };
 
     // Per-domain session-overview strips (travel/velocity/acceleration). The TimeZoomControl on each
     // page picks the one matching its page via its MiniMap styled property; all three share the same
@@ -87,8 +94,8 @@ public partial class TimeZoomViewModel : ObservableObject
     }
 
     // Fine pan adjustment: OnStartSecondsChanged clamps and fires WindowChanged, so these just set the value.
-    [RelayCommand] private void NudgePanBack()    => StartSeconds = Math.Max(0, StartSeconds - PanNudgeSeconds);
-    [RelayCommand] private void NudgePanForward() => StartSeconds = Math.Min(MaxStartSeconds, StartSeconds + PanNudgeSeconds);
+    [RelayCommand] private void NudgePanBack()    => StartSeconds = Math.Max(0, StartSeconds - PanNudgeStepSeconds);
+    [RelayCommand] private void NudgePanForward() => StartSeconds = Math.Min(MaxStartSeconds, StartSeconds + PanNudgeStepSeconds);
 
     partial void OnWindowSecondsChanged(int value)
     {

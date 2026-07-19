@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 215;
+    private const int CurrentPlotVersion = 216;
 
     // Approximate rendered height of the VelocityBandView control (margin + title text +
     // 44 px band grid). Used to size the low-speed velocity histograms so the
@@ -728,6 +728,9 @@ public partial class SessionViewModel : ItemViewModelBase
                 : tthSource.Rear.Present ? tthSource.Rear.Travel.Length : 0
         };
         var tasks = new List<Task>();
+        var disciplineTask = telemetryData.Front.Present && telemetryData.Rear.Present
+            ? GetSessionDisciplineAsync()
+            : null;
         tasks.Add(ThrottledPlotTask("tth", () =>
         {
             var tth = new TravelTimeHistoryPlot(new Plot());
@@ -986,10 +989,13 @@ public partial class SessionViewModel : ItemViewModelBase
         // Combined Front+Rear FFT and Balance metrics — only when both sides are present.
         if (telemetryData.Front.Present && telemetryData.Rear.Present)
         {
+            var discipline = await disciplineTask!;
+            var (peakMinHz, peakMaxHz) = TelemetryData.BodyResonancePeakBandFor(discipline);
+
             tasks.Add(ThrottledPlotTask("velFft", () =>
             {
                 var velFft = new CombinedTravelFftPlot(new Plot(), minHz: 1.0, maxHz: 10.0,
-                    peakMinHz: 1.3, peakMaxHz: 4.5,
+                    peakMinHz: peakMinHz, peakMaxHz: peakMaxHz,
                     fitYAxisToData: true, topHeadroomDb: 2.0,
                     mode: WheelSpectrumMode.Velocity);
                 velFft.LoadTelemetryData(telemetryData);
@@ -1001,7 +1007,7 @@ public partial class SessionViewModel : ItemViewModelBase
             tasks.Add(ThrottledPlotTask("travelFft", () =>
             {
                 var fft = new CombinedTravelFftPlot(new Plot(), minHz: 1.0, maxHz: 10.0,
-                    peakMinHz: 1.3, peakMaxHz: 4.5,
+                    peakMinHz: peakMinHz, peakMaxHz: peakMaxHz,
                     fitYAxisToData: true, topHeadroomDb: 3.0);
                 fft.LoadTelemetryData(telemetryData);
                 sessionCache.CombinedTravelFft = fft.Plot.GetSvgXml(width, height);
@@ -1025,7 +1031,6 @@ public partial class SessionViewModel : ItemViewModelBase
 
             tasks.Add(Task.Run(async () =>
             {
-                var discipline = await GetSessionDisciplineAsync();
                 // Refresh Wheelbase from the live linkage row — the Linkage carried
                 // in telemetryData comes from the MessagePack blob, whose Id is
                 // [IgnoreMember] and is regenerated on deserialization. Resolve the
