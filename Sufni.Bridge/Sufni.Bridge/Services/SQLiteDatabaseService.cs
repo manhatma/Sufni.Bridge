@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Threading.Tasks;
 using MessagePack;
 using SQLite;
@@ -872,6 +874,74 @@ public class SqLiteDatabaseService : IDatabaseService
         await Initialization;
         await connection.InsertOrReplaceAsync(sessionCache);
         return sessionCache.SessionId;
+    }
+
+    private const int SessionCacheRepackedUserVersion = 2;
+
+    // The [Ignore] text accessors of SessionCache and their byte[] [Column] twins, matched
+    // by naming convention so newly added SVG columns are covered automatically.
+    private static readonly (PropertyInfo Text, PropertyInfo Stored)[] CompressedCacheColumns =
+        typeof(SessionCache).GetProperties()
+            .Where(p => p.PropertyType == typeof(string) && p.GetCustomAttribute<IgnoreAttribute>() is not null)
+            .Select(p => (p, typeof(SessionCache).GetProperty(p.Name + "Stored")
+                ?? throw new InvalidOperationException($"no Stored twin for {p.Name}")))
+            .ToArray();
+
+    public async Task CompactSessionCacheAsync()
+    {
+        await Initialization;
+        var result = await CompactSessionCacheCoreAsync(connection, () => Task.Delay(50));
+        if (result is { } r)
+            Debug.WriteLine($"session_cache maintenance: {r.repacked}/{r.rows} rows re-packed");
+    }
+
+    /// <summary>
+    /// One-time maintenance behind PRAGMA user_version: re-packs session_cache rows written
+    /// before compression existed (plain-text cells → gzip through the SessionCache setters)
+    /// and VACUUMs once afterwards so the freed pages are returned to the filesystem. Safe
+    /// to interrupt: already-packed rows are skipped on the next run, and the version stamp
+    /// is only written after the VACUUM succeeded. Returns null when the stamp says the
+    /// maintenance already ran. Static so the perf harness can run the identical code
+    /// against a test database.
+    /// </summary>
+    public static async Task<(int rows, int repacked)?> CompactSessionCacheCoreAsync(
+        SQLiteAsyncConnection conn, Func<Task>? interRowDelay = null)
+    {
+        if (await conn.ExecuteScalarAsync<int>("PRAGMA user_version") >= SessionCacheRepackedUserVersion)
+            return null;
+
+        var ids = (await conn.QueryAsync<SessionCache>("SELECT session_id FROM session_cache"))
+            .Select(r => r.SessionId).ToList();
+        var repacked = 0;
+        foreach (var id in ids)
+        {
+            var row = await conn.Table<SessionCache>().Where(s => s.SessionId == id).FirstOrDefaultAsync();
+            if (row is null)
+                continue;
+            var dirty = false;
+            foreach (var (text, stored) in CompressedCacheColumns)
+            {
+                if (stored.GetValue(row) is byte[] cell && !CompressedText.IsPacked(cell))
+                {
+                    // Get decodes (plain-UTF-8 fallback for legacy cells), set re-packs.
+                    text.SetValue(row, text.GetValue(row));
+                    dirty = true;
+                }
+            }
+            if (!dirty)
+                continue;
+            // A whole-row write can race a concurrent CreateCache of the same session. That
+            // is harmless: the re-packed row then carries superseded staleness tokens, so
+            // the next open detects the mismatch and rebuilds.
+            await conn.InsertOrReplaceAsync(row);
+            repacked++;
+            if (interRowDelay is not null)
+                await interRowDelay();
+        }
+
+        await conn.ExecuteAsync("VACUUM");
+        await conn.ExecuteAsync($"PRAGMA user_version = {SessionCacheRepackedUserVersion}");
+        return (ids.Count, repacked);
     }
 
     public async Task<int> ReassignSetupInSessionsAsync(Guid oldSetupId, Guid newSetupId)

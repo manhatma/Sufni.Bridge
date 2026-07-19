@@ -8,6 +8,7 @@ using Sufni.Bridge.Views;
 using System;
 using System.Diagnostics;
 using System.Globalization;
+using System.Threading.Tasks;
 using Avalonia.Controls;
 
 namespace Sufni.Bridge;
@@ -59,6 +60,24 @@ public partial class App : Application
         var fileService = Services.GetService<IFilesService>();
         var mainViewModel = Services.GetService<MainViewModel>();
         Debug.Assert(fileService != null, nameof(fileService) + " != null");
+
+        // One-time session_cache maintenance (re-pack pre-compression rows + VACUUM),
+        // deferred so it never competes with the initial session-list load. Gated on
+        // PRAGMA user_version inside, so after the first completed run this is a single
+        // cheap PRAGMA probe per app start.
+        var databaseService = Services.GetService<IDatabaseService>();
+        _ = Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(15));
+                await databaseService!.CompactSessionCacheAsync();
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"session_cache maintenance failed: {ex.Message}");
+            }
+        });
 
         switch (ApplicationLifetime)
         {

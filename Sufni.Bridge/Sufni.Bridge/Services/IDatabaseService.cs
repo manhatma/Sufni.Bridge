@@ -47,6 +47,7 @@ public interface IDatabaseService
     public Task<SessionCache?> GetSessionCacheAsync(Guid sessionId);
     public Task<SessionCacheMeta?> GetSessionCacheMetaAsync(Guid sessionId);
     public Task<Guid> PutSessionCacheAsync(SessionCache sessionCache);
+    public Task CompactSessionCacheAsync();
     public Task<int> ReassignSetupInSessionsAsync(Guid oldSetupId, Guid newSetupId);
     public Task ReassignSessionSetupAsync(Guid sessionId, Guid newSetupId);
     public Task<int> GetLastSyncTimeAsync();
