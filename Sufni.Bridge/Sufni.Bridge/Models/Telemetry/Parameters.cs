@@ -154,4 +154,12 @@ public static class Parameters
 
     public static double WhAccelLambdaFor(double sampleRate) =>
         sampleRate > 0 ? WhAccelLambda * Math.Pow(sampleRate / WhReferenceSampleRate, 2.0 * WhAccelOrder) : WhAccelLambda;
+
+    // Exact WH λ for a desired −3 dB cutoff. The WH amplitude response for order p is
+    //   H(ω) = 1 / (1 + λ·(2·sin(ω/2))^(2p)),  ω = 2π·f/f_s,
+    // so |H| = 1/√2 at f_c gives λ = (√2 − 1) / (2·sin(π·f_c/f_s))^(2p). The approximation
+    // f_c/f_s ≈ (1/2π)·λ^(−1/2p) quoted above is the small-angle shorthand of this. Already
+    // sample-rate exact — no separate fs^(2p) rescaling needed.
+    public static double WhLambdaForCutoff(double cutoffHz, double sampleRate, int order) =>
+        (Math.Sqrt(2.0) - 1.0) / Math.Pow(2.0 * Math.Sin(Math.PI * cutoffHz / sampleRate), 2.0 * order);
 }

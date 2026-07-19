@@ -30,6 +30,17 @@ public class PitchBalancePlot(Plot plot, double? expectedMinDeg, double? expecte
             return;
         }
 
+        // Drawn detail trace: the 4 Hz band-limit inside CalculatePitchDegrees uses a gentle
+        // moving-average cascade whose 3–8 Hz leakage still reads as hair on the trace. For
+        // display only, a sharp WH low-pass at DisplayLowPassHz is applied on top; μ/σ/P5–95
+        // keep coming from the unmodified series via CalculatePitchStatistics.
+        var displayed = pitch;
+        if (pitch.Length > Parameters.WhOrder && telemetryData.SampleRate > 0)
+            displayed = new WhittakerHendersonSmoother(
+                    Parameters.WhOrder,
+                    Parameters.WhLambdaForCutoff(DisplayLowPassHz, telemetryData.SampleRate, Parameters.WhOrder))
+                .Smooth(pitch);
+
         var period = 1.0 / telemetryData.SampleRate;
         var maxDuration = pitch.Length * period;
 
@@ -40,15 +51,16 @@ public class PitchBalancePlot(Plot plot, double? expectedMinDeg, double? expecte
         var stats = telemetryData.CalculatePitchStatistics()!.Value;
         var (mean, std, p5, p95, _, _) = stats;
 
-        // Full-series min/max: used for the Y-axis limits below AND for the nose-dive/squat
-        // extremes in the stats box. The drawn trace spans the whole series, so the box extremes
-        // must describe the same data — windowed extremes would miss sustained excursions that
-        // produce no strokes (e.g. a held steep-chute plateau) while the trace visibly shows them.
+        // Min/max of the DRAWN trace: used for the Y-axis limits below AND for the nose-dive/squat
+        // extremes in the stats box. The box extremes must describe the same data the trace shows —
+        // windowed extremes would miss sustained excursions that produce no strokes (e.g. a held
+        // steep-chute plateau), and extremes from the unsmoothed series would exceed the visible
+        // curve. Hence they come from `displayed`, not `pitch`.
         double fullMin = double.PositiveInfinity, fullMax = double.NegativeInfinity;
-        for (var i = 0; i < pitch.Length; i++)
+        for (var i = 0; i < displayed.Length; i++)
         {
-            if (pitch[i] < fullMin) fullMin = pitch[i];
-            if (pitch[i] > fullMax) fullMax = pitch[i];
+            if (displayed[i] < fullMin) fullMin = displayed[i];
+            if (displayed[i] > fullMax) fullMax = displayed[i];
         }
 
         // Expected discipline band first (drawn behind the trace) as a filled translucent green
@@ -64,7 +76,7 @@ public class PitchBalancePlot(Plot plot, double? expectedMinDeg, double? expecte
             band.LineStyle.IsVisible = false;
         }
 
-        var sig = Plot.Add.Signal(pitch, period);
+        var sig = Plot.Add.Signal(displayed, period);
         sig.Color = Color.FromHex("#c994c7").WithAlpha(70);
         sig.LineWidth = 1;
 
@@ -144,6 +156,14 @@ public class PitchBalancePlot(Plot plot, double? expectedMinDeg, double? expecte
     // (chassis pitch-mode / body band). Mirrors TelemetryData.LowPassZeroPhase; applied to the
     // already-4-Hz pitch series purely for a legible overlaid trend line.
     private const double TrendSmoothHz = 1.5;
+
+    // −3 dB cutoff of the display-only WH smoothing on the drawn detail trace. Chassis pitch is
+    // rigid-body motion bounded by the body/pitch mode, whose discipline split tops out at
+    // 2.8 Hz (XC) — 3 Hz is the tightest cutoff that still contains every discipline's body
+    // band, while the order-3 WH roll-off (−36 dB/oct) pushes the 10–25 Hz wheel band below
+    // −55 dB. Chosen sharp (WH) rather than a lower MA-cascade cutoff so real body-band motion
+    // survives and only the >3 Hz differential noise goes.
+    private const double DisplayLowPassHz = 3.0;
 
     private static double[] SmoothZeroPhase(double[] x, int sampleRate, double cutoffHz)
     {
