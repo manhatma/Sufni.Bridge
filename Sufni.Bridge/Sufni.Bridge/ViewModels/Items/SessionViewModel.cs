@@ -60,6 +60,15 @@ public partial class SessionViewModel : ItemViewModelBase
     private SvgImage? _fullFrontTravel, _fullRearTravel, _fullFrontVelocity, _fullRearVelocity, _fullFrontAccel, _fullRearAccel;
     private bool _timeZoomSnapshotTaken;
 
+    // Read-path state. _pagesPopulated: pages hold a complete render of the current cache row
+    // (valid load or rebuild), so a later Loaded() only re-validates the scalar cache meta and
+    // skips the wide row fetch + SVG re-parse. _backgroundSvgParse: the deferred parse of the
+    // non-Spring SVGs, awaited by the full-data load below so the blob deserialize doesn't
+    // compete with the parse burst. _fullDataLoad: in-flight deferred telemetry-blob load.
+    private bool _pagesPopulated;
+    private Task _backgroundSvgParse = Task.CompletedTask;
+    private Task? _fullDataLoad;
+
     private NotesPageViewModel NotesPage { get; } = new();
     public ObservableCollection<PageViewModelBase> Pages { get; }
     public string Description => NotesPage.Description ?? "";
@@ -178,11 +187,13 @@ public partial class SessionViewModel : ItemViewModelBase
         {
             try
             {
+                var swMini = Stopwatch.StartNew();
                 // One overview strip per domain (travel / velocity / acceleration), each with prominent
                 // airtime bands for navigation. The TimeZoomControl on each page shows the matching one.
                 var travelSrc = SvgToSource(RenderOverviewXml(new TravelTimeHistoryPlot(new Plot(), showAirtimeBands: true), data, width, miniHeight));
                 var velocitySrc = SvgToSource(RenderOverviewXml(new VelocityTimeHistoryPlot(new Plot(), showAirtimeBands: true), data, width, miniHeight));
                 var accelSrc = SvgToSource(RenderOverviewXml(new AccelerationTimeHistoryPlot(new Plot(), showAirtimeBands: true), data, width, miniHeight));
+                PerfLog.Log("load/miniMap", swMini.Elapsed.TotalMilliseconds);
                 Dispatcher.UIThread.Post(() =>
                 {
                     _timeZoom.MiniMapTravel = SourceToImage(travelSrc);
@@ -310,45 +321,72 @@ public partial class SessionViewModel : ItemViewModelBase
     private static SvgImage? SourceToImage(SvgSource? source) =>
         source is null ? null : new SvgImage { Source = source };
 
-    // Returns (cacheFound, hasVdc, hasPvc) so the caller can detect incomplete old caches
-    // without checking in-memory properties that lazy loading hasn't set yet.
-    private async Task<(bool found, bool hasVdc, bool hasPvc)> LoadCache()
+    // Staleness decision for a cache row, on scalars only: row exists, current PlotVersion,
+    // crop bounds match the session, and the pitch-band signature still matches the band
+    // implied by the CURRENT per-discipline overrides — the μ row re-colors live from those
+    // overrides, so a stale band would contradict it in the same view.
+    private async Task<bool> IsCacheMetaCurrentAsync(SessionCacheMeta? meta)
     {
-        var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
-        Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
-
-        var cache = await databaseService.GetSessionCacheAsync(Id);
-        Debug.WriteLine($"Session {Id}: LoadCache - cache found={cache is not null}");
-        if (cache is null || cache.PlotVersion != CurrentPlotVersion)
+        if (meta is null || meta.PlotVersion != CurrentPlotVersion)
         {
-            return (false, false, false);
+            return false;
         }
 
-        // Cache is stale when crop boundaries differ from what was cached
-        if (cache.CropStartSample != session.CropStartSample ||
-            cache.CropEndSample   != session.CropEndSample)
+        if (meta.CropStartSample != session.CropStartSample ||
+            meta.CropEndSample   != session.CropEndSample)
         {
-            return (false, false, false);
+            return false;
         }
 
-        // Cache is stale when the balance-target overrides (per discipline) no longer imply the
-        // expected pitch band that was baked into the PitchBalance SVG — the μ row re-colors
-        // live from the current overrides, so a stale band would contradict it in the same view.
-        if (cache.PitchBalance is not null && cache.BalanceMetricsJson is not null)
+        if (meta.HasPitchBalance && meta.BalanceMetricsJson is not null)
         {
             try
             {
-                var m = JsonSerializer.Deserialize<BalanceMetrics>(cache.BalanceMetricsJson);
-                if (m is not null && !PitchBandMatchesCache(await ComputeExpectedPitchBandAsync(m), cache))
+                var m = JsonSerializer.Deserialize<BalanceMetrics>(meta.BalanceMetricsJson);
+                if (m is not null && !PitchBandMatches(await ComputeExpectedPitchBandAsync(m),
+                        meta.PitchExpectedMinDeg, meta.PitchExpectedMaxDeg))
                 {
-                    return (false, false, false);
+                    return false;
                 }
             }
             catch
             {
-                // Corrupt metrics cache — the completeness checks below trigger a rebuild anyway
+                // Corrupt metrics cache — the completeness checks in LoadCache trigger a rebuild
             }
         }
+
+        return true;
+    }
+
+    // Returns (cacheFound, hasVdc, hasPvc) so the caller can detect incomplete old caches
+    // without checking in-memory properties that lazy loading hasn't set yet. `meta` is the
+    // scalar projection of the cache row, already fetched by the caller — the wide row (~30
+    // SVG columns, often tens of MB) is only materialized after meta passed the staleness
+    // checks, so a stale cache (e.g. after a PlotVersion bump) never pays the full fetch.
+    private async Task<(bool found, bool hasVdc, bool hasPvc)> LoadCache(SessionCacheMeta? meta)
+    {
+        var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
+        Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
+
+        Debug.WriteLine($"Session {Id}: LoadCache - cache found={meta is not null}");
+        if (!await IsCacheMetaCurrentAsync(meta))
+        {
+            return (false, false, false);
+        }
+
+        SessionCache? cache;
+        using (PerfLog.Measure("load/cacheRow"))
+        {
+            cache = await databaseService.GetSessionCacheAsync(Id);
+        }
+        // Row vanished between the meta probe and the wide fetch (e.g. invalidated by a
+        // concurrent setup reassignment) — treat as stale.
+        if (cache is null)
+        {
+            return (false, false, false);
+        }
+
+        var swParse = Stopwatch.StartNew();
 
         // Load TravelTimeHistory (full data, always in cache)
         if (cache.TravelTimeHistory is not null)
@@ -402,12 +440,15 @@ public partial class SessionViewModel : ItemViewModelBase
         SpringPage.FrontTravelHistogram      = SourceToImage(frontTravelHistTask.Result);
         SpringPage.RearTravelHistogram       = SourceToImage(rearTravelHistTask.Result);
 
+        PerfLog.Log("load/springSvg", swParse.Elapsed.TotalMilliseconds);
+
         // 3. Remaining pages: parse in background, only when cache is complete.
         //    Incomplete caches have hasVdc/hasPvc=false → caller triggers CreateCache() instead.
         if (hasVdc && hasPvc)
         {
-            _ = Task.Run(async () =>
+            _backgroundSvgParse = Task.Run(async () =>
             {
+                var swBg = Stopwatch.StartNew();
                 var frontVelHistTask   = Task.Run(() => SvgToSource(cache.FrontVelocityHistogram));
                 var frontLsVelHistTask = Task.Run(() => SvgToSource(cache.FrontLowSpeedVelocityHistogram));
                 var rearVelHistTask    = Task.Run(() => SvgToSource(cache.RearVelocityHistogram));
@@ -441,6 +482,8 @@ public partial class SessionViewModel : ItemViewModelBase
                     frontAccelCropTask, rearAccelCropTask,
                     combinedFftTask, combinedFftHighTask,
                     pitchBalanceTask, pitchCoherenceTask, goutScatterTask, cumulativeTravelTask);
+
+                PerfLog.Log("load/bgSvg", swBg.Elapsed.TotalMilliseconds);
 
                 var frontVelHistSrc   = frontVelHistTask.Result;
                 var frontLsVelHistSrc = frontLsVelHistTask.Result;
@@ -522,6 +565,58 @@ public partial class SessionViewModel : ItemViewModelBase
         return (true, hasVdc, hasPvc);
     }
 
+    // Kicks off the deferred load of the full telemetry blob (crop slider fallback, zoom
+    // mini-map, windowed re-renders). With a valid cache the open path doesn't need the blob —
+    // slider bounds come from the cache meta — so it's deserialized in the background AFTER
+    // the SVG parse burst instead of competing with it for cores. No-op while a load is in
+    // flight or once the data is there; a failed attempt is retried on the next Loaded.
+    private void EnsureFullDataLoaded(IDatabaseService databaseService)
+    {
+        if (CropPage.FullData is not null) return;
+        if (_fullDataLoad is { IsCompleted: false }) return;
+        _fullDataLoad = LoadFullDataAsync(databaseService);
+    }
+
+    // Must be started from the UI thread (continuations mutate CropPage / zoom state).
+    private async Task LoadFullDataAsync(IDatabaseService databaseService)
+    {
+        try
+        {
+            await _backgroundSvgParse;
+
+            var sw = Stopwatch.StartNew();
+            // Task.Run: the MessagePack deserialize of a multi-MB blob runs as a continuation
+            // inside GetSessionPsstAsync and must not land on the UI thread.
+            var fullData = await Task.Run(() => databaseService.GetSessionPsstAsync(Id));
+            PerfLog.Log("load/fullData", sw.Elapsed.TotalMilliseconds);
+            if (fullData is null) return;
+
+            var totalSamples = fullData.Front.Present
+                ? fullData.Front.Travel.Length
+                : fullData.Rear.Present ? fullData.Rear.Travel.Length : 0;
+            if (CropPage.TotalSamples == 0)
+            {
+                // Cache row predates the sample_rate/sample_count columns — seed the crop
+                // slider state from the blob, exactly like the old eager path did.
+                CropPage.SampleRate    = fullData.SampleRate;
+                CropPage.TotalSamples  = totalSamples;
+                CropPage.OriginalStartSample = session.CropStartSample ?? 0;
+                CropPage.OriginalEndSample   = session.CropEndSample   ?? totalSamples;
+                CropPage.CropStartSample = CropPage.OriginalStartSample;
+                CropPage.CropEndSample   = CropPage.OriginalEndSample;
+            }
+            CropPage.FullData   = fullData;
+            CropPage.ViewBounds = LastKnownBounds;
+
+            // Zoom state waited for this data — no-op if already initialised (e.g. crop apply).
+            InitializeTimeZoomIfNeeded();
+        }
+        catch
+        {
+            // Best-effort: the cached plots are unaffected; crop/zoom stay disabled until retry.
+        }
+    }
+
     /// <summary>
     /// Resolves the discipline of the Setup that owns this session, or null if the
     /// setup is missing/unreadable. Used by the balance metrics box to pick
@@ -570,11 +665,12 @@ public partial class SessionViewModel : ItemViewModelBase
             m.MaxFrontTravelMm, m.MaxRearTravelMm, m.WheelbaseMm);
     }
 
-    private static bool PitchBandMatchesCache((double minDeg, double maxDeg)? band, SessionCache cache)
+    private static bool PitchBandMatches((double minDeg, double maxDeg)? band,
+        double? cachedMinDeg, double? cachedMaxDeg)
     {
         static bool Eq(double? a, double? b) =>
             (a is null && b is null) || (a.HasValue && b.HasValue && Math.Abs(a.Value - b.Value) < 1e-9);
-        return Eq(band?.minDeg, cache.PitchExpectedMinDeg) && Eq(band?.maxDeg, cache.PitchExpectedMaxDeg);
+        return Eq(band?.minDeg, cachedMinDeg) && Eq(band?.maxDeg, cachedMaxDeg);
     }
 
     private static Task ThrottledPlotTask(string label, Action work)
@@ -615,17 +711,23 @@ public partial class SessionViewModel : ItemViewModelBase
         const double CollapsedTabBarHeight = 30.0;
         var tthHeight = (int)(((b.Height - CollapsedTabBarHeight) * 0.4 + b.Width / 2.0 + CollapsedTabBarHeight) / 2.0);
 
+        // TravelTimeHistory — always uses full (uncompressed) data
+        var tthSource = fullData ?? telemetryData;
+
         var sessionCache = new SessionCache
         {
             SessionId = Id,
             PlotVersion = CurrentPlotVersion,
             CropStartSample = session.CropStartSample,
-            CropEndSample   = session.CropEndSample
+            CropEndSample   = session.CropEndSample,
+            // Scalar meta for later opens: rate and FULL (uncropped) sample count let the
+            // crop slider seed without deserializing the telemetry blob.
+            SampleRate  = tthSource.SampleRate,
+            SampleCount = tthSource.Front.Present
+                ? tthSource.Front.Travel.Length
+                : tthSource.Rear.Present ? tthSource.Rear.Travel.Length : 0
         };
         var tasks = new List<Task>();
-
-        // TravelTimeHistory — always uses full (uncompressed) data
-        var tthSource = fullData ?? telemetryData;
         tasks.Add(ThrottledPlotTask("tth", () =>
         {
             var tth = new TravelTimeHistoryPlot(new Plot());
@@ -1788,7 +1890,8 @@ public partial class SessionViewModel : ItemViewModelBase
             var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
             if (databaseService is null) return;
 
-            var cacheExists = await databaseService.GetSessionCacheAsync(Id) is not null;
+            // Existence probe on the scalar meta row — the wide row would drag in all SVGs.
+            var cacheExists = await databaseService.GetSessionCacheMetaAsync(Id) is not null;
             if (cacheExists) return;
 
             var telemetryData = preloaded;
@@ -1889,11 +1992,14 @@ public partial class SessionViewModel : ItemViewModelBase
 
         try
         {
-            var cache = await databaseService.GetSessionCacheAsync(Id);
-            if (cache?.PitchBalance is null || cache.BalanceMetricsJson is null) return;
-            var metrics = JsonSerializer.Deserialize<BalanceMetrics>(cache.BalanceMetricsJson);
+            // Scalar meta suffices for the band comparison — no need to pull the wide SVG row
+            // just to decide that (usually) nothing moved.
+            var meta = await databaseService.GetSessionCacheMetaAsync(Id);
+            if (meta is null || !meta.HasPitchBalance || meta.BalanceMetricsJson is null) return;
+            var metrics = JsonSerializer.Deserialize<BalanceMetrics>(meta.BalanceMetricsJson);
             if (metrics is null) return;
-            if (PitchBandMatchesCache(await ComputeExpectedPitchBandAsync(metrics), cache)) return;
+            if (PitchBandMatches(await ComputeExpectedPitchBandAsync(metrics),
+                    meta.PitchExpectedMinDeg, meta.PitchExpectedMaxDeg)) return;
 
             IsAnalyzingData = true;
             try
@@ -2042,6 +2148,7 @@ public partial class SessionViewModel : ItemViewModelBase
     {
         try
         {
+            var swTotal = Stopwatch.StartNew();
             LastKnownBounds = bounds;
             var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
             Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
@@ -2065,7 +2172,25 @@ public partial class SessionViewModel : ItemViewModelBase
                 session.HasProcessedData = true;
             }
 
-            var (cacheLoaded, hasVdc, hasPvc) = await LoadCache();
+            SessionCacheMeta? meta;
+            using (PerfLog.Measure("load/meta"))
+            {
+                meta = await databaseService.GetSessionCacheMetaAsync(Id);
+            }
+
+            // Re-open fast path: the pages still hold a complete render of the current cache
+            // row and the scalar meta confirms that row is still current — skip the wide row
+            // fetch and the SVG re-parse entirely. Any token change (PlotVersion, crop, pitch
+            // band) or a deleted cache row falls through to the full path below.
+            if (_pagesPopulated && await IsCacheMetaCurrentAsync(meta))
+            {
+                EnsureFullDataLoaded(databaseService);
+                InitializeTimeZoomIfNeeded();
+                PerfLog.Log($"load/reopen {Id}", swTotal.Elapsed.TotalMilliseconds);
+                return;
+            }
+
+            var (cacheLoaded, hasVdc, hasPvc) = await LoadCache(meta);
 
             // Use cache-row flags (hasVdc/hasPvc) instead of in-memory properties —
             // the background lazy-load task hasn't set DamperPage/MiscPage properties yet.
@@ -2076,10 +2201,12 @@ public partial class SessionViewModel : ItemViewModelBase
 
             var needsSummary = SummaryPage.RunDataRows.Count == 0;
 
-            // Only hit the DB if we actually need to rebuild cache or summary
+            // Only hit the DB if we actually need to rebuild cache or summary.
+            // Task.Run: the blob deserialize inside GetSessionPsstAsync would otherwise run
+            // as a UI-thread continuation of this UI-initiated command.
             if (needsRecreate || needsSummary)
             {
-                var fullData = await databaseService.GetSessionPsstAsync(Id);
+                var fullData = await Task.Run(() => databaseService.GetSessionPsstAsync(Id));
 
                 if (needsRecreate)
                 {
@@ -2127,29 +2254,33 @@ public partial class SessionViewModel : ItemViewModelBase
                 }
             }
 
-            // Initialize CropPage slider state from cache (when cache was valid, fullData not loaded)
-            if (!needsRecreate && CropPage.TotalSamples == 0)
+            // Valid-cache path: seed the crop slider bounds from the scalar meta when the row
+            // carries them (no blob deserialize on the open path); rows written before the
+            // sample_rate/sample_count columns existed are seeded inside the deferred load.
+            if (!needsRecreate)
             {
-                var cachedData = await databaseService.GetSessionPsstAsync(Id);
-                if (cachedData is not null)
+                if (CropPage.TotalSamples == 0 && meta is { SampleRate: > 0, SampleCount: > 0 })
                 {
-                    var totalSamples = cachedData.Front.Present
-                        ? cachedData.Front.Travel.Length
-                        : cachedData.Rear.Present ? cachedData.Rear.Travel.Length : 0;
-                    CropPage.SampleRate      = cachedData.SampleRate;
-                    CropPage.TotalSamples    = totalSamples;
+                    CropPage.SampleRate    = meta.SampleRate.Value;
+                    CropPage.TotalSamples  = meta.SampleCount.Value;
                     CropPage.OriginalStartSample = session.CropStartSample ?? 0;
-                    CropPage.OriginalEndSample   = session.CropEndSample   ?? totalSamples;
+                    CropPage.OriginalEndSample   = session.CropEndSample   ?? meta.SampleCount.Value;
                     CropPage.CropStartSample = CropPage.OriginalStartSample;
                     CropPage.CropEndSample   = CropPage.OriginalEndSample;
-                    CropPage.FullData    = cachedData;
                     CropPage.ViewBounds  = LastKnownBounds;
                 }
+
+                // Full telemetry (CropPage.FullData, zoom mini-map) loads deferred, after the
+                // SVG parse burst — the open path no longer waits for the blob deserialize.
+                EnsureFullDataLoaded(databaseService);
             }
 
-            // Data (CropPage.FullData) is now populated — (re)initialise the shared time-zoom state
-            // and context mini-map. Idempotent: no-ops once initialised for the current data/crop.
+            _pagesPopulated = true;
+
+            // (Re)initialise the shared time-zoom state and context mini-map. No-ops while the
+            // deferred full-data load is still pending — it re-triggers this on completion.
             InitializeTimeZoomIfNeeded();
+            PerfLog.Log($"load/total {Id}", swTotal.Elapsed.TotalMilliseconds);
         }
         catch (Exception e)
         {

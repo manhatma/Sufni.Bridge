@@ -56,4 +56,28 @@ public class SessionCache
     // as a cache miss — otherwise the plot would contradict the live μ traffic light.
     [Column("pitch_expected_min_deg")] public double? PitchExpectedMinDeg { get; set; }
     [Column("pitch_expected_max_deg")] public double? PitchExpectedMaxDeg { get; set; }
+    // Sample rate and FULL (uncropped) sample count of the session's telemetry, so the crop
+    // slider bounds can be initialized without deserializing the multi-MB telemetry blob.
+    // Nullable/0 on rows written before these columns existed — callers must fall back.
+    [Column("sample_rate")] public int? SampleRate { get; set; }
+    [Column("sample_count")] public int? SampleCount { get; set; }
+}
+
+/// <summary>
+/// Scalar-only projection of a session_cache row. The full row carries ~30 columns of SVG
+/// text (often tens of MB); this covers everything needed to decide staleness (plot version,
+/// crop bounds, pitch-band signature) and to seed the crop slider, without materializing any
+/// SVG. Fetched via IDatabaseService.GetSessionCacheMetaAsync.
+/// </summary>
+public class SessionCacheMeta
+{
+    [Column("plot_version")] public int PlotVersion { get; set; }
+    [Column("crop_start_sample")] public int? CropStartSample { get; set; }
+    [Column("crop_end_sample")] public int? CropEndSample { get; set; }
+    [Column("pitch_expected_min_deg")] public double? PitchExpectedMinDeg { get; set; }
+    [Column("pitch_expected_max_deg")] public double? PitchExpectedMaxDeg { get; set; }
+    [Column("balance_metrics_json")] public string? BalanceMetricsJson { get; set; }
+    [Column("sample_rate")] public int? SampleRate { get; set; }
+    [Column("sample_count")] public int? SampleCount { get; set; }
+    [Column("has_pitch_balance")] public bool HasPitchBalance { get; set; }
 }

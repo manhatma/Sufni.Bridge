@@ -255,6 +255,8 @@ public class SqLiteDatabaseService : IDatabaseService
         await AddColumnIfMissing("cumulative_travel");
         await AddColumnIfMissing("pitch_expected_min_deg", "REAL");
         await AddColumnIfMissing("pitch_expected_max_deg", "REAL");
+        await AddColumnIfMissing("sample_rate", "INTEGER");
+        await AddColumnIfMissing("sample_count", "INTEGER");
     }
 
     private class TableInfoRecord
@@ -847,6 +849,22 @@ public class SqLiteDatabaseService : IDatabaseService
         return await connection.Table<SessionCache>()
             .Where(s => s.SessionId == sessionId)
             .FirstOrDefaultAsync();
+    }
+
+    public async Task<SessionCacheMeta?> GetSessionCacheMetaAsync(Guid sessionId)
+    {
+        await Initialization;
+        // Scalar-only probe: the full row holds ~30 SVG columns (often tens of MB) that
+        // Table<SessionCache>() would materialize before the caller can even look at
+        // plot_version. Callers check staleness against this first and fetch the wide
+        // row only when the cache is actually usable.
+        var results = await connection.QueryAsync<SessionCacheMeta>(
+            "SELECT plot_version, crop_start_sample, crop_end_sample, " +
+            "pitch_expected_min_deg, pitch_expected_max_deg, balance_metrics_json, " +
+            "sample_rate, sample_count, " +
+            "(pitch_balance IS NOT NULL) AS has_pitch_balance " +
+            "FROM session_cache WHERE session_id = ?", sessionId);
+        return results.Count == 1 ? results[0] : null;
     }
 
     public async Task<Guid> PutSessionCacheAsync(SessionCache sessionCache)
