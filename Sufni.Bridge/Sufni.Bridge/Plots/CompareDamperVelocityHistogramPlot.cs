@@ -13,7 +13,7 @@ public class CompareDamperVelocityHistogramPlot(Plot plot) : SufniPlot(plot)
 
     public void LoadMultipleSessions(List<(TelemetryData data, Color color, LinePattern pattern, string name)> sessions)
     {
-        SetTitle("Rear shaft velocity (damper domain)");
+        SetTitle("Damper shaft velocity");
         Plot.Layout.Fixed(new PixelPadding(50, 24, 50, 40));
         Plot.Axes.Bottom.Label.Text = "Shaft velocity (mm/s)";
         Plot.Axes.Left.Label.Text = "Time (%)";

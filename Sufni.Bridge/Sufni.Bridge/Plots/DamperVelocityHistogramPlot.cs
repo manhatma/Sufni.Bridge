@@ -22,11 +22,28 @@ public class DamperVelocityHistogramPlot(Plot plot) : TelemetryPlot(plot)
         Color.FromHex("#9e0142"),
     ];
 
+    private static readonly Color NormalDistributionColor = Color.FromHex("#d53e4f");
+
+    private void AddNormalDistributionLabel(double limit, double yRangeTop)
+    {
+        var label = Plot.Add.Text("Normal distribution", -limit, yRangeTop * 0.82);
+        label.LabelFontColor = NormalDistributionColor;
+        label.LabelFontSize = 10;
+        label.LabelFontName = "Menlo";
+        label.LabelAlignment = Alignment.UpperLeft;
+        label.LabelOffsetX = 5;
+        label.LabelBold = true;
+        label.LabelBackgroundColor = Color.FromHex("#15191C").WithAlpha(220);
+        label.LabelBorderColor = NormalDistributionColor.WithAlpha(80);
+        label.LabelBorderWidth = 1;
+        label.LabelPadding = 5;
+    }
+
     public override void LoadTelemetryData(TelemetryData telemetryData)
     {
         base.LoadTelemetryData(telemetryData);
 
-        SetTitle("Rear shaft velocity (damper domain)");
+        SetTitle("Damper shaft velocity");
 
         Plot.Layout.Fixed(new PixelPadding(50, 24, 50, 40));
 
@@ -87,7 +104,7 @@ public class DamperVelocityHistogramPlot(Plot plot) : TelemetryPlot(plot)
         var normal = Plot.Add.Scatter(
             normalData.Y.ToArray(),
             normalData.Pdf.ToArray());
-        normal.Color = Color.FromHex("#d53e4f");
+        normal.Color = NormalDistributionColor;
         normal.MarkerStyle.IsVisible = false;
         normal.LineStyle.Width = 3;
         normal.LineStyle.Pattern = LinePattern.Dotted;
@@ -106,6 +123,8 @@ public class DamperVelocityHistogramPlot(Plot plot) : TelemetryPlot(plot)
         label.LabelBorderColor = RearColor.WithAlpha(80);
         label.LabelBorderWidth = 1;
         label.LabelPadding = 5;
+
+        AddNormalDistributionLabel(limit, yRangeTop);
     }
 
     // Picks a round tick spacing (~4 divisions per side) so mm/s labels stay readable and
