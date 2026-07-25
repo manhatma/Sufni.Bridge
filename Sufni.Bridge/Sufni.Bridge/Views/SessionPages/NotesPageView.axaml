@@ -18,11 +18,14 @@
         <SolidColorBrush x:Key="PendingAccentBrush" Color="{StaticResource SufniAccentColor}" />
     </UserControl.Resources>
 
-    <Grid
+    <ScrollViewer
         Width="{Binding $parent[ScrollViewer].Bounds.Width}"
-        Margin="0,10,0,0"
-        ColumnDefinitions="15 auto 10 * 18 6 * 18 15"
-        RowDefinitions="auto auto auto auto auto auto auto auto auto *">
+        HorizontalScrollBarVisibility="Disabled"
+        VerticalScrollBarVisibility="Auto">
+        <Grid
+            Margin="0,10,0,0"
+            ColumnDefinitions="15 auto 10 * 18 6 * 18 15"
+            RowDefinitions="auto auto auto auto auto auto auto auto auto *">
 
         <Grid.Styles>
             <Style Selector="NumericUpDown">
@@ -388,10 +391,12 @@
             Grid.ColumnSpan="7"
             Margin="0,10,0,0"
             HorizontalAlignment="Stretch"
+            MinHeight="120"
             VerticalAlignment="Stretch"
             VerticalContentAlignment="Top"
             AcceptsReturn="True"
             Text="{Binding Description}"
             TextWrapping="Wrap" />
-    </Grid>
+        </Grid>
+    </ScrollViewer>
 </UserControl>

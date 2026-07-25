@@ -2,6 +2,7 @@ using System;
 using System.ComponentModel;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Primitives;
 using Avalonia.Input;
 using Avalonia.Interactivity;
 using Avalonia.Threading;
@@ -120,7 +121,18 @@ public sealed class KeyboardVisibilityHelper
 
     private static void ScrollIntoView(TextBox textBox)
     {
-        var scrollViewer = textBox.FindAncestorOfType<ScrollViewer>();
+        ScrollViewer? scrollViewer = null;
+        foreach (var ancestor in textBox.GetVisualAncestors())
+        {
+            if (ancestor is ScrollViewer candidate &&
+                candidate.VerticalScrollBarVisibility != ScrollBarVisibility.Disabled &&
+                candidate.Extent.Height > candidate.Viewport.Height)
+            {
+                scrollViewer = candidate;
+                break;
+            }
+        }
+
         if (scrollViewer == null)
         {
             textBox.BringIntoView();
@@ -137,7 +149,12 @@ public sealed class KeyboardVisibilityHelper
         var bounds = new Rect(textBox.Bounds.Size).TransformToAABB(transform.Value);
         var targetOffset = scrollViewer.Offset.Y;
 
-        if (bounds.Bottom > scrollViewer.Viewport.Height)
+        if (bounds.Height + ScrollSlack > scrollViewer.Viewport.Height)
+        {
+            // Taller than the viewport: align the top edge, so the first line stays visible.
+            targetOffset += bounds.Top - ScrollSlack;
+        }
+        else if (bounds.Bottom > scrollViewer.Viewport.Height)
         {
             targetOffset += bounds.Bottom - scrollViewer.Viewport.Height + ScrollSlack;
         }
