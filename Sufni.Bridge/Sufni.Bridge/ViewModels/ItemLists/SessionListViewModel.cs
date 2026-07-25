@@ -35,7 +35,10 @@ public partial class SetupFilterItem : ObservableObject
 public partial class SessionListViewModel : ItemListViewModelBase
 {
     [ObservableProperty] private bool isCompareMode;
-    [ObservableProperty] private int compareSelectionCount;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasCompareSelection))]
+    [NotifyPropertyChangedFor(nameof(HasEnoughCompareSelections))]
+    private int compareSelectionCount;
     [ObservableProperty] private bool isFilterMenuOpen;
     [ObservableProperty] private bool isFilterActive;
     [ObservableProperty] private bool isCombineMode;
@@ -45,6 +48,8 @@ public partial class SessionListViewModel : ItemListViewModelBase
     [ObservableProperty] private bool isCombining;
     [ObservableProperty] private bool isDeleteMode;
     [ObservableProperty] private int deleteSelectionCount;
+    public bool HasCompareSelection => CompareSelectionCount > 0;
+    public bool HasEnoughCompareSelections => CompareSelectionCount >= 2;
     public string DeleteConfirmLabel => HasSelectedCombinedSessions ? "Uncombine" : "Delete";
 
     public ObservableCollection<SetupFilterItem> SetupFilters { get; } = [];
@@ -438,6 +443,14 @@ public partial class SessionListViewModel : ItemListViewModelBase
 
         item.IsSelectedForCompare = true;
         CompareSelectionCount++;
+    }
+
+    [RelayCommand]
+    private void ClearCompareSelection()
+    {
+        foreach (var item in AllSessionsFlat())
+            item.IsSelectedForCompare = false;
+        CompareSelectionCount = 0;
     }
 
     [RelayCommand]

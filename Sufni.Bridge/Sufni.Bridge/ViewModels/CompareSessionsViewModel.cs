@@ -32,6 +32,18 @@ public class CompareTableRow
     }
 }
 
+public class CompareLegendEntry
+{
+    public string Name { get; }
+    public string Color { get; }
+
+    public CompareLegendEntry(string name, string color)
+    {
+        Name = name;
+        Color = color;
+    }
+}
+
 public partial class CompareSessionsViewModel : ViewModelBase
 {
     private static readonly Color[] SessionColors =
@@ -50,6 +62,7 @@ public partial class CompareSessionsViewModel : ViewModelBase
 
     public List<SessionViewModel> Sessions { get; }
     public List<string> SessionNames { get; }
+    public List<CompareLegendEntry> SessionLegend { get; }
     public int SessionCount => Sessions.Count;
 
     [ObservableProperty] private SvgImage? frontTravelHistogramSvg;
@@ -108,7 +121,13 @@ public partial class CompareSessionsViewModel : ViewModelBase
     {
         Sessions = sessions.OrderBy(s => s.Timestamp ?? DateTime.MinValue).ToList();
         SessionNames = Sessions.Select(s => s.Name ?? "Unknown").ToList();
+        SessionLegend = SessionNames
+            .Select((name, index) => new CompareLegendEntry(name, FormatColor(SessionColors[index])))
+            .ToList();
     }
+
+    private static string FormatColor(Color color) => string.Create(
+        CultureInfo.InvariantCulture, $"#{color.Red:X2}{color.Green:X2}{color.Blue:X2}");
 
     private static SvgSource? SvgToSource(string? svgXml) =>
         svgXml is null ? null : SvgSource.LoadFromSvg(svgXml);
@@ -538,7 +557,11 @@ public partial class CompareSessionsViewModel : ViewModelBase
 
             var sessionNames = string.Join("_vs_", SessionNames.Select(n =>
                 System.Text.RegularExpressions.Regex.Replace(n, @"[^\w\-.]", "_")));
-            var pdfPath = await Task.Run(() => RenderSvgsToPdf(validSvgs, sessionNames));
+            var legend = SessionLegend.ToList();
+            var frontRows = FrontWheelRows.ToList();
+            var rearRows = RearWheelRows.ToList();
+            var pdfPath = await Task.Run(() =>
+                RenderSvgsToPdf(validSvgs, sessionNames, legend, frontRows, rearRows));
 
             IsGeneratingPdf = false;
             var shareService = App.Current?.Services?.GetService<IShareService>();
@@ -552,7 +575,12 @@ public partial class CompareSessionsViewModel : ViewModelBase
         }
     }
 
-    private static string RenderSvgsToPdf(List<string> svgXmlList, string fileName)
+    private static string RenderSvgsToPdf(
+        List<string> svgXmlList,
+        string fileName,
+        List<CompareLegendEntry> legend,
+        List<CompareTableRow> frontRows,
+        List<CompareTableRow> rearRows)
     {
         var tempDir = System.IO.Path.GetTempPath();
         var pdfPath = System.IO.Path.Combine(tempDir, $"{fileName}.pdf");
@@ -572,6 +600,11 @@ public partial class CompareSessionsViewModel : ViewModelBase
         {
             using var stream = new System.IO.FileStream(pdfPath, System.IO.FileMode.Create);
             using var document = SkiaSharp.SKDocument.CreatePdf(stream);
+
+            var firstPicture = svgObjects.Select(svg => svg.Picture).FirstOrDefault(picture => picture is not null);
+            var pageWidth = firstPicture?.CullRect.Width ?? 400f;
+            var plotPageHeight = firstPicture?.CullRect.Height ?? 560f;
+            DrawOverviewPages(document, pageWidth, plotPageHeight, legend, frontRows, rearRows);
 
             foreach (var svg in svgObjects)
             {
@@ -593,5 +626,160 @@ public partial class CompareSessionsViewModel : ViewModelBase
         }
 
         return pdfPath;
+    }
+
+    private static void DrawOverviewPages(
+        SkiaSharp.SKDocument document,
+        float pageWidth,
+        float plotPageHeight,
+        List<CompareLegendEntry> legend,
+        List<CompareTableRow> frontRows,
+        List<CompareTableRow> rearRows)
+    {
+        const float margin = 24f;
+        const float legendRowHeight = 18f;
+        const float tableRowHeight = 24f;
+        const float sectionGap = 14f;
+        const float labelColumnWidth = 130f;
+
+        var naturalHeight = margin * 2f
+            + legend.Count * legendRowHeight
+            + sectionGap * 2f
+            + (frontRows.Count + rearRows.Count + 2) * tableRowHeight;
+        var pageHeight = Math.Max(plotPageHeight, Math.Min(naturalHeight, pageWidth * 1.4142f));
+        var contentWidth = pageWidth - margin * 2f;
+        var valueColumnWidth = legend.Count > 0
+            ? Math.Max(1f, (contentWidth - labelColumnWidth) / legend.Count)
+            : contentWidth - labelColumnWidth;
+
+        var background = SkiaSharp.SKColor.Parse("#15191C");
+        var cellBackground = SkiaSharp.SKColor.Parse("#20262B");
+        var headerBackground = SkiaSharp.SKColor.Parse("#66C2A5");
+        var lightText = SkiaSharp.SKColor.Parse("#D0D0D0");
+        var darkText = SkiaSharp.SKColor.Parse("#15191C");
+        var border = SkiaSharp.SKColor.Parse("#505558");
+
+        using var fillPaint = new SkiaSharp.SKPaint { IsStroke = false };
+        using var borderPaint = new SkiaSharp.SKPaint
+        {
+            IsStroke = true,
+            StrokeWidth = 0.75f,
+            Color = border,
+        };
+        using var textPaint = new SkiaSharp.SKPaint
+        {
+            IsAntialias = true,
+            TextSize = 11f,
+        };
+        using var boldPaint = new SkiaSharp.SKPaint
+        {
+            IsAntialias = true,
+            TextSize = 10f,
+            Typeface = SkiaSharp.SKTypeface.FromFamilyName(null, SkiaSharp.SKFontStyle.Bold),
+        };
+
+        SkiaSharp.SKCanvas? canvas = null;
+        var y = margin;
+
+        void BeginPage()
+        {
+            canvas = document.BeginPage(pageWidth, pageHeight);
+            canvas.Clear(background);
+            y = margin;
+        }
+
+        void EndPage()
+        {
+            var completedCanvas = canvas;
+            document.EndPage();
+            canvas = null;
+            completedCanvas?.Dispose();
+        }
+
+        void DrawCell(float x, float top, float width, string text, bool header, bool rightAlign)
+        {
+            var rect = new SkiaSharp.SKRect(x, top, x + width, top + tableRowHeight);
+            fillPaint.Color = header ? headerBackground : cellBackground;
+            canvas!.DrawRect(rect, fillPaint);
+            canvas.DrawRect(rect, borderPaint);
+
+            var paint = header ? boldPaint : textPaint;
+            paint.Color = header ? darkText : lightText;
+            var textWidth = paint.MeasureText(text);
+            var textX = rightAlign ? x + width - 6f - textWidth : x + 6f;
+            var textY = top + tableRowHeight / 2f + paint.TextSize * 0.35f;
+            canvas.DrawText(text, textX, textY, paint);
+        }
+
+        void DrawTableHeader(string title)
+        {
+            DrawCell(margin, y, labelColumnWidth, title, true, false);
+            for (var i = 0; i < legend.Count; i++)
+            {
+                DrawCell(
+                    margin + labelColumnWidth + i * valueColumnWidth,
+                    y,
+                    valueColumnWidth,
+                    legend[i].Name,
+                    true,
+                    true);
+            }
+            y += tableRowHeight;
+        }
+
+        void DrawTable(string title, List<CompareTableRow> rows)
+        {
+            // Mirrors the on-screen tables, which are hidden when there are no rows.
+            if (rows.Count == 0) return;
+
+            if (y + tableRowHeight > pageHeight - margin)
+            {
+                EndPage();
+                BeginPage();
+            }
+
+            DrawTableHeader(title);
+            foreach (var row in rows)
+            {
+                if (y + tableRowHeight > pageHeight - margin)
+                {
+                    EndPage();
+                    BeginPage();
+                    DrawTableHeader(title);
+                }
+
+                DrawCell(margin, y, labelColumnWidth, row.Label, false, false);
+                for (var i = 0; i < legend.Count; i++)
+                {
+                    var value = i < row.Values.Count ? row.Values[i] : "-";
+                    DrawCell(
+                        margin + labelColumnWidth + i * valueColumnWidth,
+                        y,
+                        valueColumnWidth,
+                        value,
+                        false,
+                        true);
+                }
+                y += tableRowHeight;
+            }
+        }
+
+        BeginPage();
+
+        foreach (var entry in legend)
+        {
+            var color = SkiaSharp.SKColor.Parse(entry.Color);
+            fillPaint.Color = color;
+            canvas!.DrawRect(new SkiaSharp.SKRect(margin, y + 7f, margin + 18f, y + 10f), fillPaint);
+            textPaint.Color = color;
+            canvas.DrawText(entry.Name, margin + 25f, y + 12f, textPaint);
+            y += legendRowHeight;
+        }
+
+        y += sectionGap;
+        DrawTable("FRONT WHEEL", frontRows);
+        y += sectionGap;
+        DrawTable("REAR WHEEL", rearRows);
+        EndPage();
     }
 }

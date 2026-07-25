@@ -27,6 +27,7 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
     ];
 
     private static readonly Color StatColor = Color.FromHex("#FFD700");
+    private static readonly Color NormalDistributionColor = Color.FromHex("#d53e4f");
 
     /// <summary>
     /// Stats box with avg/95th/max in mm/s — placed in the top padding area just below the title.
@@ -95,6 +96,21 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
         label.LabelPadding = 5;
     }
 
+    private void AddNormalDistributionLabel(double yRangeTop)
+    {
+        var label = Plot.Add.Text("Normal distribution", -VelocityLimitMs, yRangeTop * 0.82);
+        label.LabelFontColor = NormalDistributionColor;
+        label.LabelFontSize = 10;
+        label.LabelFontName = "Menlo";
+        label.LabelAlignment = Alignment.UpperLeft;
+        label.LabelOffsetX = 5;
+        label.LabelBold = true;
+        label.LabelBackgroundColor = Color.FromHex("#15191C").WithAlpha(220);
+        label.LabelBorderColor = NormalDistributionColor.WithAlpha(80);
+        label.LabelBorderWidth = 1;
+        label.LabelPadding = 5;
+    }
+
     public override void LoadTelemetryData(TelemetryData telemetryData)
     {
         base.LoadTelemetryData(telemetryData);
@@ -153,7 +169,7 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
         var normal = Plot.Add.Scatter(
             normalData.Y.Select(v => v / 1000.0).ToArray(),
             normalData.Pdf.ToArray());
-        normal.Color = Color.FromHex("#d53e4f");
+        normal.Color = NormalDistributionColor;
         normal.MarkerStyle.IsVisible = false;
         normal.LineStyle.Width = 3;
         normal.LineStyle.Pattern = LinePattern.Dotted;
@@ -161,6 +177,7 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
         AddBinColorLegend(palette, -VelocityLimitMs, VelocityLimitMs, yRangeTop);
 
         AddSymmetryLabel(data, yRangeTop);
+        AddNormalDistributionLabel(yRangeTop);
         AddStatsBox(telemetryData, yRangeTop);
     }
 }

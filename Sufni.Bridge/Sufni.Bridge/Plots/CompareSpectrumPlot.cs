@@ -47,9 +47,10 @@ public class CompareSpectrumPlot(
     public void LoadMultipleSessions(List<(TelemetryData data, Color color, LinePattern pattern, string name)> sessions)
     {
         var axisName = type == SuspensionType.Front ? "Front" : "Rear";
+        var frequencyRange = FormatFrequencyRange();
         SetTitle(mode == WheelSpectrumMode.Velocity
-            ? $"{axisName} velocity spectrum"
-            : $"{axisName} travel spectrum");
+            ? $"{axisName} velocity spectrum ({frequencyRange})"
+            : $"{axisName} travel spectrum ({frequencyRange})");
         Plot.Layout.Fixed(new PixelPadding(55, 14, 50, 40));
         Plot.Axes.Bottom.Label.Text = "Frequency (Hz)";
         Plot.Axes.Left.Label.Text = mode == WheelSpectrumMode.Velocity
@@ -186,7 +187,7 @@ public class CompareSpectrumPlot(
             bool overlaps = prevLogX.HasValue && Math.Abs(p.LogX - prevLogX.Value) < 0.05;
             bool stack = overlaps && !prevWasOffset;
 
-            double y = yBottom + span * (stack ? 0.20 : 0.04);
+            double y = yBottom + span * (stack ? 0.30 : 0.04);
 
             var label = Plot.Add.Text(string.Format(CultureInfo.InvariantCulture, "{0:0.00} Hz", p.F), p.LogX, y);
             label.LabelFontColor = p.Color;
@@ -199,6 +200,9 @@ public class CompareSpectrumPlot(
             prevWasOffset = stack;
         }
     }
+
+    private string FormatFrequencyRange() => string.Format(
+        CultureInfo.InvariantCulture, "{0:0.##}–{1:0.##} Hz", minHz, maxHz);
 
     private void AddSessionLegend(double xRight, double yTop,
         List<(TelemetryData data, Color color, LinePattern pattern, string name)> sessions)

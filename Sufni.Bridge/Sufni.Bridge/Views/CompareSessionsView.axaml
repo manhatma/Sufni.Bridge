@@ -79,6 +79,34 @@
         <ScrollViewer Grid.Row="2" IsScrollChainingEnabled="False">
             <StackPanel Orientation="Vertical" Spacing="8" Margin="0,0,0,4">
 
+                <!-- Compared session legend -->
+                <ItemsControl ItemsSource="{Binding SessionLegend}" Margin="4,0">
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate x:DataType="vm:CompareLegendEntry">
+                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,1">
+                                <Border Width="18" Height="3" CornerRadius="1.5"
+                                        VerticalAlignment="Center" Background="{Binding Color}" />
+                                <TextBlock Text="{Binding Name}" FontSize="11"
+                                           Foreground="{Binding Color}" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </DataTemplate>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+
+                <!-- Front Wheel Table -->
+                <Grid RowDefinitions="auto auto" ColumnDefinitions="*"
+                      IsVisible="{Binding FrontWheelRows.Count}">
+                    <Grid Grid.Row="0" Name="FrontWheelHeader" />
+                    <ItemsControl Grid.Row="1" ItemsSource="{Binding FrontWheelRows}" Name="FrontWheelTable" />
+                </Grid>
+
+                <!-- Rear Wheel Table -->
+                <Grid RowDefinitions="auto auto" ColumnDefinitions="*"
+                      IsVisible="{Binding RearWheelRows.Count}">
+                    <Grid Grid.Row="0" Name="RearWheelHeader" />
+                    <ItemsControl Grid.Row="1" ItemsSource="{Binding RearWheelRows}" Name="RearWheelTable" />
+                </Grid>
+
                 <!-- Front Travel Histogram -->
                 <Image IsVisible="{Binding FrontTravelHistogramSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
                        Source="{Binding FrontTravelHistogramSvg}" />
@@ -154,20 +182,6 @@
                 <!-- Rear Position vs Velocity -->
                 <Image IsVisible="{Binding RearPositionVelocitySvg, Converter={x:Static ObjectConverters.IsNotNull}}"
                        Source="{Binding RearPositionVelocitySvg}" />
-
-                <!-- Front Wheel Table -->
-                <Grid RowDefinitions="auto auto" ColumnDefinitions="*"
-                      IsVisible="{Binding FrontWheelRows.Count}">
-                    <Grid Grid.Row="0" Name="FrontWheelHeader" />
-                    <ItemsControl Grid.Row="1" ItemsSource="{Binding FrontWheelRows}" Name="FrontWheelTable" />
-                </Grid>
-
-                <!-- Rear Wheel Table -->
-                <Grid RowDefinitions="auto auto" ColumnDefinitions="*"
-                      IsVisible="{Binding RearWheelRows.Count}">
-                    <Grid Grid.Row="0" Name="RearWheelHeader" />
-                    <ItemsControl Grid.Row="1" ItemsSource="{Binding RearWheelRows}" Name="RearWheelTable" />
-                </Grid>
 
             </StackPanel>
         </ScrollViewer>

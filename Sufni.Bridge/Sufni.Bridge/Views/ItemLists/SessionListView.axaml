@@ -80,6 +80,16 @@
             <Setter Property="CornerRadius" Value="6" />
             <Setter Property="Margin" Value="10,5" />
         </Style>
+        <Style Selector="Button.compare-clear">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#D0D0D0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="12,10" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="#505558" />
+            <Setter Property="Margin" Value="0,5,10,5" />
+        </Style>
         <Style Selector="Button.filter-toggle">
             <Setter Property="Background" Value="Transparent" />
             <Setter Property="Foreground" Value="#D0D0D0" />
@@ -411,16 +421,37 @@
             </ItemsRepeater>
         </ScrollViewer>
 
-        <!-- Compare button (visible when 2+ sessions selected) -->
-        <Button Grid.Row="3"
-                Classes="compare-open"
-                IsVisible="{Binding IsCompareMode}"
-                Command="{Binding OpenComparisonCommand}">
-            <TextBlock Foreground="#ffffff">
-                <Run Text="Compare" />
-                <Run Text="{Binding CompareSelectionCount, StringFormat=' ({0})'}" />
-            </TextBlock>
-        </Button>
+        <!-- Compare actions -->
+        <Grid Grid.Row="3" ColumnDefinitions="* auto">
+            <Button Grid.Column="0"
+                    Classes="compare-open"
+                    Command="{Binding OpenComparisonCommand}">
+                <Button.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="IsCompareMode" />
+                        <Binding Path="HasEnoughCompareSelections" />
+                    </MultiBinding>
+                </Button.IsVisible>
+                <TextBlock Foreground="#ffffff">
+                    <Run Text="Compare" />
+                    <Run Text="{Binding CompareSelectionCount, StringFormat=' ({0})'}" />
+                </TextBlock>
+            </Button>
+            <Button Grid.Column="1"
+                    Classes="compare-clear"
+                    Command="{Binding ClearCompareSelectionCommand}">
+                <Button.IsVisible>
+                    <MultiBinding Converter="{x:Static BoolConverters.And}">
+                        <Binding Path="IsCompareMode" />
+                        <Binding Path="HasCompareSelection" />
+                    </MultiBinding>
+                </Button.IsVisible>
+                <TextBlock>
+                    <Run Text="Clear" />
+                    <Run Text="{Binding CompareSelectionCount, StringFormat=' ({0})'}" />
+                </TextBlock>
+            </Button>
+        </Grid>
 
         <!-- Combine mode session list with checkboxes, grouped by date -->
         <ScrollViewer Grid.Row="2" Margin="0,15,0,5" IsVisible="{Binding IsCombineMode}">

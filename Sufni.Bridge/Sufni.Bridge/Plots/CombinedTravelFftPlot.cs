@@ -69,9 +69,10 @@ public class CombinedTravelFftPlot(
     {
         base.LoadTelemetryData(telemetryData);
 
+        var frequencyRange = FormatFrequencyRange();
         SetTitle(mode == WheelSpectrumMode.Velocity
-            ? "Wheel velocity spectrum"
-            : "Wheel travel spectrum");
+            ? $"Wheel velocity spectrum ({frequencyRange})"
+            : $"Wheel travel spectrum ({frequencyRange})");
         Plot.Layout.Fixed(new PixelPadding(55, 14, 50, 40));
         Plot.Axes.Bottom.Label.Text = "Frequency (Hz)";
         Plot.Axes.Left.Label.Text = mode == WheelSpectrumMode.Velocity
@@ -161,7 +162,7 @@ public class CombinedTravelFftPlot(
             bool overlaps = prevLogX.HasValue && Math.Abs(p.LogX - prevLogX.Value) < 0.05;
             bool stack = overlaps && !prevWasOffset;
 
-            double y = yBottom + span * (stack ? 0.20 : 0.04);
+            double y = yBottom + span * (stack ? 0.30 : 0.04);
 
             var label = Plot.Add.Text(string.Format(CultureInfo.InvariantCulture, "{0:0.00} Hz", p.F), p.LogX, y);
             label.LabelFontColor = p.Color;
@@ -178,6 +179,9 @@ public class CombinedTravelFftPlot(
             prevWasOffset = stack;
         }
     }
+
+    private string FormatFrequencyRange() => string.Format(
+        CultureInfo.InvariantCulture, "{0:0.##}–{1:0.##} Hz", minHz, maxHz);
 
     /// <returns>(yMinDb, yMaxDbForScaling) of the data drawn within the visible
     /// X range. yMin scans the full visible range; yMax scans only the peak
