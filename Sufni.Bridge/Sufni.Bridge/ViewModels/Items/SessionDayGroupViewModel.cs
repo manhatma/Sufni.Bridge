@@ -25,7 +25,7 @@ public partial class SessionDayGroupViewModel : ObservableObject
     public bool CanEditLabel => Date.HasValue;
     public Func<SessionDayGroupViewModel, Task>? PersistLabel { get; set; }
 
-    public string Title => Date?.ToString("dd.MM.yyyy") ?? "No date";
+    public string Title => Date?.ToString("dd/MM/yyyy") ?? "No date";
 
     public string TimeRange
     {
