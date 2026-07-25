@@ -1,9 +1,8 @@
 using Avalonia;
+using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Controls.Platform;
-using Avalonia.Input;
 using Avalonia.Markup.Xaml;
-using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Sufni.Bridge.Services;
 using Sufni.Bridge.ViewModels;
@@ -12,12 +11,12 @@ using System;
 using System.Diagnostics;
 using System.Globalization;
 using System.Threading.Tasks;
-using Avalonia.Controls;
 
 namespace Sufni.Bridge;
 
 public partial class App : Application
 {
+    private readonly KeyboardVisibilityHelper keyboardVisibilityHelper = new();
     private bool singleViewTopLevelWired;
 
     public new static App? Current => Application.Current as App;
@@ -25,9 +24,6 @@ public partial class App : Application
 
     public App()
     {
-        InputElement.GotFocusEvent.AddClassHandler<TextBox>((textBox, _) =>
-            BringTextBoxIntoView(textBox));
-
         // The whole app is English: pin a fixed culture so numbers use a '.' decimal
         // separator (and a day-first English date format) regardless of device locale.
         // DefaultThreadCurrentCulture also covers the background threads that render plots.
@@ -68,6 +64,10 @@ public partial class App : Application
         var fileService = Services.GetService<IFilesService>();
         var mainViewModel = Services.GetService<MainViewModel>();
         Debug.Assert(fileService != null, nameof(fileService) + " != null");
+        if (mainViewModel != null)
+        {
+            keyboardVisibilityHelper.Attach(mainViewModel);
+        }
 
         // One-time session_cache maintenance (re-pack pre-compression rows + VACUUM),
         // deferred so it never competes with the initial session-list load. Gated on
@@ -126,10 +126,9 @@ public partial class App : Application
                         inputPane.StateChanged += (_, e) =>
                         {
                             UpdateKeyboardInset();
-                            if (e.NewState == InputPaneState.Open &&
-                                topLevel.FocusManager?.GetFocusedElement() is TextBox textBox)
+                            if (e.NewState == InputPaneState.Open)
                             {
-                                BringTextBoxIntoView(textBox);
+                                keyboardVisibilityHelper.InputPaneOpened();
                             }
                         };
                     }
@@ -140,10 +139,5 @@ public partial class App : Application
         }
 
         base.OnFrameworkInitializationCompleted();
-    }
-
-    private static void BringTextBoxIntoView(TextBox textBox)
-    {
-        Dispatcher.UIThread.Post(() => textBox.BringIntoView(), DispatcherPriority.Background);
     }
 }
