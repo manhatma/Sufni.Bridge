@@ -1,9 +1,11 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -32,6 +34,178 @@ public partial class SetupFilterItem : ObservableObject
     }
 }
 
+public enum SetupParameterField
+{
+    SpringRate,
+    VolumeSpacers,
+    Hsc,
+    Lsc,
+    Hsr,
+    Lsr,
+    TirePressure
+}
+
+public enum SetupParameterSide
+{
+    Front,
+    Rear,
+    Any
+}
+
+public sealed record SetupParameterFieldOption(SetupParameterField Value, string Name);
+public sealed record SetupParameterSideOption(SetupParameterSide Value, string Name);
+
+public class SetupParameterFilterItem : ObservableObject
+{
+    private static readonly IReadOnlyList<SetupParameterFieldOption> AvailableFields =
+    [
+        new(SetupParameterField.SpringRate, "Spring rate"),
+        new(SetupParameterField.VolumeSpacers, "Volume spacers"),
+        new(SetupParameterField.Hsc, "HSC"),
+        new(SetupParameterField.Lsc, "LSC"),
+        new(SetupParameterField.Hsr, "HSR"),
+        new(SetupParameterField.Lsr, "LSR"),
+        new(SetupParameterField.TirePressure, "Tire pressure")
+    ];
+
+    private static readonly IReadOnlyList<SetupParameterSideOption> AvailableSides =
+    [
+        new(SetupParameterSide.Front, "Front"),
+        new(SetupParameterSide.Rear, "Rear"),
+        new(SetupParameterSide.Any, "Any")
+    ];
+
+    private SetupParameterField field = SetupParameterField.SpringRate;
+    private SetupParameterSide side = SetupParameterSide.Any;
+    private string? valueText;
+    private string? toleranceText = "5";
+
+    public IReadOnlyList<SetupParameterFieldOption> FieldOptions => AvailableFields;
+    public IReadOnlyList<SetupParameterSideOption> SideOptions => AvailableSides;
+
+    public SetupParameterField Field
+    {
+        get => field;
+        set
+        {
+            if (!SetProperty(ref field, value)) return;
+            OnPropertyChanged(nameof(SelectedFieldOption));
+            ToleranceText = DefaultTolerance(value).ToString(CultureInfo.InvariantCulture);
+        }
+    }
+
+    public SetupParameterSide Side
+    {
+        get => side;
+        set
+        {
+            if (!SetProperty(ref side, value)) return;
+            OnPropertyChanged(nameof(SelectedSideOption));
+        }
+    }
+
+    public SetupParameterFieldOption SelectedFieldOption
+    {
+        get => AvailableFields.First(option => option.Value == Field);
+        set => Field = value.Value;
+    }
+
+    public SetupParameterSideOption SelectedSideOption
+    {
+        get => AvailableSides.First(option => option.Value == Side);
+        set => Side = value.Value;
+    }
+
+    public string? ValueText
+    {
+        get => valueText;
+        set
+        {
+            if (!SetProperty(ref valueText, value)) return;
+            OnPropertyChanged(nameof(IsActive));
+            OnPropertyChanged(nameof(ParsedValue));
+        }
+    }
+
+    public string? ToleranceText
+    {
+        get => toleranceText;
+        set
+        {
+            if (!SetProperty(ref toleranceText, value)) return;
+            OnPropertyChanged(nameof(ParsedTolerance));
+        }
+    }
+
+    public double? ParsedValue => NumberParser.TryParseFirst(ValueText, out var value) ? value : null;
+    public double ParsedTolerance => NumberParser.TryParseFirst(ToleranceText, out var tolerance) ? tolerance : 0;
+    public bool IsActive => ParsedValue.HasValue;
+
+    public bool Matches(Session session)
+    {
+        if (ParsedValue is not { } target) return true;
+
+        (double? front, double? rear) = Field switch
+        {
+            SetupParameterField.SpringRate =>
+                (NumberParser.ParseFirstOrNull(session.FrontSpringRate),
+                    NumberParser.ParseFirstOrNull(session.RearSpringRate)),
+            SetupParameterField.VolumeSpacers => (session.FrontVolSpc, session.RearVolSpc),
+            SetupParameterField.Hsc =>
+                (session.FrontHighSpeedCompression, session.RearHighSpeedCompression),
+            SetupParameterField.Lsc =>
+                (session.FrontLowSpeedCompression, session.RearLowSpeedCompression),
+            SetupParameterField.Hsr =>
+                (session.FrontHighSpeedRebound, session.RearHighSpeedRebound),
+            SetupParameterField.Lsr =>
+                (session.FrontLowSpeedRebound, session.RearLowSpeedRebound),
+            SetupParameterField.TirePressure =>
+                (session.FrontTirePressure, session.RearTirePressure),
+            _ => (null, null)
+        };
+
+        bool MatchesValue(double? sessionValue) =>
+            sessionValue.HasValue && Math.Abs(sessionValue.Value - target) <= ParsedTolerance;
+
+        return Side switch
+        {
+            SetupParameterSide.Front => MatchesValue(front),
+            SetupParameterSide.Rear => MatchesValue(rear),
+            SetupParameterSide.Any => MatchesValue(front) || MatchesValue(rear),
+            _ => false
+        };
+    }
+
+    private static double DefaultTolerance(SetupParameterField parameterField) => parameterField switch
+    {
+        SetupParameterField.SpringRate => 5,
+        SetupParameterField.VolumeSpacers => 0.5,
+        SetupParameterField.Hsc or SetupParameterField.Lsc or
+            SetupParameterField.Hsr or SetupParameterField.Lsr => 1,
+        SetupParameterField.TirePressure => 5,
+        _ => 0
+    };
+}
+
+internal static partial class NumberParser
+{
+    [GeneratedRegex(@"[-+]?(?:\d+(?:[.,]\d*)?|[.,]\d+)")]
+    private static partial Regex FirstNumberRegex();
+
+    public static bool TryParseFirst(string? text, out double value)
+    {
+        value = 0;
+        if (string.IsNullOrWhiteSpace(text)) return false;
+
+        var match = FirstNumberRegex().Match(text);
+        return match.Success && double.TryParse(match.Value.Replace(',', '.'),
+            NumberStyles.Float, CultureInfo.InvariantCulture, out value);
+    }
+
+    public static double? ParseFirstOrNull(string? text) =>
+        TryParseFirst(text, out var value) ? value : null;
+}
+
 public partial class SessionListViewModel : ItemListViewModelBase
 {
     [ObservableProperty] private bool isCompareMode;
@@ -53,6 +227,8 @@ public partial class SessionListViewModel : ItemListViewModelBase
     public string DeleteConfirmLabel => HasSelectedCombinedSessions ? "Uncombine" : "Delete";
 
     public ObservableCollection<SetupFilterItem> SetupFilters { get; } = [];
+    public ObservableCollection<SetupParameterFilterItem> ParameterFilters { get; } = [];
+    public bool HasParameterFilters => ParameterFilters.Count > 0;
 
     // Track which setup IDs are currently allowed (null = no filter active / all)
     private HashSet<Guid?>? _allowedSetupIds;
@@ -185,6 +361,9 @@ public partial class SessionListViewModel : ItemListViewModelBase
                            (DateFilterTo is null || svm.Timestamp <= DateFilterTo))
             .Filter(vm => _allowedSetupIds is null ||
                           (vm is SessionViewModel svm && _allowedSetupIds.Contains(svm.SessionModel.Setup)))
+            .Filter(vm => vm is not SessionViewModel svm ||
+                          ParameterFilters.Where(filter => filter.IsActive)
+                              .All(filter => filter.Matches(svm.SessionModel)))
             .SortAndBind(out items, SortExpressionComparer<ItemViewModelBase>.Descending(svm => svm.Timestamp!))
             .DisposeMany()
             .Subscribe(_ => RebuildDayGroups());
@@ -360,8 +539,53 @@ public partial class SessionListViewModel : ItemListViewModelBase
                 .ToHashSet();
         }
 
-        IsFilterActive = _allowedSetupIds is not null;
+        UpdateFilterActive();
         Source.Refresh();
+    }
+
+    [RelayCommand]
+    private void AddParameterFilter()
+    {
+        var filter = new SetupParameterFilterItem();
+        filter.PropertyChanged += OnParameterFilterChanged;
+        ParameterFilters.Add(filter);
+        OnPropertyChanged(nameof(HasParameterFilters));
+        UpdateFilterActive();
+        Source.Refresh();
+    }
+
+    [RelayCommand]
+    private void RemoveParameterFilter(SetupParameterFilterItem filter)
+    {
+        if (!ParameterFilters.Remove(filter)) return;
+
+        filter.PropertyChanged -= OnParameterFilterChanged;
+        OnPropertyChanged(nameof(HasParameterFilters));
+        UpdateFilterActive();
+        Source.Refresh();
+    }
+
+    [RelayCommand]
+    private void ClearParameterFilters()
+    {
+        foreach (var filter in ParameterFilters)
+            filter.PropertyChanged -= OnParameterFilterChanged;
+
+        ParameterFilters.Clear();
+        OnPropertyChanged(nameof(HasParameterFilters));
+        UpdateFilterActive();
+        Source.Refresh();
+    }
+
+    private void OnParameterFilterChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        UpdateFilterActive();
+        Source.Refresh();
+    }
+
+    private void UpdateFilterActive()
+    {
+        IsFilterActive = _allowedSetupIds is not null || ParameterFilters.Any(filter => filter.IsActive);
     }
 
     private void ClearSelectionMode()

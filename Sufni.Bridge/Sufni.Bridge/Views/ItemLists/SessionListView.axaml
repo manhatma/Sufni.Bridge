@@ -168,6 +168,35 @@
             <Setter Property="CornerRadius" Value="6" />
             <Setter Property="Margin" Value="10,5" />
         </Style>
+        <Style Selector="ComboBox.parameter-selector">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="Padding" Value="7,3" />
+        </Style>
+        <Style Selector="TextBox.parameter-input">
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="Padding" Value="7,3" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.parameter-action">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="#D0D0D0" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Padding" Value="8,5" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="#505558" />
+        </Style>
+        <Style Selector="Button.parameter-remove">
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Padding" Value="7" />
+            <Setter Property="MinWidth" Value="30" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="CornerRadius" Value="4" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="BorderBrush" Value="#505558" />
+        </Style>
     </UserControl.Styles>
 
     <Grid ColumnDefinitions="*" RowDefinitions="auto auto * auto auto auto">
@@ -219,26 +248,92 @@
         <Border Grid.Row="1" Margin="10,6,10,0" Padding="8"
                 Background="#1f2327" CornerRadius="6" BorderBrush="#505558" BorderThickness="1"
                 IsVisible="{Binding IsFilterMenuOpen}">
-            <ItemsRepeater ItemsSource="{Binding SetupFilters}">
-                <ItemsRepeater.Layout>
-                    <StackLayout Orientation="Vertical" Spacing="2" />
-                </ItemsRepeater.Layout>
-                <ItemsRepeater.ItemTemplate>
-                    <DataTemplate x:DataType="vml:SetupFilterItem">
-                        <Button Background="Transparent" Padding="4,6" CornerRadius="4"
-                                HorizontalAlignment="Stretch"
-                                Command="{Binding $parent[UserControl].((vml:SessionListViewModel)DataContext).ToggleSetupFilterCommand}"
-                                CommandParameter="{Binding}">
-                            <Grid ColumnDefinitions="24 *">
-                                <CheckBox Grid.Column="0" IsChecked="{Binding IsChecked}"
-                                          IsHitTestVisible="False" VerticalAlignment="Center" />
-                                <TextBlock Grid.Column="1" Text="{Binding Name}"
-                                           VerticalAlignment="Center" FontSize="13" Foreground="#D0D0D0" />
-                            </Grid>
-                        </Button>
-                    </DataTemplate>
-                </ItemsRepeater.ItemTemplate>
-            </ItemsRepeater>
+            <StackPanel>
+                <ItemsRepeater ItemsSource="{Binding SetupFilters}">
+                    <ItemsRepeater.Layout>
+                        <StackLayout Orientation="Vertical" Spacing="2" />
+                    </ItemsRepeater.Layout>
+                    <ItemsRepeater.ItemTemplate>
+                        <DataTemplate x:DataType="vml:SetupFilterItem">
+                            <Button Background="Transparent" Padding="4,6" CornerRadius="4"
+                                    HorizontalAlignment="Stretch"
+                                    Command="{Binding $parent[UserControl].((vml:SessionListViewModel)DataContext).ToggleSetupFilterCommand}"
+                                    CommandParameter="{Binding}">
+                                <Grid ColumnDefinitions="24 *">
+                                    <CheckBox Grid.Column="0" IsChecked="{Binding IsChecked}"
+                                              IsHitTestVisible="False" VerticalAlignment="Center" />
+                                    <TextBlock Grid.Column="1" Text="{Binding Name}"
+                                               VerticalAlignment="Center" FontSize="13" Foreground="#D0D0D0" />
+                                </Grid>
+                            </Button>
+                        </DataTemplate>
+                    </ItemsRepeater.ItemTemplate>
+                </ItemsRepeater>
+
+                <Border Height="1" Background="#505558" Margin="0,8" />
+                <TextBlock Text="Parameters" FontSize="13" FontWeight="DemiBold"
+                           Foreground="#D0D0D0" Margin="4,0,4,6" />
+
+                <ScrollViewer MaxHeight="260" HorizontalScrollBarVisibility="Disabled">
+                    <ItemsRepeater ItemsSource="{Binding ParameterFilters}"
+                                   HorizontalAlignment="Stretch">
+                        <ItemsRepeater.Layout>
+                            <StackLayout Orientation="Vertical" Spacing="8" />
+                        </ItemsRepeater.Layout>
+                        <ItemsRepeater.ItemTemplate>
+                            <DataTemplate x:DataType="vml:SetupParameterFilterItem">
+                                <StackPanel Spacing="4">
+                                    <Grid ColumnDefinitions="* 6 *">
+                                        <ComboBox Grid.Column="0" Classes="parameter-selector"
+                                                  ItemsSource="{Binding FieldOptions}"
+                                                  SelectedItem="{Binding SelectedFieldOption, Mode=TwoWay}">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate x:DataType="vml:SetupParameterFieldOption">
+                                                    <TextBlock Text="{Binding Name}" FontSize="12" />
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                        <ComboBox Grid.Column="2" Classes="parameter-selector"
+                                                  ItemsSource="{Binding SideOptions}"
+                                                  SelectedItem="{Binding SelectedSideOption, Mode=TwoWay}">
+                                            <ComboBox.ItemTemplate>
+                                                <DataTemplate x:DataType="vml:SetupParameterSideOption">
+                                                    <TextBlock Text="{Binding Name}" FontSize="12" />
+                                                </DataTemplate>
+                                            </ComboBox.ItemTemplate>
+                                        </ComboBox>
+                                    </Grid>
+                                    <Grid ColumnDefinitions="* 6 auto 6 80 6 auto">
+                                        <TextBox Grid.Column="0" Classes="parameter-input"
+                                                 Text="{Binding ValueText, Mode=TwoWay}"
+                                                 Watermark="Value" />
+                                        <TextBlock Grid.Column="2" Text="±" FontSize="13"
+                                                   VerticalAlignment="Center" Foreground="#D0D0D0" />
+                                        <TextBox Grid.Column="4" Classes="parameter-input"
+                                                 Text="{Binding ToleranceText, Mode=TwoWay}"
+                                                 Watermark="Tolerance" />
+                                        <Button Grid.Column="6" Classes="parameter-remove"
+                                                Command="{Binding $parent[UserControl].((vml:SessionListViewModel)DataContext).RemoveParameterFilterCommand}"
+                                                CommandParameter="{Binding}"
+                                                ToolTip.Tip="Remove filter">
+                                            <Image Width="12" Height="12"
+                                                   Source="{SvgImage /Assets/fa-xmark.svg}" />
+                                        </Button>
+                                    </Grid>
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsRepeater.ItemTemplate>
+                    </ItemsRepeater>
+                </ScrollViewer>
+
+                <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,8,0,0">
+                    <Button Classes="parameter-action" Content="Add filter"
+                            Command="{Binding AddParameterFilterCommand}" />
+                    <Button Classes="parameter-action" Content="Clear filters"
+                            Command="{Binding ClearParameterFiltersCommand}"
+                            IsVisible="{Binding HasParameterFilters}" />
+                </StackPanel>
+            </StackPanel>
         </Border>
 
         <!--  Normal list of Sessions (hidden in compare/combine mode) -->
