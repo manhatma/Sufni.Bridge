@@ -1,6 +1,9 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Controls.Platform;
+using Avalonia.Input;
 using Avalonia.Markup.Xaml;
+using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
 using Sufni.Bridge.Services;
 using Sufni.Bridge.ViewModels;
@@ -15,11 +18,16 @@ namespace Sufni.Bridge;
 
 public partial class App : Application
 {
+    private bool singleViewTopLevelWired;
+
     public new static App? Current => Application.Current as App;
     public IServiceProvider? Services { get; private set; }
 
     public App()
     {
+        InputElement.GotFocusEvent.AddClassHandler<TextBox>((textBox, _) =>
+            BringTextBoxIntoView(textBox));
+
         // The whole app is English: pin a fixed culture so numbers use a '.' decimal
         // separator (and a day-first English date format) regardless of device locale.
         // DefaultThreadCurrentCulture also covers the background threads that render plots.
@@ -94,17 +102,48 @@ public partial class App : Application
                 singleViewPlatform.MainView.Loaded += (_, _) =>
                 {
                     var topLevel = TopLevel.GetTopLevel(singleViewPlatform.MainView);
-                    topLevel!.InsetsManager!.DisplayEdgeToEdge = true;
+                    if (topLevel == null || singleViewTopLevelWired) return;
+                    singleViewTopLevelWired = true;
+
+                    topLevel.InsetsManager!.DisplayEdgeToEdge = true;
                     mainViewModel!.SafeAreaPadding = topLevel.InsetsManager.SafeAreaPadding;
                     topLevel.InsetsManager.SafeAreaChanged += (_, e) =>
                     {
                         mainViewModel.SafeAreaPadding = e.SafeAreaPadding;
                     };
+
+                    var inputPane = topLevel.InputPane;
+                    if (inputPane != null)
+                    {
+                        void UpdateKeyboardInset()
+                        {
+                            mainViewModel.KeyboardInset = inputPane.State == InputPaneState.Open
+                                ? topLevel.Bounds.Intersect(inputPane.OccludedRect).Height
+                                : 0;
+                        }
+
+                        UpdateKeyboardInset();
+                        inputPane.StateChanged += (_, e) =>
+                        {
+                            UpdateKeyboardInset();
+                            if (e.NewState == InputPaneState.Open &&
+                                topLevel.FocusManager?.GetFocusedElement() is TextBox textBox)
+                            {
+                                BringTextBoxIntoView(textBox);
+                            }
+                        };
+                    }
+
                     fileService.SetTarget(topLevel);
                 };
                 break;
         }
 
         base.OnFrameworkInitializationCompleted();
+    }
+
+    private static void BringTextBoxIntoView(TextBox textBox)
+    {
+        Dispatcher.UIThread.Post(() => textBox.BringIntoView(), DispatcherPriority.Background);
     }
 }

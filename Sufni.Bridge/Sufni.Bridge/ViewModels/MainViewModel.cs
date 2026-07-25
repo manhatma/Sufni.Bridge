@@ -1,4 +1,5 @@
-﻿using System.Collections.Generic;
+﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using Avalonia;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -9,6 +10,7 @@ namespace Sufni.Bridge.ViewModels;
 public partial class MainViewModel : ViewModelBase
 {
     [ObservableProperty] private Thickness contentControlMargin;
+    [ObservableProperty] private double keyboardInset;
     [ObservableProperty] private Thickness outerPanelMargin;
     [ObservableProperty] private Thickness safeAreaPadding;
     [ObservableProperty] private ViewModelBase currentView;
@@ -27,17 +29,22 @@ public partial class MainViewModel : ViewModelBase
     {
         if (CurrentView == mainPagesViewModel)
         {
-            OuterPanelMargin = new(0, 0, 0, SafeAreaPadding.Bottom);
+            OuterPanelMargin = new(0, 0, 0, Math.Max(SafeAreaPadding.Bottom, KeyboardInset));
             ContentControlMargin = new(0, SafeAreaPadding.Top, 0, 0);
         }
         else
         {
-            OuterPanelMargin = new(0, 0, 0, 0);
+            OuterPanelMargin = new(0, 0, 0, KeyboardInset);
             ContentControlMargin = SafeAreaPadding;
         }
     }
 
     partial void OnSafeAreaPaddingChanged(Thickness value)
+    {
+        SetMargins();
+    }
+
+    partial void OnKeyboardInsetChanged(double value)
     {
         SetMargins();
     }

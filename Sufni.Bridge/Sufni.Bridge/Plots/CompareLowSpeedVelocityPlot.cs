@@ -77,16 +77,6 @@ public class CompareLowSpeedVelocityPlot(Plot plot, SuspensionType type, double 
                 polygon.LineStyle.Width = 2;
                 polygon.LineStyle.Pattern = LinePattern.Solid;
             }
-
-            // Normal distribution overlay
-            var normalData = data.CalculateLowSpeedNormalDistribution(type, highSpeedThreshold);
-            var normal = Plot.Add.Scatter(
-                normalData.Y.ToArray(),
-                normalData.Pdf.ToArray());
-            normal.Color = color;
-            normal.MarkerStyle.IsVisible = false;
-            normal.LineStyle.Width = 3;
-            normal.LineStyle.Pattern = LinePattern.Dotted;
         }
 
         Plot.Add.VerticalLine(0, 1f, Color.FromHex("#dddddd"), LinePattern.Dotted);
