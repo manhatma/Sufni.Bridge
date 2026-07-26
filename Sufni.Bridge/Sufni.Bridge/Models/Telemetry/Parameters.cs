@@ -81,14 +81,28 @@ public static class Parameters
     // (mm) minimum length to consider stroke a compression/rebound
     public const double StrokeLengthThreshold = 0.5;
 
-    // Velocity dead bands derived from sensor quantisation: travel per LSB * sample rate.
-    // At 860.58 Hz: fork = 0.00758 mm/LSB * 860.58 Hz = 6.52 mm/s;
-    // shock = 0.00284 mm/LSB * 860.58 Hz = 2.44 mm/s.
-    public const double ForkTravelPerLsb = 0.00758;
-    public const double ShockTravelPerLsb = 0.00284;
+    // Velocity dead bands use the local calibration derivative at the median raw sample:
+    // abs(Evaluate(ref + 1) - Evaluate(ref)) * sample rate. Invalid derivatives and old
+    // stored sessions fall back to the previous values. For example, an ADS1115 with 26400
+    // usable codes across 200 mm / 75 mm reproduces 0.00758 / 0.00284 mm/LSB.
+    public const double ForkTravelPerLsbFallback = 0.00758;
+    public const double ShockTravelPerLsbFallback = 0.00284;
 
-    public static double ForkVelocityZeroThreshold(double sampleRate) => ForkTravelPerLsb * sampleRate;
-    public static double ShockVelocityZeroThreshold(double sampleRate) => ShockTravelPerLsb * sampleRate;
+    public static double ForkTravelPerLsbOrFallback(double travelPerLsb) =>
+        double.IsFinite(travelPerLsb) && travelPerLsb > 0 && travelPerLsb <= 0.5
+            ? travelPerLsb
+            : ForkTravelPerLsbFallback;
+
+    public static double ShockTravelPerLsbOrFallback(double travelPerLsb) =>
+        double.IsFinite(travelPerLsb) && travelPerLsb > 0 && travelPerLsb <= 0.5
+            ? travelPerLsb
+            : ShockTravelPerLsbFallback;
+
+    public static double ForkVelocityZeroThreshold(double travelPerLsb, double sampleRate) =>
+        ForkTravelPerLsbOrFallback(travelPerLsb) * sampleRate;
+
+    public static double ShockVelocityZeroThreshold(double travelPerLsb, double sampleRate) =>
+        ShockTravelPerLsbOrFallback(travelPerLsb) * sampleRate;
 
     // factor for top-out concatenation with respect to StrokeLengthThreshold
     public const double StrokeLengthThresholdFac = 30;
@@ -109,11 +123,11 @@ public static class Parameters
     // number of travel histogram bins
     public const int TravelHistBins = 20;
 
-    // Whittaker-Henderson smoother for travel→velocity differentiation.
-    // Setup: ADS1115 PGA 4.096V, sensor swing 0–3.3V → 26400 usable codes (log2 = 14.6883).
-    // VLP200 fork: 7.58 µm/LSB, sub-LSB threshold 6.5 mm/s.
-    // ELPM75 shock: 2.84 µm/LSB on shock travel, 2.4 mm/s sub-LSB threshold (rear pipeline
-    // smooths shock travel before the leverage polynomial to keep this finer quantisation).
+    // Whittaker-Henderson smoother for travel→velocity differentiation. The velocity dead
+    // band is derived from the calibration at the median raw sample. As a worked example,
+    // an ADS1115 with 26400 usable codes across a 200 mm fork / 75 mm shock reproduces
+    // 7.58 / 2.84 µm/LSB and 6.5 / 2.4 mm/s at 860.58 Hz. The rear pipeline smooths
+    // shock travel before the leverage polynomial to retain its finer quantisation.
     // f_c/f_s ≈ (1/2π)·λ^(−1/2p): order 3, λ 11 → −3 dB at ~80 Hz @ 860 SPS, steeper roll-off
     // than the previous (2, 5) at the same cutoff so the central-difference noise gain
     // above f_s/4 is suppressed without sacrificing impulse fidelity on rock/square-edge hits.
