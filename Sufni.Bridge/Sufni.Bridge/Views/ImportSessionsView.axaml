@@ -169,10 +169,25 @@
                                     Name:
                                 </Label>
                                 <TextBox
+                                    x:Name="NameBox"
                                     Grid.Row="1"
                                     Grid.Column="1"
                                     Margin="2"
-                                    Text="{Binding Name}" />
+                                    Text="{Binding Name}">
+                                    <TextBox.InnerRightContent>
+                                        <Button
+                                            Width="20"
+                                            Height="20"
+                                            Padding="0"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Click="ClearTextBox_Click"
+                                            Content="✕"
+                                            Foreground="#888888"
+                                            IsVisible="{Binding #NameBox.Text, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                            Tag="{Binding #NameBox}" />
+                                    </TextBox.InnerRightContent>
+                                </TextBox>
                                 <Label
                                     Grid.Row="2"
                                     Grid.Column="0"
@@ -180,6 +195,7 @@
                                     Description:
                                 </Label>
                                 <TextBox
+                                    x:Name="DescriptionBox"
                                     Grid.Row="2"
                                     Grid.RowSpan="2"
                                     Grid.Column="1"
@@ -187,7 +203,21 @@
                                     VerticalAlignment="Stretch"
                                     AcceptsReturn="True"
                                     Text="{Binding Description}"
-                                    TextWrapping="Wrap" />
+                                    TextWrapping="Wrap">
+                                    <TextBox.InnerRightContent>
+                                        <Button
+                                            Width="20"
+                                            Height="20"
+                                            Padding="0"
+                                            Background="Transparent"
+                                            BorderThickness="0"
+                                            Click="ClearTextBox_Click"
+                                            Content="✕"
+                                            Foreground="#888888"
+                                            IsVisible="{Binding #DescriptionBox.Text, Converter={x:Static StringConverters.IsNotNullOrEmpty}}"
+                                            Tag="{Binding #DescriptionBox}" />
+                                    </TextBox.InnerRightContent>
+                                </TextBox>
                             </Grid>
                         </Expander>
                     </DataTemplate>

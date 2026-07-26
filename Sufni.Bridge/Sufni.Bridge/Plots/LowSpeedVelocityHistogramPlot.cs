@@ -38,6 +38,9 @@ public class LowSpeedVelocityHistogramPlot(Plot plot, SuspensionType type, doubl
         Plot.Axes.Bottom.Label.Text = "Velocity (mm/s)";
         Plot.Axes.Left.Label.Text = "Time (%)";
 
+        var deadBand = type == SuspensionType.Front
+            ? telemetryData.FrontVelocityDeadBand()
+            : telemetryData.RearWheelVelocityDeadBand();
         var data = telemetryData.CalculateLowSpeedVelocityHistogram(type, highSpeedThreshold);
         var step = data.Bins[1] - data.Bins[0];
         var maxY = 0.0;
@@ -79,9 +82,16 @@ public class LowSpeedVelocityHistogramPlot(Plot plot, SuspensionType type, doubl
 
         AddBinColorLegend(palette, -velocityLimit, velocityLimit, yRangeTop);
 
-        var symmetry = TelemetryData.CalculateVelocityHistogramSymmetry(data);
+        var symmetry = telemetryData.CalculateVelocitySymmetry(
+            type,
+            step,
+            deadBand,
+            highSpeedThreshold + step / 2.0);
         var color = type == SuspensionType.Front ? FrontColor : RearColor;
-        var label = Plot.Add.Text($"Sym: {symmetry:0.00}", -velocityLimit, yRangeTop * 0.97);
+        var label = Plot.Add.Text(
+            $"Sym: {symmetry:0.00}",
+            -velocityLimit,
+            yRangeTop * 0.97);
         label.LabelFontColor = color;
         label.LabelFontSize = 10;
         label.LabelFontName = "Menlo";

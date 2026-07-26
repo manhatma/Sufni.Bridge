@@ -40,7 +40,7 @@ public class CompareDamperVelocityHistogramPlot(Plot plot) : SufniPlot(plot)
             if (sessionLimit > sharedLimit) sharedLimit = sessionLimit;
         }
 
-        // Pass 2: draw each session's collapsed step-polygon (mm/s, no /1000 conversion) and Gaussian.
+        // Pass 2: draw each session's collapsed step-polygon (mm/s, no /1000 conversion).
         foreach (var (color, histData, step) in cached)
         {
             var pxs = new List<double>();
@@ -84,19 +84,19 @@ public class CompareDamperVelocityHistogramPlot(Plot plot) : SufniPlot(plot)
             }
         }
 
-        // Normal-distribution overlay per session (Y is already mm/s — no /1000 conversion).
+        // Reference-distribution overlay per session (Y is already mm/s — no /1000 conversion).
         foreach (var (data, color, _, _) in sessions)
         {
             if (!data.Rear.Present) continue;
 
-            var normalData = data.CalculateDamperNormalDistribution();
-            var normal = Plot.Add.Scatter(
-                normalData.Y.ToArray(),
-                normalData.Pdf.ToArray());
-            normal.Color = color;
-            normal.MarkerStyle.IsVisible = false;
-            normal.LineStyle.Width = 2;
-            normal.LineStyle.Pattern = LinePattern.Dotted;
+            var referenceData = data.CalculateDamperReferenceDistribution();
+            var reference = Plot.Add.Scatter(
+                referenceData.Y.ToArray(),
+                referenceData.Pdf.ToArray());
+            reference.Color = color;
+            reference.MarkerStyle.IsVisible = false;
+            reference.LineStyle.Width = 2;
+            reference.LineStyle.Pattern = LinePattern.Dotted;
         }
 
         Plot.Add.VerticalLine(0, 1f, Color.FromHex("#dddddd"), LinePattern.Dotted);

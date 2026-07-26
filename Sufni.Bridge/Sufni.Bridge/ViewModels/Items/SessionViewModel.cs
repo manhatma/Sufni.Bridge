@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 220;
+    internal const int CurrentPlotVersion = 228;
 
     // Approximate rendered height of the VelocityBandView control (margin + title text +
     // 44 px band grid). Used to size the low-speed velocity histograms so the
@@ -749,13 +749,19 @@ public partial class SessionViewModel : ItemViewModelBase
         if (telemetryData.Front.Present)
         {
             frontBandsTask = Task.Run(() =>
-                (VelocityBands?)telemetryData.CalculateVelocityBands(SuspensionType.Front, 200));
+                (VelocityBands?)telemetryData.CalculateVelocityBands(
+                    SuspensionType.Front,
+                    200,
+                    telemetryData.FrontVelocityDeadBand()));
         }
 
         if (telemetryData.Rear.Present)
         {
             rearBandsTask = Task.Run(() =>
-                (VelocityBands?)telemetryData.CalculateVelocityBands(SuspensionType.Rear, 200));
+                (VelocityBands?)telemetryData.CalculateVelocityBands(
+                    SuspensionType.Rear,
+                    200,
+                    telemetryData.RearWheelVelocityDeadBand()));
         }
 
         // Spring comparison plots (Front+Rear)
@@ -1578,8 +1584,18 @@ public partial class SessionViewModel : ItemViewModelBase
 
     private Task<CachedSummaryData> PopulateSummary(TelemetryData telemetryData) =>
         PopulateSummary(telemetryData,
-            Task.FromResult(telemetryData.Front.Present ? (VelocityBands?)telemetryData.CalculateVelocityBands(SuspensionType.Front, 200) : null),
-            Task.FromResult(telemetryData.Rear.Present ? (VelocityBands?)telemetryData.CalculateVelocityBands(SuspensionType.Rear, 200) : null));
+            Task.FromResult(telemetryData.Front.Present
+                ? (VelocityBands?)telemetryData.CalculateVelocityBands(
+                    SuspensionType.Front,
+                    200,
+                    telemetryData.FrontVelocityDeadBand())
+                : null),
+            Task.FromResult(telemetryData.Rear.Present
+                ? (VelocityBands?)telemetryData.CalculateVelocityBands(
+                    SuspensionType.Rear,
+                    200,
+                    telemetryData.RearWheelVelocityDeadBand())
+                : null));
 
     private async Task<CachedSummaryData> PopulateSummary(
         TelemetryData telemetryData,

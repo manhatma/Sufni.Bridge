@@ -124,15 +124,15 @@ public class VelocityDistributionComparisonPlot(Plot plot) : TelemetryPlot(plot)
             if (summedValues.Length > 0)
                 maxY = Math.Max(maxY, summedValues.Max());
 
-            // Normal distribution curve: X=velocity(m/s), Y=pdf(time%)
-            var normalData = telemetryData.CalculateNormalDistribution(type);
-            var normal = Plot.Add.Scatter(
-                normalData.Y.Select(v => v / 1000.0).ToArray(),
-                normalData.Pdf.ToArray());
-            normal.Color = color;
-            normal.MarkerStyle.IsVisible = false;
-            normal.LineStyle.Width = 3;
-            normal.LineStyle.Pattern = LinePattern.Dotted;
+            // Reference distribution curve: X=velocity(m/s), Y=pdf(time%)
+            var referenceData = telemetryData.CalculateVelocityReferenceDistribution(type);
+            var reference = Plot.Add.Scatter(
+                referenceData.Y.Select(v => v / 1000.0).ToArray(),
+                referenceData.Pdf.ToArray());
+            reference.Color = color;
+            reference.MarkerStyle.IsVisible = false;
+            reference.LineStyle.Width = 3;
+            reference.LineStyle.Pattern = LinePattern.Dotted;
         }
 
         if (telemetryData.Front.Present)

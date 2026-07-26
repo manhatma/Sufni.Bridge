@@ -66,9 +66,10 @@ public record VelocityStatistics(
     double AverageCompression,
     double MaxCompression);
 
-public record NormalDistributionData(
+public record ReferenceDistributionData(
     List<double> Y,
-    List<double> Pdf);
+    List<double> Pdf,
+    double? Beta);
 
 public record VelocityBands(
     double LowSpeedCompression,
@@ -139,7 +140,9 @@ public record BalanceMetrics(
     double? WheelbaseMm,
     // Rear damper dynamic sag in % of SHOCK STROKE — distinct from rear WHEEL sag because wheel
     // travel is a non-linear function of shock stroke (the leverage curve).
-    double? DamperSagPct);
+    double? DamperSagPct,
+    double? FrontVelocityShapeBeta,   // generalized-normal shape of the wheel velocity distribution
+    double? RearVelocityShapeBeta);
 
 [MessagePackObject(keyAsPropertyName: true)]
 public class TelemetryData
@@ -148,7 +151,7 @@ public class TelemetryData
 
     // Increment when velocity processing parameters change (e.g. smoother lambda).
     // Blobs with a lower version are automatically re-processed from Travel arrays on load.
-    public const int CurrentProcessingVersion = 26;
+    public const int CurrentProcessingVersion = 27;
 
     #region Public properties
 
@@ -629,7 +632,8 @@ public class TelemetryData
             Rear.FineVelocityBins = vbinsFine;
 
             var strokes = Strokes.FilterStrokes(v, Rear.Travel, Linkage.MaxRearTravel, SampleRate,
-                Parameters.ShockVelocityZeroThreshold(Rear.TravelPerLsb, SampleRate));
+                RearWheelVelocityZeroThreshold(
+                    Rear.TravelPerLsb, SampleRate, Linkage, Rear.ShockTravel, Rear.Travel));
             Rear.Strokes.Categorize(strokes, Rear.Travel, Linkage.MaxRearTravel);
             if (Rear.Strokes.Compressions.Length == 0 && Rear.Strokes.Rebounds.Length == 0)
             {
@@ -742,7 +746,8 @@ public class TelemetryData
 
             Rear.Strokes = new Strokes();
             var strokes = Strokes.FilterStrokes(v, Rear.Travel, Linkage.MaxRearTravel, SampleRate,
-                Parameters.ShockVelocityZeroThreshold(Rear.TravelPerLsb, SampleRate));
+                RearWheelVelocityZeroThreshold(
+                    Rear.TravelPerLsb, SampleRate, Linkage, Rear.ShockTravel, Rear.Travel));
             Rear.Strokes.Categorize(strokes, Rear.Travel, Linkage.MaxRearTravel);
             if (Rear.Strokes.Compressions.Length == 0 && Rear.Strokes.Rebounds.Length == 0)
                 Rear.Present = false;
@@ -898,7 +903,9 @@ public class TelemetryData
             cropped.Rear.FineVelocityBins = vbinsFine;
 
             var strokes = Strokes.FilterStrokes(v, cropped.Rear.Travel, Linkage.MaxRearTravel, SampleRate,
-                Parameters.ShockVelocityZeroThreshold(cropped.Rear.TravelPerLsb, SampleRate));
+                RearWheelVelocityZeroThreshold(
+                    cropped.Rear.TravelPerLsb, SampleRate, Linkage,
+                    cropped.Rear.ShockTravel, cropped.Rear.Travel));
             cropped.Rear.Strokes.Categorize(strokes, cropped.Rear.Travel, Linkage.MaxRearTravel);
             if (cropped.Rear.Strokes.Compressions.Length == 0 && cropped.Rear.Strokes.Rebounds.Length == 0)
                 cropped.Rear.Present = false;
@@ -1004,7 +1011,9 @@ public class TelemetryData
 
             var strokes = FilterStrokesSegmented(v, combined.Rear.Travel,
                 first.Linkage.MaxRearTravel, first.SampleRate,
-                Parameters.ShockVelocityZeroThreshold(combined.Rear.TravelPerLsb, first.SampleRate), rearSegments);
+                RearWheelVelocityZeroThreshold(
+                    combined.Rear.TravelPerLsb, first.SampleRate, first.Linkage,
+                    combined.Rear.ShockTravel, combined.Rear.Travel), rearSegments);
             combined.Rear.Strokes.Categorize(strokes, combined.Rear.Travel, first.Linkage.MaxRearTravel);
             if (combined.Rear.Strokes.Compressions.Length == 0 && combined.Rear.Strokes.Rebounds.Length == 0)
                 combined.Rear.Present = false;
@@ -1136,6 +1145,36 @@ public class TelemetryData
     public StackedHistogramData CalculateVelocityHistogram(SuspensionType type) =>
         Memo($"velocityHistogram/{type}", () => CalculateVelocityHistogramCore(type));
 
+    public double FrontVelocityDeadBand() =>
+        Memo("frontVelocityDeadBand", () =>
+            Parameters.ForkVelocityZeroThreshold(Front.TravelPerLsb, SampleRate));
+
+    public double RearShockVelocityDeadBand() =>
+        Memo("rearShockVelocityDeadBand", () =>
+            Parameters.ShockVelocityZeroThreshold(Rear.TravelPerLsb, SampleRate));
+
+    private static double RearWheelVelocityZeroThreshold(
+        double travelPerLsb, int sampleRate, Linkage linkage, double[]? shockTravel, double[] wheelTravel)
+    {
+        var shockDeadBand = Parameters.ShockVelocityZeroThreshold(travelPerLsb, sampleRate);
+        var shockPositions = shockTravel is { Length: > 0 }
+            ? shockTravel
+            : wheelTravel.Select(linkage.WheelToDamperTravel).ToArray();
+        var medianShock = shockPositions.Length > 0 ? shockPositions.Median() : double.NaN;
+
+        // Stored rear velocity is wheel-domain; local dWheel/dShock converts the shock-domain threshold.
+        var leverage = linkage.Polynomial.Differentiate().Evaluate(medianShock);
+        if (!double.IsFinite(leverage) || leverage <= 0 || leverage > 10)
+            leverage = 1.0;
+
+        return shockDeadBand * leverage;
+    }
+
+    public double RearWheelVelocityDeadBand() =>
+        Memo("rearWheelVelocityDeadBand", () =>
+            RearWheelVelocityZeroThreshold(
+                Rear.TravelPerLsb, SampleRate, Linkage, Rear.ShockTravel, Rear.Travel));
+
     private StackedHistogramData CalculateVelocityHistogramCore(SuspensionType type)
     {
         var suspension = type == SuspensionType.Front ? Front : Rear;
@@ -1176,7 +1215,8 @@ public class TelemetryData
             suspension.VelocityBins.ToList().GetRange(0, suspension.VelocityBins.Length), [.. hist]);
     }
 
-    public StackedHistogramData CalculateLowSpeedVelocityHistogram(SuspensionType type, double highSpeedThreshold)
+    public StackedHistogramData CalculateLowSpeedVelocityHistogram(
+        SuspensionType type, double highSpeedThreshold)
     {
         var suspension = type == SuspensionType.Front ? Front : Rear;
 
@@ -1261,54 +1301,290 @@ public class TelemetryData
         return Math.Clamp(symmetry, 0.0, 1.0);
     }
 
-    public NormalDistributionData CalculateNormalDistribution(SuspensionType type) =>
-        Memo($"normalDistribution/{type}", () => CalculateNormalDistributionCore(type));
-
-    private NormalDistributionData CalculateNormalDistributionCore(SuspensionType type)
-    {
-        var suspension = type == SuspensionType.Front ? Front : Rear;
-        var step = suspension.VelocityBins[1] - suspension.VelocityBins[0];
-
-        // Welford's online algorithm — avoids allocating a list of all velocity samples
-        long n = 0;
-        double mean = 0.0, m2 = 0.0;
-        double min = double.MaxValue, max = double.MinValue;
-
-        foreach (var s in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
+    public double CalculateVelocitySymmetry(
+        SuspensionType type,
+        double binStep,
+        double deadBand,
+        double absLimit = double.PositiveInfinity) =>
+        Memo($"velocitySymmetry/{type}/{binStep}/{deadBand}/{absLimit}", () =>
         {
-            if (s.End < s.Start || s.Start < 0 || s.End >= suspension.Velocity.Length) continue;
-            for (var i = s.Start; i <= s.End; i++)
+            var suspension = type == SuspensionType.Front ? Front : Rear;
+            return CalculateSampleVelocitySymmetry(
+                StrokeVelocitySamples(suspension), binStep, deadBand, absLimit);
+        });
+
+    private static IEnumerable<double> StrokeVelocitySamples(Suspension suspension)
+    {
+        var velocity = suspension.Velocity;
+
+        foreach (var stroke in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
+        {
+            if (stroke.End < stroke.Start || stroke.Start < 0 || stroke.End >= velocity.Length)
+                continue;
+
+            for (var i = stroke.Start; i <= stroke.End; i++)
+                yield return velocity[i];
+        }
+    }
+
+    private static double CalculateSampleVelocitySymmetry(
+        IEnumerable<double> velocities,
+        double binStep,
+        double deadBand,
+        double absLimit)
+    {
+        var pos = new Dictionary<int, double>();
+        var neg = new Dictionary<int, double>();
+
+        foreach (var velocity in velocities)
+        {
+            var absVelocity = Math.Abs(velocity);
+            if (absVelocity <= deadBand || absVelocity >= absLimit)
+                continue;
+
+            var k = (int)(absVelocity / binStep);
+            var buckets = velocity > 0 ? pos : neg;
+            buckets[k] = buckets.GetValueOrDefault(k) + 1.0;
+        }
+
+        var keys = pos.Keys.Concat(neg.Keys).Distinct();
+        var numerator = 0.0;
+        var denominator = 0.0;
+        foreach (var k in keys)
+        {
+            var positive = pos.GetValueOrDefault(k);
+            var negative = neg.GetValueOrDefault(k);
+            numerator += Math.Abs(positive - negative);
+            denominator += positive + negative;
+        }
+
+        return denominator <= 1e-9
+            ? 0.0
+            : Math.Clamp(1.0 - numerator / denominator, 0.0, 1.0);
+    }
+
+    private readonly record struct GeneralizedNormalFit(
+        double Mu,
+        double Alpha,
+        double Beta,
+        double Min,
+        double Max);
+
+    /// <summary>
+    /// Fits the generalized-normal shape by maximizing its profile log-likelihood.
+    /// </summary>
+    private static double? FitGeneralizedNormal(ReadOnlySpan<double> deviations)
+    {
+        if (deviations.Length == 0)
+            return null;
+
+        static double ProfileLogLikelihood(double beta, ReadOnlySpan<double> samples)
+        {
+            var poweredDeviationSum = 0.0;
+            foreach (var deviation in samples)
+                poweredDeviationSum += Math.Pow(deviation, beta);
+
+            var meanPoweredDeviation = poweredDeviationSum / samples.Length;
+            if (!(meanPoweredDeviation > 0) || !double.IsFinite(meanPoweredDeviation))
+                return double.NegativeInfinity;
+
+            var logAlpha = (Math.Log(beta) + Math.Log(meanPoweredDeviation)) / beta;
+            return Math.Log(beta) - (Math.Log(2.0) + logAlpha)
+                - SpecialFunctions.GammaLn(1.0 / beta) - 1.0 / beta;
+        }
+
+        const double minBeta = 0.20;
+        const double maxBeta = 3.00;
+        const double tolerance = 1e-3;
+        const double goldenRatioConjugate = 0.6180339887498949;
+
+        var lo = minBeta;
+        var hi = maxBeta;
+        var left = hi - goldenRatioConjugate * (hi - lo);
+        var right = lo + goldenRatioConjugate * (hi - lo);
+        var leftLikelihood = ProfileLogLikelihood(left, deviations);
+        var rightLikelihood = ProfileLogLikelihood(right, deviations);
+
+        while (hi - lo > tolerance)
+        {
+            if (leftLikelihood < rightLikelihood)
             {
-                var v = suspension.Velocity[i];
-                n++;
-                var delta = v - mean;
-                mean += delta / n;
-                m2 += delta * (v - mean);
-                if (v < min) min = v;
-                if (v > max) max = v;
+                lo = left;
+                left = right;
+                leftLikelihood = rightLikelihood;
+                right = lo + goldenRatioConjugate * (hi - lo);
+                rightLikelihood = ProfileLogLikelihood(right, deviations);
+            }
+            else
+            {
+                hi = right;
+                right = left;
+                rightLikelihood = leftLikelihood;
+                left = hi - goldenRatioConjugate * (hi - lo);
+                leftLikelihood = ProfileLogLikelihood(left, deviations);
             }
         }
 
-        if (n < 2)
-            return new NormalDistributionData([], []);
+        var beta = leftLikelihood > rightLikelihood ? left : right;
+        var likelihood = Math.Max(leftLikelihood, rightLikelihood);
+        return double.IsFinite(likelihood) ? beta : null;
+    }
 
-        var mu = mean;
-        var std = Math.Sqrt(m2 / n);
+    /// <summary>
+    /// Evaluates the generalized-normal density in log space so its normalization and tail
+    /// exponent remain numerically stable across the supported beta range.
+    /// </summary>
+    private static double GeneralizedNormalDensity(double value, double mu, double alpha, double beta)
+    {
+        var scaledDistancePower = Math.Pow(Math.Abs(value - mu) / alpha, beta);
+        var logDensity = Math.Log(beta) - Math.Log(2.0 * alpha)
+            - SpecialFunctions.GammaLn(1.0 / beta) - scaledDistancePower;
+        return Math.Exp(logDensity);
+    }
 
+    public ReferenceDistributionData CalculateVelocityReferenceDistribution(SuspensionType type) =>
+        Memo($"velocityReferenceDistribution/{type}", () => CalculateVelocityReferenceDistributionCore(type));
+
+    public double? CalculateVelocityShapeBeta(SuspensionType type) =>
+        Memo($"velocityShapeBeta/{type}", () => CalculateVelocityReferenceFit(type)?.Beta);
+
+    private GeneralizedNormalFit? CalculateVelocityReferenceFit(SuspensionType type) =>
+        Memo($"velocityReferenceFit/{type}", () => CalculateVelocityReferenceFitCore(type));
+
+    private GeneralizedNormalFit? CalculateVelocityReferenceFitCore(SuspensionType type)
+    {
+        var suspension = type == SuspensionType.Front ? Front : Rear;
+        if (!suspension.Present || suspension.Velocity is not { Length: > 0 })
+            return null;
+
+        var strokes = suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds);
+        long n = 0;
+        var min = double.MaxValue;
+        var max = double.MinValue;
+
+        // Pass 1: count valid stroke samples and find their range without retaining them.
+        foreach (var stroke in strokes)
+        {
+            if (stroke.End < stroke.Start || stroke.Start < 0 || stroke.End >= suspension.Velocity.Length) continue;
+            for (var i = stroke.Start; i <= stroke.End; i++)
+            {
+                var value = suspension.Velocity[i];
+                n++;
+                if (value < min) min = value;
+                if (value > max) max = value;
+            }
+        }
+
+        if (n < 2 || !(max > min))
+            return null;
+
+        // Pass 2: approximate the median from a fixed-size histogram over the exact range.
+        const int medianBinCount = 4096;
+        var medianBins = new long[medianBinCount];
         var range = max - min;
+        strokes = suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds);
+        foreach (var stroke in strokes)
+        {
+            if (stroke.End < stroke.Start || stroke.Start < 0 || stroke.End >= suspension.Velocity.Length) continue;
+            for (var i = stroke.Start; i <= stroke.End; i++)
+            {
+                var bin = Math.Min((int)((suspension.Velocity[i] - min) / range * medianBinCount), medianBinCount - 1);
+                medianBins[bin]++;
+            }
+        }
+
+        double Quantile(double p)
+        {
+            var target = n * p;
+            long countBefore = 0;
+            var bin = 0;
+            for (; bin < medianBinCount - 1; bin++)
+            {
+                if (countBefore + medianBins[bin] >= target)
+                    break;
+                countBefore += medianBins[bin];
+            }
+            var fraction = medianBins[bin] > 0
+                ? Math.Clamp((target - countBefore) / medianBins[bin], 0.0, 1.0)
+                : 0.5;
+            return min + (bin + fraction) * range / medianBinCount;
+        }
+
+        var mu = Quantile(0.5);
+
+        // Pass 3: retain a deterministic stride sample of non-zero absolute deviations for beta.
+        const int maxFitSampleCount = 50_000;
+        var stride = Math.Max(1L, n / maxFitSampleCount);
+        var sampledDeviations = new double[maxFitSampleCount];
+        var sampledDeviationCount = 0;
+        var firstNonZeroDeviation = 0.0;
+        long sampleIndex = 0;
+        strokes = suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds);
+        foreach (var stroke in strokes)
+        {
+            if (stroke.End < stroke.Start || stroke.Start < 0 || stroke.End >= suspension.Velocity.Length) continue;
+            for (var i = stroke.Start; i <= stroke.End; i++)
+            {
+                var deviation = Math.Abs(suspension.Velocity[i] - mu);
+                if (firstNonZeroDeviation == 0 && deviation > 0)
+                    firstNonZeroDeviation = deviation;
+                if (sampleIndex % stride == 0 && deviation > 0
+                    && sampledDeviationCount < sampledDeviations.Length)
+                {
+                    sampledDeviations[sampledDeviationCount++] = deviation;
+                }
+                sampleIndex++;
+            }
+        }
+
+        if (sampledDeviationCount == 0 && firstNonZeroDeviation > 0)
+            sampledDeviations[sampledDeviationCount++] = firstNonZeroDeviation;
+
+        var beta = FitGeneralizedNormal(sampledDeviations.AsSpan(0, sampledDeviationCount));
+        if (beta is null)
+            return null;
+
+        // Compute alpha over every stroke sample so the rendered density is not subsample-approximate.
+        var poweredDeviationSum = 0.0;
+        strokes = suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds);
+        foreach (var stroke in strokes)
+        {
+            if (stroke.End < stroke.Start || stroke.Start < 0 || stroke.End >= suspension.Velocity.Length) continue;
+            for (var i = stroke.Start; i <= stroke.End; i++)
+                poweredDeviationSum += Math.Pow(Math.Abs(suspension.Velocity[i] - mu), beta.Value);
+        }
+
+        var meanPoweredDeviation = poweredDeviationSum / n;
+        if (!(meanPoweredDeviation > 0) || !double.IsFinite(meanPoweredDeviation))
+            return null;
+
+        var alpha = Math.Exp(
+            (Math.Log(beta.Value) + Math.Log(meanPoweredDeviation)) / beta.Value);
+        return alpha > 0 && double.IsFinite(alpha)
+            ? new GeneralizedNormalFit(mu, alpha, beta.Value, min, max)
+            : null;
+    }
+
+    private ReferenceDistributionData CalculateVelocityReferenceDistributionCore(SuspensionType type)
+    {
+        var fit = CalculateVelocityReferenceFit(type);
+        if (fit is null)
+            return new ReferenceDistributionData([], [], null);
+
+        var suspension = type == SuspensionType.Front ? Front : Rear;
+        var step = suspension.VelocityBins[1] - suspension.VelocityBins[0];
+        var range = fit.Value.Max - fit.Value.Min;
         var ny = new double[100];
-        for (int i = 0; i < 100; i++)
-        {
-            ny[i] = min + i * range / 99;
-        }
-
         var pdf = new List<double>(100);
-        for (int i = 0; i < 100; i++)
+        for (var i = 0; i < ny.Length; i++)
         {
-            pdf.Add(Normal.PDF(mu, std, ny[i]) * step * 100);
+            ny[i] = fit.Value.Min + i * range / 99;
+            var density = GeneralizedNormalDensity(
+                ny[i], fit.Value.Mu, fit.Value.Alpha, fit.Value.Beta);
+            pdf.Add(density * step * 100);
         }
 
-        return new NormalDistributionData([.. ny], pdf);
+        return new ReferenceDistributionData([.. ny], pdf, fit.Value.Beta);
     }
 
     /// <summary>
@@ -1316,7 +1592,7 @@ public class TelemetryData
     /// Uses fine velocity bin step and population std (matching Python norm.fit / MLE).
     /// Y values are in mm/s (not converted to m/s).
     /// </summary>
-    public NormalDistributionData CalculateLowSpeedNormalDistribution(SuspensionType type, double highSpeedThreshold)
+    public ReferenceDistributionData CalculateLowSpeedNormalDistribution(SuspensionType type, double highSpeedThreshold)
     {
         var suspension = type == SuspensionType.Front ? Front : Rear;
         var fineStep = suspension.FineVelocityBins[1] - suspension.FineVelocityBins[0];
@@ -1339,7 +1615,7 @@ public class TelemetryData
         }
 
         if (n < 1)
-            return new NormalDistributionData([], []);
+            return new ReferenceDistributionData([], [], 2.0);
 
         var mu = mean;
         var std = Math.Sqrt(m2 / n); // population std
@@ -1358,7 +1634,7 @@ public class TelemetryData
             pdf.Add(Normal.PDF(mu, std, ny[i]) * fineStep * 100);
         }
 
-        return new NormalDistributionData([.. ny], pdf);
+        return new ReferenceDistributionData([.. ny], pdf, 2.0);
     }
 
     public TravelStatistics CalculateTravelStatistics(SuspensionType type)
@@ -1496,7 +1772,7 @@ public class TelemetryData
             maxc);
     }
 
-    public VelocityBands CalculateVelocityBands(SuspensionType type, double highSpeedThreshold)
+    public VelocityBands CalculateVelocityBands(SuspensionType type, double highSpeedThreshold, double deadBand)
     {
         var suspension = type == SuspensionType.Front ? Front : Rear;
         var velocity = suspension.Velocity;
@@ -1510,9 +1786,11 @@ public class TelemetryData
         {
             if (compression.End < compression.Start || compression.Start < 0 || compression.End >= velocity.Length)
                 continue;
-            totalCount += compression.Stat.Count;
             for (int i = compression.Start; i <= compression.End; i++)
             {
+                if (Math.Abs(velocity[i]) <= deadBand)
+                    continue;
+                totalCount++;
                 if (velocity[i] < highSpeedThreshold)
                 {
                     lsc++;
@@ -1532,9 +1810,11 @@ public class TelemetryData
         {
             if (rebound.End < rebound.Start || rebound.Start < 0 || rebound.End >= velocity.Length)
                 continue;
-            totalCount += rebound.Stat.Count;
             for (int i = rebound.Start; i <= rebound.End; i++)
             {
+                if (Math.Abs(velocity[i]) <= deadBand)
+                    continue;
+                totalCount++;
                 if (velocity[i] > -highSpeedThreshold)
                 {
                     lsr++;
@@ -1636,13 +1916,12 @@ public class TelemetryData
     }
 
     /// <summary>
-    /// Rear-only velocity histogram in the shock/damper domain: bins by shaft position and
-    /// shaft velocity (mm/s) instead of wheel position/velocity. A wheel-velocity bin mixes
-    /// different shaft speeds across the stroke under progressive/degressive kinematics, but
-    /// the damper's LS/HS knee sits at a fixed shaft speed — so this is the view that matches
-    /// the clicker. Mirrors CalculateVelocityHistogram's stacking with the robust tbin rescale.
+    /// Rear stroke samples projected into the shock/damper domain: shaft position (mm) and
+    /// shaft velocity (mm/s). Deliberately not memoised — the two arrays are as long as the
+    /// session and would stay resident for its whole lifetime; the callers memoise their
+    /// scalar results instead.
     /// </summary>
-    public StackedHistogramData CalculateDamperVelocityHistogram()
+    private (double[] ShockPos, double[] ShockVel) DamperShockSamples()
     {
         var arrayLen = Math.Min(Rear.Travel.Length, Rear.Velocity.Length);
         if (Rear.ShockTravel is not null)
@@ -1665,7 +1944,21 @@ public class TelemetryData
             }
         }
 
-        if (shockPos.Count == 0)
+        return (shockPos.ToArray(), shockVel.ToArray());
+    }
+
+    /// <summary>
+    /// Rear-only velocity histogram in the shock/damper domain: bins by shaft position and
+    /// shaft velocity (mm/s) instead of wheel position/velocity. A wheel-velocity bin mixes
+    /// different shaft speeds across the stroke under progressive/degressive kinematics, but
+    /// the damper's LS/HS knee sits at a fixed shaft speed — so this is the view that matches
+    /// the clicker. Mirrors CalculateVelocityHistogram's stacking with the robust tbin rescale.
+    /// </summary>
+    public StackedHistogramData CalculateDamperVelocityHistogram()
+    {
+        var (shockPos, shockVel) = DamperShockSamples();
+
+        if (shockPos.Length == 0)
             return new StackedHistogramData([], []);
 
         var maxShock = Linkage.MaxRearStroke ?? shockPos.Max();
@@ -1673,15 +1966,15 @@ public class TelemetryData
         if (maxShock <= 0) maxShock = 1;
 
         var tbins = Linspace(0, maxShock, Parameters.TravelHistBins + 1);
-        var digitizedTravel = Digitize(shockPos.ToArray(), tbins);
-        var (vbins, digitizedVelocity) = DigitizeVelocity(shockVel.ToArray(), Parameters.DamperVelocityHistStep);
+        var digitizedTravel = Digitize(shockPos, tbins);
+        var (vbins, digitizedVelocity) = DigitizeVelocity(shockVel, Parameters.DamperVelocityHistStep);
 
         var srcBins = tbins.Length - 1;
         var hist = new double[vbins.Length - 1][];
         for (var i = 0; i < hist.Length; i++)
             hist[i] = Generate.Zeros(TravelBinsForVelocityHistogram);
 
-        var totalCount = shockPos.Count;
+        var totalCount = shockPos.Length;
         for (var i = 0; i < totalCount; i++)
         {
             var vbin = Math.Clamp(digitizedVelocity[i], 0, hist.Length - 1);
@@ -1696,47 +1989,71 @@ public class TelemetryData
         return new StackedHistogramData(vbins.ToList(), [.. hist]);
     }
 
+    public double CalculateDamperVelocitySymmetry(double binStep, double deadBand) =>
+        Memo($"damperVelocitySymmetry/{binStep}/{deadBand}", () =>
+        {
+            var (_, shockVel) = DamperShockSamples();
+            return CalculateSampleVelocitySymmetry(
+                shockVel,
+                binStep,
+                deadBand,
+                double.PositiveInfinity);
+        });
+
     /// <summary>
-    /// Normal fit of the rear shaft (damper-domain) velocity distribution, overlaid on the
-    /// shaft-velocity histogram. Mirrors CalculateNormalDistribution but over shaft velocities
+    /// Generalized-normal fit of the rear shaft (damper-domain) velocity distribution, overlaid on the
+    /// shaft-velocity histogram. Mirrors CalculateVelocityReferenceDistribution but over shaft velocities
     /// (wheel velocity / local leverage) and the damper bin step. Y values are in mm/s.
     /// </summary>
-    public NormalDistributionData CalculateDamperNormalDistribution()
+    public ReferenceDistributionData CalculateDamperReferenceDistribution()
     {
-        var arrayLen = System.Math.Min(Rear.Travel.Length, Rear.Velocity.Length);
-        if (Rear.ShockTravel is not null)
-            arrayLen = System.Math.Min(arrayLen, Rear.ShockTravel.Length);
+        var (_, shockVelocity) = DamperShockSamples();
+        if (shockVelocity.Length < 2)
+            return new ReferenceDistributionData([], [], null);
 
-        var dPolynomial = Linkage.Polynomial.Differentiate();
-
-        // Welford's online algorithm over shaft velocities
-        long n = 0;
-        double mean = 0.0, m2 = 0.0;
-        double min = double.MaxValue, max = double.MinValue;
-
-        foreach (var s in Rear.Strokes.Compressions.Concat(Rear.Strokes.Rebounds))
+        var mu = shockVelocity.Median();
+        const int maxFitSampleCount = 50_000;
+        var stride = Math.Max(1, shockVelocity.Length / maxFitSampleCount);
+        var sampledDeviations = new double[maxFitSampleCount];
+        var sampledDeviationCount = 0;
+        for (var i = 0; i < shockVelocity.Length && sampledDeviationCount < sampledDeviations.Length; i += stride)
         {
-            if (s.End < s.Start || s.Start < 0 || s.End >= arrayLen) continue;
-            for (var i = s.Start; i <= s.End; i++)
+            var deviation = Math.Abs(shockVelocity[i] - mu);
+            if (deviation > 0)
+                sampledDeviations[sampledDeviationCount++] = deviation;
+        }
+
+        if (sampledDeviationCount == 0)
+        {
+            foreach (var value in shockVelocity)
             {
-                var pos = Rear.ShockTravel?[i] ?? Linkage.WheelToDamperTravel(Rear.Travel[i]);
-                var leverage = dPolynomial.Evaluate(pos);
-                var v = leverage > 0 ? Rear.Velocity[i] / leverage : 0;
-                n++;
-                var delta = v - mean;
-                mean += delta / n;
-                m2 += delta * (v - mean);
-                if (v < min) min = v;
-                if (v > max) max = v;
+                var deviation = Math.Abs(value - mu);
+                if (!(deviation > 0))
+                    continue;
+                sampledDeviations[sampledDeviationCount++] = deviation;
+                break;
             }
         }
 
-        if (n < 2)
-            return new NormalDistributionData([], []);
+        var beta = FitGeneralizedNormal(sampledDeviations.AsSpan(0, sampledDeviationCount));
+        if (beta is null)
+            return new ReferenceDistributionData([], [], null);
 
-        var mu = mean;
-        var std = System.Math.Sqrt(m2 / n);
+        var poweredDeviationSum = 0.0;
+        foreach (var value in shockVelocity)
+            poweredDeviationSum += Math.Pow(Math.Abs(value - mu), beta.Value);
 
+        var meanPoweredDeviation = poweredDeviationSum / shockVelocity.Length;
+        if (!(meanPoweredDeviation > 0) || !double.IsFinite(meanPoweredDeviation))
+            return new ReferenceDistributionData([], [], null);
+
+        var alpha = Math.Exp(
+            (Math.Log(beta.Value) + Math.Log(meanPoweredDeviation)) / beta.Value);
+        if (!(alpha > 0) || !double.IsFinite(alpha))
+            return new ReferenceDistributionData([], [], null);
+
+        var min = shockVelocity.Min();
+        var max = shockVelocity.Max();
         var range = max - min;
         var ny = new double[100];
         for (int i = 0; i < 100; i++)
@@ -1744,9 +2061,12 @@ public class TelemetryData
 
         var pdf = new List<double>(100);
         for (int i = 0; i < 100; i++)
-            pdf.Add(Normal.PDF(mu, std, ny[i]) * Parameters.DamperVelocityHistStep * 100);
+        {
+            var density = GeneralizedNormalDensity(ny[i], mu, alpha, beta.Value);
+            pdf.Add(density * Parameters.DamperVelocityHistStep * 100);
+        }
 
-        return new NormalDistributionData([.. ny], pdf);
+        return new ReferenceDistributionData([.. ny], pdf, beta.Value);
     }
 
     public PositionVelocityData CalculateForkPositionVelocityData()
@@ -2918,6 +3238,8 @@ public class TelemetryData
         double? maxFrontTravelMm = maxF > 0 ? maxF : null;
         double? maxRearTravelMm = maxR > 0 ? maxR : null;
         double? wheelbaseMm = Linkage is { Wheelbase: > 0 } ? Linkage.Wheelbase : null;
+        var frontVelocityShapeBeta = CalculateVelocityShapeBeta(SuspensionType.Front);
+        var rearVelocityShapeBeta = CalculateVelocityShapeBeta(SuspensionType.Rear);
 
         if (Front.Present && Rear.Present)
         {
@@ -2962,7 +3284,8 @@ public class TelemetryData
             haStaticDeg, haShiftDeg,
             pitchMeanDeg, pitchStabilityDeg, pitchModeEnergy, goutAsymPct, goutEventCount,
             maxFrontTravelMm, maxRearTravelMm, wheelbaseMm,
-            damperSag);
+            damperSag,
+            frontVelocityShapeBeta, rearVelocityShapeBeta);
     }
 
     #endregion

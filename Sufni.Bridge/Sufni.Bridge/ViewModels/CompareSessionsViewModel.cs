@@ -4,6 +4,7 @@ using System.Collections.ObjectModel;
 using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
+using System.Text.Json;
 using System.Threading.Tasks;
 using Avalonia;
 using Avalonia.Svg.Skia;
@@ -48,9 +49,9 @@ public partial class CompareSessionsViewModel : ViewModelBase
 {
     private static readonly Color[] SessionColors =
     [
-        Color.FromHex("#d53e4f"),  // Rot
-        Color.FromHex("#3288bd"),  // Blau
-        Color.FromHex("#66c2a5"), // Grün
+        Color.FromHex("#d53e4f"),  // Red
+        Color.FromHex("#3288bd"),  // Blue
+        Color.FromHex("#66c2a5"), // Green
     ];
 
     private static readonly LinePattern[] SessionPatterns =
@@ -68,6 +69,7 @@ public partial class CompareSessionsViewModel : ViewModelBase
     [ObservableProperty] private SvgImage? frontTravelHistogramSvg;
     [ObservableProperty] private SvgImage? rearTravelHistogramSvg;
     [ObservableProperty] private SvgImage? frontRearTravelSvg;
+    [ObservableProperty] private SvgImage? cumulativeTravelSvg;
     [ObservableProperty] private SvgImage? balanceSvg;
     [ObservableProperty] private SvgImage? reboundBalanceSvg;
     [ObservableProperty] private SvgImage? compressionBalanceSvg;
@@ -97,6 +99,7 @@ public partial class CompareSessionsViewModel : ViewModelBase
     private string? _frontTravelHistogramXml;
     private string? _rearTravelHistogramXml;
     private string? _frontRearTravelXml;
+    private string? _cumulativeTravelXml;
     private string? _balanceXml;
     private string? _reboundBalanceXml;
     private string? _compressionBalanceXml;
@@ -116,6 +119,7 @@ public partial class CompareSessionsViewModel : ViewModelBase
 
     public ObservableCollection<CompareTableRow> FrontWheelRows { get; } = [];
     public ObservableCollection<CompareTableRow> RearWheelRows { get; } = [];
+    public ObservableCollection<CompareTableRow> BalanceRows { get; } = [];
 
     public CompareSessionsViewModel(List<SessionViewModel> sessions)
     {
@@ -164,7 +168,10 @@ public partial class CompareSessionsViewModel : ViewModelBase
         var maxTravel = type == SuspensionType.Front ? data.Linkage.MaxFrontTravel : data.Linkage.MaxRearTravel;
         var travel = data.CalculateDetailedTravelStatistics(type);
         var velocity = data.CalculateVelocityStatistics(type);
-        var bands = data.CalculateVelocityBands(type, 200);
+        var deadBand = type == SuspensionType.Front
+            ? data.FrontVelocityDeadBand()
+            : data.RearWheelVelocityDeadBand();
+        var bands = data.CalculateVelocityBands(type, 200, deadBand);
 
         var compVels = suspension.Strokes.Compressions
             .SelectMany(s => suspension.Velocity[s.Start..(s.End + 1)])
@@ -232,6 +239,45 @@ public partial class CompareSessionsViewModel : ViewModelBase
         return rows;
     }
 
+    private static string FormatBalanceValue(double? value, string format) =>
+        value.HasValue ? value.Value.ToString(format, CultureInfo.InvariantCulture) : "-";
+
+    private static string FormatBalanceCount(int? value) =>
+        value.HasValue ? value.Value.ToString(CultureInfo.InvariantCulture) : "-";
+
+    private static List<CompareTableRow> BuildBalanceRows(List<BalanceMetrics> metricsList)
+    {
+        List<string> Values(Func<BalanceMetrics, string> formatter) =>
+            metricsList.Select(formatter).ToList();
+
+        return
+        [
+            new("Front Wheel SAG (dyn.) [%]", Values(m => FormatBalanceValue(m.FrontSagPct, "0.0"))),
+            new("Rear Wheel SAG (dyn.) [%]", Values(m => FormatBalanceValue(m.RearSagPct, "0.0"))),
+            new("Sag-Diff |F−R| [pp]", Values(m => FormatBalanceValue(m.SagDifferencePp, "0.0"))),
+            new("Damper SAG (dyn.) [%]", Values(m => FormatBalanceValue(m.DamperSagPct, "0.0"))),
+            new("Front 95th [%]", Values(m => FormatBalanceValue(m.FrontP95Pct, "0.0"))),
+            new("Rear 95th [%]", Values(m => FormatBalanceValue(m.RearP95Pct, "0.0"))),
+            new("Bottom outs F / R", Values(m => $"{FormatBalanceCount(m.FrontBottomouts)} / {FormatBalanceCount(m.RearBottomouts)}")),
+            new("Pitch μ [°]", Values(m => FormatBalanceValue(m.PitchMeanDeg, "0.00"))),
+            new("Pitch stability σ [°]", Values(m => FormatBalanceValue(m.PitchStabilityDeg, "0.00"))),
+            new("G-out asymmetry [%]", Values(m => m.GoutAsymmetryPct.HasValue
+                ? $"{FormatBalanceValue(m.GoutAsymmetryPct, "0.0")} (N={FormatBalanceCount(m.GoutEventCount)})"
+                : "-")),
+            new("Comp vel ratio", Values(m => FormatBalanceValue(m.CompressionVelocityRatio, "0.000"))),
+            new("Reb vel ratio", Values(m => FormatBalanceValue(m.ReboundVelocityRatio, "0.000"))),
+            new("MSD Compression [%]", Values(m => FormatBalanceValue(m.CompressionMsd, "0.0"))),
+            new("MSD Rebound [%]", Values(m => FormatBalanceValue(m.ReboundMsd, "0.0"))),
+            new("Velocity shape β F / R", Values(m => $"{FormatBalanceValue(m.FrontVelocityShapeBeta, "0.00")} / {FormatBalanceValue(m.RearVelocityShapeBeta, "0.00")}")),
+            new("Front freq [Hz]", Values(m => FormatBalanceValue(m.FrontPeakFrequencyHz, "0.00"))),
+            new("Rear freq [Hz]", Values(m => FormatBalanceValue(m.RearPeakFrequencyHz, "0.00"))),
+            new("Freq diff [Hz]", Values(m => FormatBalanceValue(m.FrequencyDifferenceHz, "0.00"))),
+            new("Peak amp ratio", Values(m => FormatBalanceValue(m.PeakAmplitudeRatio, "0.000"))),
+            new("Head angle static [°]", Values(m => FormatBalanceValue(m.HeadAngleStaticDeg, "0.0"))),
+            new("Head angle shift [°]", Values(m => FormatBalanceValue(m.HeadAngleShiftDeg, "0.0"))),
+        ];
+    }
+
     public async Task GenerateComparePlots()
     {
         var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
@@ -242,6 +288,7 @@ public partial class CompareSessionsViewModel : ViewModelBase
 
         // Load TelemetryData for all sessions
         var sessionData = new List<(TelemetryData data, Color color, LinePattern pattern, string name)>();
+        var cachedBalanceMetrics = new List<BalanceMetrics?>();
         for (var i = 0; i < Sessions.Count; i++)
         {
             var telemetry = await databaseService.GetSessionPsstAsync(Sessions[i].Id);
@@ -252,6 +299,23 @@ public partial class CompareSessionsViewModel : ViewModelBase
             }
 
             sessionData.Add((telemetry, SessionColors[i], SessionPatterns[i], Sessions[i].Name ?? $"Session {i + 1}"));
+
+            BalanceMetrics? metrics = null;
+            var cacheMeta = await databaseService.GetSessionCacheMetaAsync(Sessions[i].Id);
+            // A stale cache can silently lack fields added after it was written, so gate the
+            // whole payload by version rather than checking individual deserialized fields.
+            if (cacheMeta is { PlotVersion: SessionViewModel.CurrentPlotVersion, BalanceMetricsJson: not null })
+            {
+                try
+                {
+                    metrics = JsonSerializer.Deserialize<BalanceMetrics>(cacheMeta.BalanceMetricsJson);
+                }
+                catch (JsonException)
+                {
+                    // The metrics are recalculated below when cached JSON is invalid.
+                }
+            }
+            cachedBalanceMetrics.Add(metrics);
         }
 
         if (sessionData.Count < 2)
@@ -297,7 +361,18 @@ public partial class CompareSessionsViewModel : ViewModelBase
             Dispatcher.UIThread.Post(() => FrontRearTravelSvg = SourceToImage(src));
         }));
 
-        // 4. Balance
+        // 4. Cumulative Travel
+        tasks.Add(Task.Run(() =>
+        {
+            var p = new CompareCumulativeTravelPlot(new Plot());
+            p.LoadMultipleSessions(sessionData);
+            var svg = p.Plot.GetSvgXml(width, height);
+            _cumulativeTravelXml = svg;
+            var src = SvgToSource(svg);
+            Dispatcher.UIThread.Post(() => CumulativeTravelSvg = SourceToImage(src));
+        }));
+
+        // 5. Balance
         tasks.Add(Task.Run(() =>
         {
             var p = new CompareBalancePlot(new Plot());
@@ -497,19 +572,23 @@ public partial class CompareSessionsViewModel : ViewModelBase
             Dispatcher.UIThread.Post(() => RearPositionVelocitySvg = SourceToImage(src));
         }));
 
-        // 13. Summary Table
+        // Summary Tables
         tasks.Add(Task.Run(() =>
         {
             var frontStatsList = sessionData.Select(s => BuildSessionStats(s.data, SuspensionType.Front)).ToList();
             var rearStatsList = sessionData.Select(s => BuildSessionStats(s.data, SuspensionType.Rear)).ToList();
+            var balanceMetrics = sessionData.Select((session, index) =>
+                cachedBalanceMetrics[index] ?? session.data.CalculateBalanceMetrics(null)).ToList();
 
             var frontRows = BuildSummaryRows(frontStatsList, Sessions, SuspensionType.Front);
             var rearRows = BuildSummaryRows(rearStatsList, Sessions, SuspensionType.Rear);
+            var balanceRows = BuildBalanceRows(balanceMetrics);
 
             Dispatcher.UIThread.Post(() =>
             {
                 foreach (var row in frontRows) FrontWheelRows.Add(row);
                 foreach (var row in rearRows) RearWheelRows.Add(row);
+                foreach (var row in balanceRows) BalanceRows.Add(row);
             });
         }));
 
@@ -520,7 +599,7 @@ public partial class CompareSessionsViewModel : ViewModelBase
 
     private bool CanExportPdf() => !IsLoading && !IsGeneratingPdf &&
         (_frontTravelHistogramXml is not null || _rearTravelHistogramXml is not null ||
-         _frontRearTravelXml is not null || _balanceXml is not null ||
+         _frontRearTravelXml is not null || _cumulativeTravelXml is not null || _balanceXml is not null ||
          _reboundBalanceXml is not null || _compressionBalanceXml is not null ||
          _frontVelocityHistogramXml is not null || _rearVelocityHistogramXml is not null ||
          _frontLowSpeedXml is not null || _rearLowSpeedXml is not null ||
@@ -538,7 +617,7 @@ public partial class CompareSessionsViewModel : ViewModelBase
         {
             var svgs = new List<string?> {
                 _frontTravelHistogramXml, _rearTravelHistogramXml,
-                _frontRearTravelXml,
+                _frontRearTravelXml, _cumulativeTravelXml,
                 _balanceXml, _reboundBalanceXml, _compressionBalanceXml,
                 _frontVelocityHistogramXml, _rearVelocityHistogramXml,
                 _frontLowSpeedXml, _rearLowSpeedXml,

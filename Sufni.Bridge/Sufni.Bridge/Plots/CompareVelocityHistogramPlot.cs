@@ -73,15 +73,15 @@ public class CompareVelocityHistogramPlot(Plot plot, SuspensionType type) : Sufn
                 polygon.LineStyle.Pattern = LinePattern.Solid;
             }
 
-            // Normal-distribution overlay matches single-session VelocityHistogramPlot
-            var normalData = data.CalculateNormalDistribution(type);
-            var normal = Plot.Add.Scatter(
-                normalData.Y.Select(v => v / 1000.0).ToArray(),
-                normalData.Pdf.ToArray());
-            normal.Color = color;
-            normal.MarkerStyle.IsVisible = false;
-            normal.LineStyle.Width = 2;
-            normal.LineStyle.Pattern = LinePattern.Dotted;
+            // Reference-distribution overlay matches single-session VelocityHistogramPlot
+            var referenceData = data.CalculateVelocityReferenceDistribution(type);
+            var reference = Plot.Add.Scatter(
+                referenceData.Y.Select(v => v / 1000.0).ToArray(),
+                referenceData.Pdf.ToArray());
+            reference.Color = color;
+            reference.MarkerStyle.IsVisible = false;
+            reference.LineStyle.Width = 2;
+            reference.LineStyle.Pattern = LinePattern.Dotted;
         }
 
         Plot.Add.VerticalLine(0, 1f, Color.FromHex("#dddddd"), LinePattern.Dotted);

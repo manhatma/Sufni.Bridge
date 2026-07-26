@@ -71,15 +71,15 @@ public class VelocityDistributionPlot(Plot plot, SuspensionType type) : Telemetr
 
         Plot.Axes.Bottom.TickGenerator = new NumericFixedInterval(500);
 
-        // Normal distribution overlay
-        var normalData = telemetryData.CalculateNormalDistribution(type);
-        var normal = Plot.Add.Scatter(
-            normalData.Y.ToArray(),
-            normalData.Pdf.ToArray());
-        normal.Color = Color.FromHex("#d53e4f");
-        normal.MarkerStyle.IsVisible = false;
-        normal.LineStyle.Width = 3;
-        normal.LineStyle.Pattern = LinePattern.Dotted;
+        // Reference distribution overlay
+        var referenceData = telemetryData.CalculateVelocityReferenceDistribution(type);
+        var reference = Plot.Add.Scatter(
+            referenceData.Y.ToArray(),
+            referenceData.Pdf.ToArray());
+        reference.Color = Color.FromHex("#d53e4f");
+        reference.MarkerStyle.IsVisible = false;
+        reference.LineStyle.Width = 3;
+        reference.LineStyle.Pattern = LinePattern.Dotted;
 
         AddStatistics(telemetryData);
     }

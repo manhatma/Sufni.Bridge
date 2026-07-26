@@ -27,7 +27,7 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
     ];
 
     private static readonly Color StatColor = Color.FromHex("#FFD700");
-    private static readonly Color NormalDistributionColor = Color.FromHex("#d53e4f");
+    private static readonly Color ReferenceDistributionColor = Color.FromHex("#d53e4f");
 
     /// <summary>
     /// Stats box with avg/95th/max in mm/s — placed in the top padding area just below the title.
@@ -79,11 +79,21 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
         box.LabelPadding = 5;
     }
 
-    private void AddSymmetryLabel(StackedHistogramData data, double yRangeTop)
+    private void AddSymmetryLabel(
+        TelemetryData telemetryData,
+        SuspensionType suspensionType,
+        double deadBand,
+        double yRangeTop)
     {
-        var symmetry = TelemetryData.CalculateVelocityHistogramSymmetry(data);
+        var symmetry = telemetryData.CalculateVelocitySymmetry(
+            suspensionType,
+            Parameters.VelocityHistStep,
+            deadBand);
         var color = type == SuspensionType.Front ? FrontColor : RearColor;
-        var label = Plot.Add.Text($"Sym: {symmetry:0.00}", -VelocityLimitMs, yRangeTop * 0.97);
+        var label = Plot.Add.Text(
+            $"Sym: {symmetry:0.00}",
+            -VelocityLimitMs,
+            yRangeTop * 0.97);
         label.LabelFontColor = color;
         label.LabelFontSize = 10;
         label.LabelFontName = "Menlo";
@@ -96,17 +106,19 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
         label.LabelPadding = 5;
     }
 
-    private void AddNormalDistributionLabel(double yRangeTop)
+    private void AddReferenceDistributionLabel(double? beta, double yRangeTop)
     {
-        var label = Plot.Add.Text("Normal distribution", -VelocityLimitMs, yRangeTop * 0.82);
-        label.LabelFontColor = NormalDistributionColor;
+        var text = beta.HasValue ? $"Gen. normal (β {beta:0.00})" : "Reference distribution";
+        // On the right, 0.78 sits below the stats box at 0.97 and cannot cover the left travel colour-bar caption.
+        var label = Plot.Add.Text(text, VelocityLimitMs, yRangeTop * 0.78);
+        label.LabelFontColor = ReferenceDistributionColor;
         label.LabelFontSize = 10;
         label.LabelFontName = "Menlo";
-        label.LabelAlignment = Alignment.UpperLeft;
-        label.LabelOffsetX = 5;
+        label.LabelAlignment = Alignment.UpperRight;
+        label.LabelOffsetX = -5;
         label.LabelBold = true;
         label.LabelBackgroundColor = Color.FromHex("#15191C").WithAlpha(220);
-        label.LabelBorderColor = NormalDistributionColor.WithAlpha(80);
+        label.LabelBorderColor = ReferenceDistributionColor.WithAlpha(80);
         label.LabelBorderWidth = 1;
         label.LabelPadding = 5;
     }
@@ -124,6 +136,9 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
         Plot.Axes.Bottom.Label.Text = "Velocity (m/s)";
         Plot.Axes.Left.Label.Text = "Time (%)";
 
+        var deadBand = type == SuspensionType.Front
+            ? telemetryData.FrontVelocityDeadBand()
+            : telemetryData.RearWheelVelocityDeadBand();
         var data = telemetryData.CalculateVelocityHistogram(type);
         var step = data.Bins[1] - data.Bins[0];
         var maxY = 0.0;
@@ -164,20 +179,20 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
 
         Plot.Add.VerticalLine(0, 1f, Color.FromHex("#dddddd"), LinePattern.Dotted);
 
-        // Normal distribution: X=velocity (m/s), Y=pdf (time%)
-        var normalData = telemetryData.CalculateNormalDistribution(type);
-        var normal = Plot.Add.Scatter(
-            normalData.Y.Select(v => v / 1000.0).ToArray(),
-            normalData.Pdf.ToArray());
-        normal.Color = NormalDistributionColor;
-        normal.MarkerStyle.IsVisible = false;
-        normal.LineStyle.Width = 3;
-        normal.LineStyle.Pattern = LinePattern.Dotted;
+        // Reference distribution: X=velocity (m/s), Y=pdf (time%)
+        var referenceData = telemetryData.CalculateVelocityReferenceDistribution(type);
+        var reference = Plot.Add.Scatter(
+            referenceData.Y.Select(v => v / 1000.0).ToArray(),
+            referenceData.Pdf.ToArray());
+        reference.Color = ReferenceDistributionColor;
+        reference.MarkerStyle.IsVisible = false;
+        reference.LineStyle.Width = 3;
+        reference.LineStyle.Pattern = LinePattern.Dotted;
 
         AddBinColorLegend(palette, -VelocityLimitMs, VelocityLimitMs, yRangeTop);
 
-        AddSymmetryLabel(data, yRangeTop);
-        AddNormalDistributionLabel(yRangeTop);
+        AddSymmetryLabel(telemetryData, type, deadBand, yRangeTop);
+        AddReferenceDistributionLabel(referenceData.Beta, yRangeTop);
         AddStatsBox(telemetryData, yRangeTop);
     }
 }

@@ -107,6 +107,13 @@
                     <ItemsControl Grid.Row="1" ItemsSource="{Binding RearWheelRows}" Name="RearWheelTable" />
                 </Grid>
 
+                <!-- Balance Table -->
+                <Grid RowDefinitions="auto auto" ColumnDefinitions="*"
+                      IsVisible="{Binding BalanceRows.Count}">
+                    <Grid Grid.Row="0" Name="BalanceHeader" />
+                    <ItemsControl Grid.Row="1" ItemsSource="{Binding BalanceRows}" Name="BalanceTable" />
+                </Grid>
+
                 <!-- Front Travel Histogram -->
                 <Image IsVisible="{Binding FrontTravelHistogramSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
                        Source="{Binding FrontTravelHistogramSvg}" />
@@ -118,6 +125,10 @@
                 <!-- Front vs Rear Travel -->
                 <Image IsVisible="{Binding FrontRearTravelSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
                        Source="{Binding FrontRearTravelSvg}" />
+
+                <!-- Cumulative Travel -->
+                <Image IsVisible="{Binding CumulativeTravelSvg, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Source="{Binding CumulativeTravelSvg}" />
 
                 <!-- Balance -->
                 <Image IsVisible="{Binding BalanceSvg, Converter={x:Static ObjectConverters.IsNotNull}}"

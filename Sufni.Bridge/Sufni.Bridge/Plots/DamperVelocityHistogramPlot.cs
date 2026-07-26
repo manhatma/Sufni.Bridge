@@ -22,19 +22,20 @@ public class DamperVelocityHistogramPlot(Plot plot) : TelemetryPlot(plot)
         Color.FromHex("#9e0142"),
     ];
 
-    private static readonly Color NormalDistributionColor = Color.FromHex("#d53e4f");
+    private static readonly Color ReferenceDistributionColor = Color.FromHex("#d53e4f");
 
-    private void AddNormalDistributionLabel(double limit, double yRangeTop)
+    private void AddReferenceDistributionLabel(double? beta, double limit, double yRangeTop)
     {
-        var label = Plot.Add.Text("Normal distribution", -limit, yRangeTop * 0.82);
-        label.LabelFontColor = NormalDistributionColor;
+        var text = beta.HasValue ? $"Gen. normal (β {beta:0.00})" : "Reference distribution";
+        var label = Plot.Add.Text(text, limit, yRangeTop * 0.97);
+        label.LabelFontColor = ReferenceDistributionColor;
         label.LabelFontSize = 10;
         label.LabelFontName = "Menlo";
-        label.LabelAlignment = Alignment.UpperLeft;
-        label.LabelOffsetX = 5;
+        label.LabelAlignment = Alignment.UpperRight;
+        label.LabelOffsetX = -5;
         label.LabelBold = true;
         label.LabelBackgroundColor = Color.FromHex("#15191C").WithAlpha(220);
-        label.LabelBorderColor = NormalDistributionColor.WithAlpha(80);
+        label.LabelBorderColor = ReferenceDistributionColor.WithAlpha(80);
         label.LabelBorderWidth = 1;
         label.LabelPadding = 5;
     }
@@ -50,6 +51,7 @@ public class DamperVelocityHistogramPlot(Plot plot) : TelemetryPlot(plot)
         Plot.Axes.Bottom.Label.Text = "Shaft velocity (mm/s)";
         Plot.Axes.Left.Label.Text = "Time (%)";
 
+        var deadBand = telemetryData.RearShockVelocityDeadBand();
         var data = telemetryData.CalculateDamperVelocityHistogram();
         if (data.Bins.Count < 2)
             return;
@@ -99,20 +101,23 @@ public class DamperVelocityHistogramPlot(Plot plot) : TelemetryPlot(plot)
 
         Plot.Add.VerticalLine(0, 1f, Color.FromHex("#dddddd"), LinePattern.Dotted);
 
-        // Normal reference overlay: X = shaft velocity (mm/s), Y = pdf (time %)
-        var normalData = telemetryData.CalculateDamperNormalDistribution();
-        var normal = Plot.Add.Scatter(
-            normalData.Y.ToArray(),
-            normalData.Pdf.ToArray());
-        normal.Color = NormalDistributionColor;
-        normal.MarkerStyle.IsVisible = false;
-        normal.LineStyle.Width = 3;
-        normal.LineStyle.Pattern = LinePattern.Dotted;
+        // Reference overlay: X = shaft velocity (mm/s), Y = pdf (time %)
+        var referenceData = telemetryData.CalculateDamperReferenceDistribution();
+        var reference = Plot.Add.Scatter(
+            referenceData.Y.ToArray(),
+            referenceData.Pdf.ToArray());
+        reference.Color = ReferenceDistributionColor;
+        reference.MarkerStyle.IsVisible = false;
+        reference.LineStyle.Width = 3;
+        reference.LineStyle.Pattern = LinePattern.Dotted;
 
         AddBinColorLegend(palette, -limit, limit, yRangeTop);
 
-        var symmetry = TelemetryData.CalculateVelocityHistogramSymmetry(data);
-        var label = Plot.Add.Text($"Sym: {symmetry:0.00}", -limit, yRangeTop * 0.97);
+        var symmetry = telemetryData.CalculateDamperVelocitySymmetry(step, deadBand);
+        var label = Plot.Add.Text(
+            $"Sym: {symmetry:0.00}",
+            -limit,
+            yRangeTop * 0.97);
         label.LabelFontColor = RearColor;
         label.LabelFontSize = 10;
         label.LabelFontName = "Menlo";
@@ -124,7 +129,7 @@ public class DamperVelocityHistogramPlot(Plot plot) : TelemetryPlot(plot)
         label.LabelBorderWidth = 1;
         label.LabelPadding = 5;
 
-        AddNormalDistributionLabel(limit, yRangeTop);
+        AddReferenceDistributionLabel(referenceData.Beta, limit, yRangeTop);
     }
 
     // Picks a round tick spacing (~4 divisions per side) so mm/s labels stay readable and

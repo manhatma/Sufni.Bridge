@@ -21,6 +21,7 @@ public partial class CompareSessionsView : UserControl
 
         BuildTable(FrontWheelHeader, FrontWheelTable, "FRONT WHEEL", vm);
         BuildTable(RearWheelHeader, RearWheelTable, "REAR WHEEL", vm);
+        BuildTable(BalanceHeader, BalanceTable, "BALANCE", vm);
 
         await Task.Run(() => vm.GenerateComparePlots());
     }
@@ -43,7 +44,7 @@ public partial class CompareSessionsView : UserControl
 
         for (var i = 0; i < colCount; i++)
         {
-            var cell = CreateHeaderCell(vm.SessionNames[i]);
+            var cell = CreateHeaderCell(vm.SessionNames[i], vm.SessionLegend[i].Color);
             Grid.SetColumn(cell, i + 1);
             header.Children.Add(cell);
         }
@@ -82,9 +83,10 @@ public partial class CompareSessionsView : UserControl
         });
     }
 
-    private static Border CreateHeaderCell(string text)
+    private static Border CreateHeaderCell(string text, string? accentColor = null)
     {
-        return new Border
+        var foreground = Color.Parse(accentColor ?? "#15191c");
+        var border = new Border
         {
             Classes = { "compare-header-cell" },
             Child = new TextBlock
@@ -92,11 +94,20 @@ public partial class CompareSessionsView : UserControl
                 Text = text,
                 FontWeight = FontWeight.Bold,
                 HorizontalAlignment = HorizontalAlignment.Center,
-                TextAlignment = Avalonia.Media.TextAlignment.Center,
-                TextWrapping = Avalonia.Media.TextWrapping.Wrap,
-                Foreground = new SolidColorBrush(Avalonia.Media.Color.Parse("#15191c")),
+                TextAlignment = TextAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
+                Foreground = new SolidColorBrush(foreground),
                 FontSize = 11
             }
         };
+
+        if (accentColor is not null)
+        {
+            border.Background = new SolidColorBrush(Color.FromArgb(0x33, foreground.R, foreground.G, foreground.B));
+            border.BorderBrush = new SolidColorBrush(foreground);
+            border.BorderThickness = new Thickness(0, 0, 0, 3);
+        }
+
+        return border;
     }
 }
