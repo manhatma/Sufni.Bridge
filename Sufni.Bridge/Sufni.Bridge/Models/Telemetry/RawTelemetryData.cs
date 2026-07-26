@@ -13,6 +13,8 @@ public class RawTelemetryData
     public int Timestamp { get; }
     public ushort[] Front { get; }
     public ushort[] Rear { get; }
+    public int FrontDropouts { get; private set; }
+    public int RearDropouts { get; private set; }
 
     // 16-byte header: magic (3) + version (1) + sample rate (u16) + padding (u16) + timestamp (i64),
     // followed by 4-byte records of fork/shock angle (u16 each). All values little-endian, matching
@@ -52,50 +54,37 @@ public class RawTelemetryData
         var hasFront = firstFork != 0xffff;
         var hasRear = firstShock != 0xffff;
 
-        // Error-baseline detection: starting at record 1, skip samples at or below the first
-        // record's value; the FIRST sample above it decides — a jump larger than 0x0050 marks a
-        // constant acquisition error to subtract, anything else means no error. Either way the
-        // scan stops there.
-        ushort frontError = 0, rearError = 0;
-        for (var i = 1; i < count; i++)
-        {
-            var v = U16(sstData, HeaderSize + i * RecordSize);
-            if (v <= firstFork) continue;
-            if (v - firstFork > 0x0050)
-            {
-                frontError = v;
-            }
-
-            break;
-        }
-
-        for (var i = 1; i < count; i++)
-        {
-            var v = U16(sstData, HeaderSize + i * RecordSize + 2);
-            if (v <= firstShock) continue;
-            if (v - firstShock > 0x0050)
-            {
-                rearError = v;
-            }
-
-            break;
-        }
-
-        // Single pass straight into the target arrays (unchecked ushort wraparound on the
-        // error subtraction, exactly like the previous parser).
         Front = hasFront ? new ushort[count] : [];
         Rear = hasRear ? new ushort[count] : [];
+        var lastFront = firstFork;
+        var lastRear = firstShock;
         for (var i = 0; i < count; i++)
         {
             var offset = HeaderSize + i * RecordSize;
             if (hasFront)
             {
-                Front[i] = (ushort)(U16(sstData, offset) - frontError);
+                var value = U16(sstData, offset);
+                if (value == 0xffff)
+                {
+                    FrontDropouts++;
+                    value = lastFront;
+                }
+
+                Front[i] = value;
+                lastFront = value;
             }
 
             if (hasRear)
             {
-                Rear[i] = (ushort)(U16(sstData, offset + 2) - rearError);
+                var value = U16(sstData, offset + 2);
+                if (value == 0xffff)
+                {
+                    RearDropouts++;
+                    value = lastRear;
+                }
+
+                Rear[i] = value;
+                lastRear = value;
             }
         }
     }

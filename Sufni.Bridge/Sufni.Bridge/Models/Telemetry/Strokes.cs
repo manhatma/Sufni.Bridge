@@ -46,12 +46,18 @@ public class Stroke
         // Scan inclusive of the reversal sample (end): a compression's peak — the
         // bottom-most point where a bottom-out actually occurs — is the end sample.
         // Excluding it would drop "peak-only" bottom-outs (threshold first crossed at
-        // the reversal point). The inner skip loop stays bounded by travel.Length.
-        for (var i = start; i <= end; i++)
+        // the reversal point).
+        for (var i = start; i <= end;)
         {
-            if (!(travel[i] > maxTravel - Parameters.BottomoutThreshold)) continue;
-            bo += 1;
-            for (; i < travel.Length && travel[i] > maxTravel - Parameters.BottomoutThreshold; i++) { }
+            if (travel[i] > maxTravel - Parameters.BottomoutThreshold)
+            {
+                bo += 1;
+                for (; i <= end && travel[i] > maxTravel - Parameters.BottomoutThreshold; i++) { }
+            }
+            else
+            {
+                i++;
+            }
         }
 
         Stat = new StrokeStat
@@ -86,7 +92,7 @@ public class Strokes
 {
     public Stroke[] Compressions { get; set; }
     public Stroke[] Rebounds { get; set; }
-    [IgnoreMember] public Stroke[] Idlings { get; private set; }
+    public Stroke[] Idlings { get; set; } = [];
 
     /// <summary>
     /// Strokes during which the suspension plausibly hung unloaded near its top-out position.
@@ -161,8 +167,7 @@ public class Strokes
                 airCandidates.Add(stroke);
             }
 
-            if (Math.Abs(stroke.Length) < Parameters.StrokeLengthThreshold &&
-                stroke.Duration >= Parameters.IdlingDurationThreshold)
+            if (Math.Abs(stroke.Length) < Parameters.StrokeLengthThreshold)
             {
                 idlings.Add(stroke);
             }
@@ -170,7 +175,7 @@ public class Strokes
             {
                 compressions.Add(stroke);
             }
-            else if (stroke.Length <= -Parameters.StrokeLengthThreshold)
+            else
             {
                 rebounds.Add(stroke);
             }
@@ -197,9 +202,20 @@ public class Strokes
             s.DigitizedVelocity = dv[s.Start..(s.End + 1)];
             s.FineDigitizedVelocity = dvFine[s.Start..(s.End + 1)];
         }
+
+        foreach (var s in Idlings)
+        {
+            s.DigitizedTravel = dt[s.Start..(s.End + 1)];
+            s.DigitizedVelocity = dv[s.Start..(s.End + 1)];
+            s.FineDigitizedVelocity = dvFine[s.Start..(s.End + 1)];
+        }
     }
 
-    public static Stroke[] FilterStrokes(double[] velocity, double[] travel, double maxTravel, int sampleRate)
+    private static int Sign(double velocity, double zeroThreshold) =>
+        Math.Abs(velocity) <= zeroThreshold ? 0 : Math.Sign(velocity);
+
+    public static Stroke[] FilterStrokes(
+        double[] velocity, double[] travel, double maxTravel, int sampleRate, double velocityZeroThreshold)
     {
         var strokes = new List<Stroke>();
         int velocityLength = velocity.Length;
@@ -207,12 +223,15 @@ public class Strokes
         for (int i = 0; i < velocityLength - 1; i++)
         {
             int startIndex = i;
-            int startSign = Math.Sign(velocity[i]);
+            int startSign = Sign(velocity[i], velocityZeroThreshold);
             double maxPosition = travel[startIndex];
 
             // Loop until velocity changes sign
-            while (i < velocityLength - 1 && Math.Sign(velocity[i + 1]) == startSign)
+            while (i < velocityLength - 1)
             {
+                var nextSign = Sign(velocity[i + 1], velocityZeroThreshold);
+                if (nextSign != 0 && nextSign != startSign) break;
+
                 i++;
                 if (travel[i] > maxPosition)
                 {

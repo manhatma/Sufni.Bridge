@@ -4,7 +4,7 @@ namespace Sufni.Bridge.Models.Telemetry;
 
 public static class Parameters
 {
-    // (s) minimum duration to consider stroke an idle period
+    // (s) minimum duration to consider stroke an idle period; currently unused.
     public const double IdlingDurationThreshold = 0.10;
 
     // (s) minimum duration to consider stroke an airtime
@@ -80,6 +80,15 @@ public static class Parameters
 
     // (mm) minimum length to consider stroke a compression/rebound
     public const double StrokeLengthThreshold = 0.5;
+
+    // Velocity dead bands derived from sensor quantisation: travel per LSB * sample rate.
+    // At 860.58 Hz: fork = 0.00758 mm/LSB * 860.58 Hz = 6.52 mm/s;
+    // shock = 0.00284 mm/LSB * 860.58 Hz = 2.44 mm/s.
+    public const double ForkTravelPerLsb = 0.00758;
+    public const double ShockTravelPerLsb = 0.00284;
+
+    public static double ForkVelocityZeroThreshold(double sampleRate) => ForkTravelPerLsb * sampleRate;
+    public static double ShockVelocityZeroThreshold(double sampleRate) => ShockTravelPerLsb * sampleRate;
 
     // factor for top-out concatenation with respect to StrokeLengthThreshold
     public const double StrokeLengthThresholdFac = 30;

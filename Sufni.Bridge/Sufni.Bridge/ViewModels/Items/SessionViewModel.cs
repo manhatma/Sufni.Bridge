@@ -25,7 +25,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    private const int CurrentPlotVersion = 219;
+    private const int CurrentPlotVersion = 220;
 
     // Approximate rendered height of the VelocityBandView control (margin + title text +
     // 44 px band grid). Used to size the low-speed velocity histograms so the
@@ -418,6 +418,7 @@ public partial class SessionViewModel : ItemViewModelBase
                     SummaryPage.WheelRows = new ObservableCollection<SummaryComparisonRow>(
                         summary.WheelRows.Select(r => new SummaryComparisonRow(r[0], r[1], r[2])));
                     SummaryPage.Airtime = summary.Airtime;
+                    SummaryPage.DataQuality = summary.DataQuality;
                 }
             }
             catch
@@ -1201,7 +1202,8 @@ public partial class SessionViewModel : ItemViewModelBase
         string[][] WheelRows,
         // Em dash, matching the placeholder BalancePageViewModel uses for an unknown metric —
         // the two sit next to each other in the Summary tab's run-data grid.
-        string Airtime = "—");
+        string Airtime = "—",
+        string? DataQuality = null);
 
     private static string FormatTravel(double value, double maxTravel)
     {
@@ -1247,6 +1249,22 @@ public partial class SessionViewModel : ItemViewModelBase
         var total = airtimes.Sum(a => a.End - a.Start);
         return string.Create(System.Globalization.CultureInfo.InvariantCulture,
             $"{total:0.0} s ({airtimes.Length}×)");
+    }
+
+    private static string? FormatDataQuality(TelemetryData telemetryData)
+    {
+        var lines = new List<string>();
+        if (telemetryData.FrontDropouts != 0 || telemetryData.RearDropouts != 0)
+            lines.Add($"Dropouts: {telemetryData.FrontDropouts} front / {telemetryData.RearDropouts} rear");
+        if (telemetryData.Front.ClampedSamples != 0 || telemetryData.Rear.ClampedSamples != 0)
+            lines.Add($"Top-out clamps: {telemetryData.Front.ClampedSamples} front / {telemetryData.Rear.ClampedSamples} rear");
+        if (telemetryData.Linkage.WheelTravelOffset != 0)
+            lines.Add(string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                $"Leverage wheel offset: {telemetryData.Linkage.WheelTravelOffset:0.##} mm"));
+        if (telemetryData.Linkage.SkippedLeverageRows != 0)
+            lines.Add($"Leverage rows skipped: {telemetryData.Linkage.SkippedLeverageRows}");
+
+        return lines.Count == 0 ? null : string.Join(Environment.NewLine, lines);
     }
 
     private static double EvaluatePolynomial(IReadOnlyList<double> coefficients, double x)
@@ -1365,7 +1383,7 @@ public partial class SessionViewModel : ItemViewModelBase
 
         var compSamples = telemetryData.Front.Strokes.Compressions.Sum(s => s.Stat.Count);
         var rebSamples = telemetryData.Front.Strokes.Rebounds.Sum(s => s.Stat.Count);
-        var totalSamples = compSamples + rebSamples;
+        var totalSamples = compSamples + rebSamples + telemetryData.Front.Strokes.Idlings.Sum(s => s.Stat.Count);
 
         double travelSum = 0.0;
         var travelCount = 0;
@@ -1380,7 +1398,7 @@ public partial class SessionViewModel : ItemViewModelBase
         double reboundMax = 0.0;
         var reboundVels = new List<double>(rebSamples);
 
-        foreach (var stroke in telemetryData.Front.Strokes.Compressions.Concat(telemetryData.Front.Strokes.Rebounds))
+        foreach (var stroke in telemetryData.Front.Strokes.Compressions.Concat(telemetryData.Front.Strokes.Rebounds).Concat(telemetryData.Front.Strokes.Idlings))
         {
             for (var i = stroke.Start; i <= stroke.End && i < forkTravel.Length; i++)
             {
@@ -1464,7 +1482,7 @@ public partial class SessionViewModel : ItemViewModelBase
 
         var compSamples = telemetryData.Rear.Strokes.Compressions.Sum(s => s.Stat.Count);
         var rebSamples = telemetryData.Rear.Strokes.Rebounds.Sum(s => s.Stat.Count);
-        var totalSamples = compSamples + rebSamples;
+        var totalSamples = compSamples + rebSamples + telemetryData.Rear.Strokes.Idlings.Sum(s => s.Stat.Count);
 
         double travelSum = 0.0;
         var travelCount = 0;
@@ -1479,7 +1497,7 @@ public partial class SessionViewModel : ItemViewModelBase
         double reboundMax = 0.0;
         var reboundVels = new List<double>(rebSamples);
 
-        foreach (var stroke in telemetryData.Rear.Strokes.Compressions.Concat(telemetryData.Rear.Strokes.Rebounds))
+        foreach (var stroke in telemetryData.Rear.Strokes.Compressions.Concat(telemetryData.Rear.Strokes.Rebounds).Concat(telemetryData.Rear.Strokes.Idlings))
         {
             for (var i = stroke.Start; i <= stroke.End && i < shockTravel.Length; i++)
             {
@@ -1683,6 +1701,7 @@ public partial class SessionViewModel : ItemViewModelBase
         ]);
 
         var airtime = FormatAirtime(telemetryData.Airtimes);
+        var dataQuality = FormatDataQuality(telemetryData);
 
         Dispatcher.UIThread.Post(() =>
         {
@@ -1690,13 +1709,15 @@ public partial class SessionViewModel : ItemViewModelBase
             SummaryPage.ForkShockRows = forkShockRows;
             SummaryPage.WheelRows = wheelRows;
             SummaryPage.Airtime = airtime;
+            SummaryPage.DataQuality = dataQuality;
         });
 
         return new CachedSummaryData(
             runDataRows.Select(r => new[] { r.Label, r.Value }).ToArray(),
             forkShockRows.Select(r => new[] { r.Label, r.LeftValue, r.RightValue }).ToArray(),
             wheelRows.Select(r => new[] { r.Label, r.LeftValue, r.RightValue }).ToArray(),
-            airtime);
+            airtime,
+            dataQuality);
     }
 
     #endregion

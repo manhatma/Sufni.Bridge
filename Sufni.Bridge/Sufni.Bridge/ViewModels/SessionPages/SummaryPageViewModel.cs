@@ -15,6 +15,7 @@ public partial class SummaryPageViewModel() : PageViewModelBase("Summary")
     [ObservableProperty] private bool isEditingSetup;
     [ObservableProperty] private BalanceMetricRow effectiveHeadAngle = new() { Label = "Eff. Head Angle" };
     [ObservableProperty] private string airtime = "—";
+    [ObservableProperty] private string? dataQuality;
     public ObservableCollection<SetupViewModel> AvailableSetups { get; } = [];
 
     [RelayCommand]

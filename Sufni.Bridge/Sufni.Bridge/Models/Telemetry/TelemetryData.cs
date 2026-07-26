@@ -29,6 +29,7 @@ public class Airtime
 public class Suspension
 {
     public bool Present { get; set; }
+    public int ClampedSamples { get; set; }
     public Calibration? Calibration { get; set; }
     public double[] Travel { get; set; }
     public double[] Velocity { get; set; }
@@ -146,7 +147,7 @@ public class TelemetryData
 
     // Increment when velocity processing parameters change (e.g. smoother lambda).
     // Blobs with a lower version are automatically re-processed from Travel arrays on load.
-    public const int CurrentProcessingVersion = 24;
+    public const int CurrentProcessingVersion = 25;
 
     #region Public properties
 
@@ -155,6 +156,8 @@ public class TelemetryData
     public int ProcessingVersion { get; set; }
     public int SampleRate { get; set; }
     public int Timestamp { get; set; }
+    public int FrontDropouts { get; set; }
+    public int RearDropouts { get; set; }
     public Suspension Front { get; set; }
     public Suspension Rear { get; set; }
     public Linkage Linkage { get; set; }
@@ -507,6 +510,7 @@ public class TelemetryData
         {
             using var perfFront = PerfLog.Measure("process/front");
             Front.Travel = new double[fc];
+            Front.ClampedSamples = 0;
             var frontCoeff = Math.Sin(Linkage.HeadAngle * Math.PI / 180.0);
 
             var lastValidFront = 0.0;
@@ -530,6 +534,7 @@ public class TelemetryData
                     sawValidFront = true;
                 }
                 var x = travel * frontCoeff;
+                if (x < 0) Front.ClampedSamples++;
                 x = Math.Max(0, x);
                 x = Math.Min(x, Linkage.MaxFrontTravel);
                 Front.Travel[i] = x;
@@ -549,7 +554,8 @@ public class TelemetryData
             var (vbinsFine, dvFine) = DigitizeVelocity(v, Parameters.VelocityHistStepFine);
             Front.FineVelocityBins = vbinsFine;
 
-            var strokes = Strokes.FilterStrokes(v, Front.Travel, Linkage.MaxFrontTravel, SampleRate);
+            var strokes = Strokes.FilterStrokes(v, Front.Travel, Linkage.MaxFrontTravel, SampleRate,
+                Parameters.ForkVelocityZeroThreshold(SampleRate));
             Front.Strokes.Categorize(strokes, Front.Travel, Linkage.MaxFrontTravel);
             if (Front.Strokes.Compressions.Length == 0 && Front.Strokes.Rebounds.Length == 0)
             {
@@ -566,6 +572,7 @@ public class TelemetryData
             using var perfRear = PerfLog.Measure("process/rear");
             Rear.Travel = new double[rc];
             Rear.ShockTravel = new double[rc];
+            Rear.ClampedSamples = 0;
 
             var lastValidRear = 0.0;
             var sawValidRear = false;
@@ -587,6 +594,7 @@ public class TelemetryData
                 }
                 Rear.ShockTravel[i] = shock;
                 var x = Linkage.Polynomial.Evaluate(shock);
+                if (x < 0) Rear.ClampedSamples++;
                 x = Math.Max(0, x);
                 x = Math.Min(x, Linkage.MaxRearTravel);
                 Rear.Travel[i] = x;
@@ -606,7 +614,8 @@ public class TelemetryData
             var (vbinsFine, dvFine) = DigitizeVelocity(v, Parameters.VelocityHistStepFine);
             Rear.FineVelocityBins = vbinsFine;
 
-            var strokes = Strokes.FilterStrokes(v, Rear.Travel, Linkage.MaxRearTravel, SampleRate);
+            var strokes = Strokes.FilterStrokes(v, Rear.Travel, Linkage.MaxRearTravel, SampleRate,
+                Parameters.ShockVelocityZeroThreshold(SampleRate));
             Rear.Strokes.Categorize(strokes, Rear.Travel, Linkage.MaxRearTravel);
             if (Rear.Strokes.Compressions.Length == 0 && Rear.Strokes.Rebounds.Length == 0)
             {
@@ -676,7 +685,8 @@ public class TelemetryData
             Front.FineVelocityBins = vbinsFine;
 
             Front.Strokes = new Strokes();
-            var strokes = Strokes.FilterStrokes(v, Front.Travel, Linkage.MaxFrontTravel, SampleRate);
+            var strokes = Strokes.FilterStrokes(v, Front.Travel, Linkage.MaxFrontTravel, SampleRate,
+                Parameters.ForkVelocityZeroThreshold(SampleRate));
             Front.Strokes.Categorize(strokes, Front.Travel, Linkage.MaxFrontTravel);
             if (Front.Strokes.Compressions.Length == 0 && Front.Strokes.Rebounds.Length == 0)
                 Front.Present = false;
@@ -717,7 +727,8 @@ public class TelemetryData
             Rear.FineVelocityBins = vbinsFine;
 
             Rear.Strokes = new Strokes();
-            var strokes = Strokes.FilterStrokes(v, Rear.Travel, Linkage.MaxRearTravel, SampleRate);
+            var strokes = Strokes.FilterStrokes(v, Rear.Travel, Linkage.MaxRearTravel, SampleRate,
+                Parameters.ShockVelocityZeroThreshold(SampleRate));
             Rear.Strokes.Categorize(strokes, Rear.Travel, Linkage.MaxRearTravel);
             if (Rear.Strokes.Compressions.Length == 0 && Rear.Strokes.Rebounds.Length == 0)
                 Rear.Present = false;
@@ -774,7 +785,7 @@ public class TelemetryData
     /// from every (stroke-based) statistic without touching the global time-series arrays.
     /// </summary>
     private static Stroke[] FilterStrokesSegmented(
-        double[] velocity, double[] travel, double maxTravel, int sampleRate,
+        double[] velocity, double[] travel, double maxTravel, int sampleRate, double velocityZeroThreshold,
         List<(int Start, int End)> segments)
     {
         var strokes = new List<Stroke>();
@@ -783,7 +794,7 @@ public class TelemetryData
             if (end <= start) continue;
 
             var segStrokes = Strokes.FilterStrokes(
-                velocity[start..end], travel[start..end], maxTravel, sampleRate);
+                velocity[start..end], travel[start..end], maxTravel, sampleRate, velocityZeroThreshold);
 
             foreach (var st in segStrokes)
             {
@@ -813,9 +824,11 @@ public class TelemetryData
             Version = Version,
             SampleRate = SampleRate,
             Timestamp = Timestamp,
+            FrontDropouts = FrontDropouts,
+            RearDropouts = RearDropouts,
             Linkage = Linkage,
-            Front = new Suspension { Present = Front.Present, Calibration = Front.Calibration, Strokes = new Strokes() },
-            Rear  = new Suspension { Present = Rear.Present,  Calibration = Rear.Calibration,  Strokes = new Strokes() }
+            Front = new Suspension { Present = Front.Present, ClampedSamples = Front.ClampedSamples, Calibration = Front.Calibration, Strokes = new Strokes() },
+            Rear  = new Suspension { Present = Rear.Present, ClampedSamples = Rear.ClampedSamples, Calibration = Rear.Calibration, Strokes = new Strokes() }
         };
 
         var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambdaFor(SampleRate));
@@ -837,7 +850,8 @@ public class TelemetryData
             var (vbinsFine, dvFine) = DigitizeVelocity(v, Parameters.VelocityHistStepFine);
             cropped.Front.FineVelocityBins = vbinsFine;
 
-            var strokes = Strokes.FilterStrokes(v, cropped.Front.Travel, Linkage.MaxFrontTravel, SampleRate);
+            var strokes = Strokes.FilterStrokes(v, cropped.Front.Travel, Linkage.MaxFrontTravel, SampleRate,
+                Parameters.ForkVelocityZeroThreshold(SampleRate));
             cropped.Front.Strokes.Categorize(strokes, cropped.Front.Travel, Linkage.MaxFrontTravel);
             if (cropped.Front.Strokes.Compressions.Length == 0 && cropped.Front.Strokes.Rebounds.Length == 0)
                 cropped.Front.Present = false;
@@ -869,7 +883,8 @@ public class TelemetryData
             var (vbinsFine, dvFine) = DigitizeVelocity(v, Parameters.VelocityHistStepFine);
             cropped.Rear.FineVelocityBins = vbinsFine;
 
-            var strokes = Strokes.FilterStrokes(v, cropped.Rear.Travel, Linkage.MaxRearTravel, SampleRate);
+            var strokes = Strokes.FilterStrokes(v, cropped.Rear.Travel, Linkage.MaxRearTravel, SampleRate,
+                Parameters.ShockVelocityZeroThreshold(SampleRate));
             cropped.Rear.Strokes.Categorize(strokes, cropped.Rear.Travel, Linkage.MaxRearTravel);
             if (cropped.Rear.Strokes.Compressions.Length == 0 && cropped.Rear.Strokes.Rebounds.Length == 0)
                 cropped.Rear.Present = false;
@@ -909,9 +924,11 @@ public class TelemetryData
             Version = first.Version,
             SampleRate = first.SampleRate,
             Timestamp = sessions.Min(s => s.Timestamp),
+            FrontDropouts = sessions.Sum(s => s.FrontDropouts),
+            RearDropouts = sessions.Sum(s => s.RearDropouts),
             Linkage = first.Linkage,
-            Front = new Suspension { Present = hasFront, Strokes = new Strokes() },
-            Rear = new Suspension { Present = hasRear, Strokes = new Strokes() }
+            Front = new Suspension { Present = hasFront, ClampedSamples = sessions.Sum(s => s.Front.ClampedSamples), Strokes = new Strokes() },
+            Rear = new Suspension { Present = hasRear, ClampedSamples = sessions.Sum(s => s.Rear.ClampedSamples), Strokes = new Strokes() }
         };
 
         var smoother = new WhittakerHendersonSmoother(Parameters.WhOrder, Parameters.WhLambdaFor(first.SampleRate));
@@ -935,7 +952,8 @@ public class TelemetryData
             combined.Front.FineVelocityBins = vbinsFine;
 
             var strokes = FilterStrokesSegmented(v, combined.Front.Travel,
-                first.Linkage.MaxFrontTravel, first.SampleRate, frontSegments);
+                first.Linkage.MaxFrontTravel, first.SampleRate,
+                Parameters.ForkVelocityZeroThreshold(first.SampleRate), frontSegments);
             combined.Front.Strokes.Categorize(strokes, combined.Front.Travel, first.Linkage.MaxFrontTravel);
             if (combined.Front.Strokes.Compressions.Length == 0 && combined.Front.Strokes.Rebounds.Length == 0)
                 combined.Front.Present = false;
@@ -971,7 +989,8 @@ public class TelemetryData
             combined.Rear.FineVelocityBins = vbinsFine;
 
             var strokes = FilterStrokesSegmented(v, combined.Rear.Travel,
-                first.Linkage.MaxRearTravel, first.SampleRate, rearSegments);
+                first.Linkage.MaxRearTravel, first.SampleRate,
+                Parameters.ShockVelocityZeroThreshold(first.SampleRate), rearSegments);
             combined.Rear.Strokes.Categorize(strokes, combined.Rear.Travel, first.Linkage.MaxRearTravel);
             if (combined.Rear.Strokes.Compressions.Length == 0 && combined.Rear.Strokes.Rebounds.Length == 0)
                 combined.Rear.Present = false;
@@ -993,7 +1012,7 @@ public class TelemetryData
         var hist = new double[suspension.TravelBins.Length - 1];
         var totalCount = 0;
 
-        foreach (var s in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
+        foreach (var s in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds).Concat(suspension.Strokes.Idlings))
         {
             totalCount += s.Stat.Count;
             foreach (var d in s.DigitizedTravel)
@@ -1026,7 +1045,7 @@ public class TelemetryData
                 travelBins[i] = i * binSizeMm.Value;
 
             hist = new double[histLen];
-            foreach (var stroke in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
+            foreach (var stroke in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds).Concat(suspension.Strokes.Idlings))
             {
                 for (var i = stroke.Start; i <= stroke.End; i++)
                 {
@@ -1042,7 +1061,7 @@ public class TelemetryData
             travelBins = suspension.TravelBins;
             hist = new double[histLen];
 
-            foreach (var stroke in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
+            foreach (var stroke in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds).Concat(suspension.Strokes.Idlings))
             {
                 totalCount += stroke.Stat.Count;
                 foreach (var digitizedTravel in stroke.DigitizedTravel)
@@ -1336,7 +1355,7 @@ public class TelemetryData
         var count = 0.0;
         var mx = 0.0;
 
-        foreach (var stroke in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
+        foreach (var stroke in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds).Concat(suspension.Strokes.Idlings))
         {
             sum += stroke.Stat.SumTravel;
             count += stroke.Stat.Count;
@@ -1399,7 +1418,7 @@ public class TelemetryData
         // following rebound as well would double the single event at the reversal point.
         var bottomouts = suspension.Strokes.Compressions.Sum(s => s.Stat.Bottomouts);
 
-        foreach (var stroke in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds))
+        foreach (var stroke in suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds).Concat(suspension.Strokes.Idlings))
         {
             if (stroke.End < stroke.Start || stroke.Start < 0 || stroke.End >= suspension.Travel.Length)
             {
@@ -2411,12 +2430,10 @@ public class TelemetryData
 
     /// <summary>
     /// Pitch mean/spread statistics over the union of both ends' active stroke windows (front and
-    /// rear Compressions + Rebounds) — the SAME windowing used by <see cref="CalculateDetailedTravelStatistics"/>
-    /// for dynamic SAG. Including idle samples (both travels ≈ 0 ⇒ pitch ≈ 0) would dilute μ toward
-    /// 0°, but the expected pitch band it is traffic-light-compared against is itself derived from
-    /// SAG, which only averages over active windows — so restricting to the same windows here keeps
-    /// the comparison apples-to-apples. Falls back to all samples if no stroke selects any (e.g. no
-    /// stroke data available). Returns null if pitch itself is unavailable.
+    /// rear Compressions + Rebounds). This is a chassis-attitude metric rather than a suspension
+    /// travel statistic; including idle samples (both travels ≈ 0 ⇒ pitch ≈ 0) would dilute μ toward
+    /// 0°. Falls back to all samples if no stroke selects any (e.g. no stroke data available).
+    /// Returns null if pitch itself is unavailable.
     /// </summary>
     public (double Mean, double Std, double P5, double P95, double Min, double Max)? CalculatePitchStatistics() =>
         Memo("pitchStatistics", CalculatePitchStatisticsCore);
@@ -2751,7 +2768,7 @@ public class TelemetryData
             sagDiff = Math.Abs(fSag.Value - rSag.Value);
 
         // Rear damper (shock-stroke) dynamic sag: mean shock stroke ÷ max shock stroke over the
-        // same active-stroke window used for rear WHEEL sag. The two differ because wheel travel is
+        // same session-wide window used for rear WHEEL sag. The two differ because wheel travel is
         // a non-linear function of shock stroke (the leverage curve), so reporting both lets the
         // rider compare shock-side sag (what spring/pressure setup targets) with wheel-side sag.
         double? damperSag = null;
@@ -2760,7 +2777,7 @@ public class TelemetryData
         {
             double shockSum = 0;
             var shockN = 0;
-            foreach (var stroke in Rear.Strokes.Compressions.Concat(Rear.Strokes.Rebounds))
+            foreach (var stroke in Rear.Strokes.Compressions.Concat(Rear.Strokes.Rebounds).Concat(Rear.Strokes.Idlings))
             {
                 if (stroke.End < stroke.Start || stroke.Start < 0 || stroke.End >= Rear.ShockTravel.Length)
                     continue;

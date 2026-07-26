@@ -139,6 +139,14 @@
                 </Grid>
             </Grid>
 
+            <Grid RowDefinitions="auto auto"
+                  IsVisible="{Binding DataQuality, Converter={x:Static ObjectConverters.IsNotNull}}">
+                <TextBlock Grid.Row="0" Classes="summary-title" Text="DATA QUALITY" />
+                <Border Grid.Row="1" Classes="summary-cell">
+                    <TextBlock Text="{Binding DataQuality}" TextWrapping="Wrap" />
+                </Border>
+            </Grid>
+
             <Grid RowDefinitions="auto auto" ColumnDefinitions="*">
                 <Grid Grid.Row="0" ColumnDefinitions="110,*,*">
                     <Border Grid.Column="0" Classes="summary-header-cell"><TextBlock Text="" /></Border>

@@ -21,6 +21,8 @@ public class Linkage : Synchronizable
     private double? maxFrontTravel;
     private double? maxRearTravel;
     private double[]? shockWheelCoeffs;
+    private double wheelTravelOffset;
+    private int skippedLeverageRows;
 
 #pragma warning disable IDE0052 // Remove unread private members
                                 // leverageRatio is used by the MessagePack deserializer
@@ -139,6 +141,22 @@ public class Linkage : Synchronizable
 
     [Ignore][JsonIgnore][IgnoreMember] public Polynomial Polynomial => new(ShockWheelCoeffs);
 
+    [Ignore]
+    [JsonIgnore]
+    public double WheelTravelOffset
+    {
+        get => wheelTravelOffset != 0 ? wheelTravelOffset : LeverageRatioData?.WheelTravelOffset ?? 0;
+        set => wheelTravelOffset = value;
+    }
+
+    [Ignore]
+    [JsonIgnore]
+    public int SkippedLeverageRows
+    {
+        get => skippedLeverageRows != 0 ? skippedLeverageRows : LeverageRatioData?.SkippedRows ?? 0;
+        set => skippedLeverageRows = value;
+    }
+
     /// <summary>
     /// Converts wheel travel (mm) to damper/shock travel (mm) by numerically inverting
     /// the shock→wheel polynomial via binary search.
@@ -202,6 +220,9 @@ public class LeverageRatioData
     public List<double> WheelTravel { get; init; }
     public List<double> LeverageRatio { get; init; }
     public List<double> ShockTravel { get; init; }
+    public double WheelTravelOffset { get; private set; }
+    public double ShockTravelOffset { get; private set; }
+    public int SkippedRows { get; private set; }
 
     private void ProcessWheelLeverageRatio(CsvReader reader)
     {
@@ -217,6 +238,10 @@ public class LeverageRatioData
             {
                 shock += (wheel - prevWheel.Value) / prevLeverage.Value;
             }
+            else if (prevWheel.HasValue)
+            {
+                SkippedRows++;
+            }
 
             WheelTravel.Add(wheel);
             LeverageRatio.Add(leverage);
@@ -224,6 +249,27 @@ public class LeverageRatioData
 
             prevWheel = wheel;
             prevLeverage = leverage;
+        }
+    }
+
+    private void NormalizeWheelTravel()
+    {
+        if (WheelTravel.Count > 0 && Math.Abs(WheelTravel[0]) > 0.01)
+        {
+            WheelTravelOffset = WheelTravel[0];
+            for (var i = 0; i < WheelTravel.Count; i++)
+            {
+                WheelTravel[i] -= WheelTravelOffset;
+            }
+        }
+
+        if (ShockTravel.Count > 0 && Math.Abs(ShockTravel[0]) > 0.01)
+        {
+            ShockTravelOffset = ShockTravel[0];
+            for (var i = 0; i < ShockTravel.Count; i++)
+            {
+                ShockTravel[i] -= ShockTravelOffset;
+            }
         }
     }
 
@@ -282,6 +328,8 @@ public class LeverageRatioData
         {
             ProcessWheelTravelShockTravel(csvReader);
         }
+
+        NormalizeWheelTravel();
     }
 
     public LeverageRatioData(double[][] data)
@@ -302,6 +350,10 @@ public class LeverageRatioData
             {
                 shock += (wheel - prevWheel.Value) / prevLeverage.Value;
             }
+            else if (prevWheel.HasValue)
+            {
+                SkippedRows++;
+            }
 
             WheelTravel.Add(wheel);
             LeverageRatio.Add(leverage);
@@ -310,6 +362,8 @@ public class LeverageRatioData
             prevWheel = wheel;
             prevLeverage = leverage;
         }
+
+        NormalizeWheelTravel();
     }
 
     public double[][] ToArray()

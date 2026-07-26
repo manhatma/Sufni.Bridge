@@ -67,7 +67,11 @@ public class StorageProviderTelemetryFile : ITelemetryFile
         var rawTelemetryData = new RawTelemetryData(stream);
         var telemetryData = new TelemetryData(storageFile.Name,
             rawTelemetryData.Version, rawTelemetryData.SampleRate, rawTelemetryData.Timestamp,
-            frontCal, rearCal, linkage);
+            frontCal, rearCal, linkage)
+        {
+            FrontDropouts = rawTelemetryData.FrontDropouts,
+            RearDropouts = rawTelemetryData.RearDropouts
+        };
         var psst = telemetryData.ProcessRecording(rawTelemetryData.Front, rawTelemetryData.Rear);
         return (telemetryData, psst);
     }

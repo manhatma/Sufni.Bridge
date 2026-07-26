@@ -53,7 +53,11 @@ public class MassStorageTelemetryFile : ITelemetryFile
         var rawTelemetryData = new RawTelemetryData(rawData);
         var telemetryData = new TelemetryData(fileInfo.Name,
             rawTelemetryData.Version, rawTelemetryData.SampleRate, rawTelemetryData.Timestamp,
-            frontCal, rearCal, linkage);
+            frontCal, rearCal, linkage)
+        {
+            FrontDropouts = rawTelemetryData.FrontDropouts,
+            RearDropouts = rawTelemetryData.RearDropouts
+        };
         var psst = telemetryData.ProcessRecording(rawTelemetryData.Front, rawTelemetryData.Rear);
         return (telemetryData, psst);
     }
