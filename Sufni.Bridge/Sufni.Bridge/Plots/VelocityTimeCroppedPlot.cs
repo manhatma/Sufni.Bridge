@@ -110,13 +110,23 @@ public class VelocityTimeCroppedPlot(Plot plot, SuspensionType type,
             AddAirtimeOverlays(telemetryData.Airtimes, yTop: top, yBottom: bottom,
                 maxDuration: maxDuration, withLabels: false, fillAlpha: 0.45, minWidthPx: 3);
 
+        static string L(string label) =>
+            label.PadRight(6).Replace(' ', ' ');
         static string N(double val) =>
             val.ToString("F3").PadLeft(7).Replace(' ', ' ');
+        // Crest factor is peak/RMS, a roughness/impulsiveness indicator.
+        static string C(double max, double min, double rms)
+        {
+            var ratio = rms == 0 ? double.NaN : Math.Max(Math.Abs(max), Math.Abs(min)) / rms;
+            var value = double.IsFinite(ratio) ? ratio.ToString("F2") : "—";
+            return value.PadLeft(7).Replace(' ', ' ');
+        }
 
         var statsText =
-            $"max: {N(vMax)}\n" +
-            $"min: {N(vMin)}\n" +
-            $"rms: {N(rms)}";
+            $"{L("max:")} {N(vMax)}\n" +
+            $"{L("min:")} {N(vMin)}\n" +
+            $"{L("rms:")} {N(rms)}\n" +
+            $"{L("crest:")} {C(vMax, vMin, rms)}";
 
         var labelX = hasWindow ? winEnd : maxDuration;
         var statsLabel = Plot.Add.Text(statsText, labelX, top);

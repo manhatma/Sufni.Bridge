@@ -101,6 +101,16 @@
                     TickFrequency="1" />
             </Grid>
 
+            <Button
+                Command="{Binding SaveCropAsCopyCommand}"
+                IsVisible="{Binding IsCropped}"
+                HorizontalAlignment="Center"
+                Margin="0,8,0,0"
+                Padding="12,6"
+                FontSize="12"
+                Background="Transparent"
+                Content="Save crop as new session" />
+
         </StackPanel>
     </ScrollViewer>
 </UserControl>

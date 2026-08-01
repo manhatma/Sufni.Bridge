@@ -63,6 +63,7 @@ public partial class CropPageViewModel() : PageViewModelBase("Crop")
 
     public ICommand? ApplyCropCommand { get; set; }
     public ICommand? ResetCropCommand { get; set; }
+    public ICommand? SaveCropAsCopyCommand { get; set; }
 
     private int NudgeStep => Math.Max(1, SampleRate / 2);
 

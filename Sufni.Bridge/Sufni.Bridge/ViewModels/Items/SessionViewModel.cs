@@ -11,6 +11,8 @@ using Avalonia;
 using Avalonia.Svg.Skia;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
+using DynamicData;
+using MessagePack;
 using Microsoft.Extensions.DependencyInjection;
 using ScottPlot;
 using Sufni.Bridge.Models;
@@ -25,7 +27,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    internal const int CurrentPlotVersion = 228;
+    internal const int CurrentPlotVersion = 232;
 
     // Approximate rendered height of the VelocityBandView control (margin + title text +
     // 44 px band grid). Used to size the low-speed velocity histograms so the
@@ -662,7 +664,8 @@ public partial class SessionViewModel : ItemViewModelBase
         var overrides = await GetBalanceOverridesAsync(discipline);
         return BalanceTargetDefaults.ExpectedPitchBand(
             BalanceTargetDefaults.EffectiveGreen(overrides, "FrontSag", discipline),
-            BalanceTargetDefaults.EffectiveGreen(overrides, "RearSag", discipline),
+            BalanceTargetDefaults.EffectiveRearSagBand(overrides, discipline,
+                m.MaxRearStrokeMm, m.ShockWheelCoeffs, m.MaxRearTravelMm),
             m.MaxFrontTravelMm, m.MaxRearTravelMm, m.WheelbaseMm);
     }
 
@@ -1061,7 +1064,8 @@ public partial class SessionViewModel : ItemViewModelBase
                 // Wheelbase was refreshed just above, so CalculatePitchDegrees sees it.
                 var expectedBand = BalanceTargetDefaults.ExpectedPitchBand(
                     BalanceTargetDefaults.EffectiveGreen(balanceOverrides, "FrontSag", discipline),
-                    BalanceTargetDefaults.EffectiveGreen(balanceOverrides, "RearSag", discipline),
+                    BalanceTargetDefaults.EffectiveRearSagBand(balanceOverrides, discipline,
+                        metrics.MaxRearStrokeMm, metrics.ShockWheelCoeffs, metrics.MaxRearTravelMm),
                     metrics.MaxFrontTravelMm, metrics.MaxRearTravelMm, metrics.WheelbaseMm);
                 // Band signature for LoadCache's staleness check — the band is baked into the
                 // PitchBalance SVG below, so a later per-discipline override edit must be able
@@ -1749,6 +1753,7 @@ public partial class SessionViewModel : ItemViewModelBase
         ShareBalanceMetricsWithSummary();
         CropPage.ApplyCropCommand = new AsyncRelayCommand(HandleApplyCrop);
         CropPage.ResetCropCommand = new AsyncRelayCommand(HandleResetCrop);
+        CropPage.SaveCropAsCopyCommand = new AsyncRelayCommand(HandleSaveCropAsCopy);
         BalancePage.Metrics.TargetsSaved = HandleBalanceTargetsSaved;
 
         SpringPage.TimeZoom = _timeZoom;
@@ -1766,6 +1771,7 @@ public partial class SessionViewModel : ItemViewModelBase
         ShareBalanceMetricsWithSummary();
         CropPage.ApplyCropCommand = new AsyncRelayCommand(HandleApplyCrop);
         CropPage.ResetCropCommand = new AsyncRelayCommand(HandleResetCrop);
+        CropPage.SaveCropAsCopyCommand = new AsyncRelayCommand(HandleSaveCropAsCopy);
         BalancePage.Metrics.TargetsSaved = HandleBalanceTargetsSaved;
 
         SpringPage.TimeZoom = _timeZoom;
@@ -2015,6 +2021,91 @@ public partial class SessionViewModel : ItemViewModelBase
         catch (Exception e)
         {
             ErrorMessages.Add($"Crop failed: {e.Message}");
+        }
+        finally
+        {
+            IsAnalyzingData = false;
+        }
+    }
+
+    // Non-destructive alternative to Apply: Apply crops in place, while this forks a new
+    // session containing the cropped data and leaves the original session unchanged.
+    private async Task HandleSaveCropAsCopy()
+    {
+        var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
+        Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
+
+        var start = CropPage.CropStartSample;
+        var end   = CropPage.CropEndSample;
+
+        if (end - start < 100)
+        {
+            ErrorMessages.Add("Crop region too short (minimum 100 samples).");
+            return;
+        }
+
+        try
+        {
+            IsAnalyzingData = true;
+
+            var fullData = CropPage.FullData ?? await databaseService.GetSessionPsstAsync(Id);
+            if (fullData is null) throw new Exception("Session data not found.");
+
+            var cropped = fullData.CreateCroppedCopy(start, end);
+            var serialized = MessagePackSerializer.Serialize(cropped);
+            var originalName = session.Name ?? "";
+            var baseName = originalName.EndsWith(" (crop)")
+                ? originalName[..^" (crop)".Length]
+                : originalName;
+            var copyName = string.IsNullOrEmpty(baseName) ? "Crop" : $"{baseName} (crop)";
+            var sampleCount = Math.Max(cropped.Front.Travel?.Length ?? 0, cropped.Rear.Travel?.Length ?? 0);
+            var durationSeconds = cropped.SampleRate > 0 ? sampleCount / cropped.SampleRate : 0;
+            var timestamp = cropped.SampleRate > 0
+                ? session.Timestamp + start / cropped.SampleRate
+                : session.Timestamp;
+
+            var newSession = new Session(
+                id: Guid.NewGuid(),
+                name: copyName,
+                description: $"Cropped copy of '{originalName}'",
+                setup: session.Setup,
+                timestamp: timestamp)
+            {
+                ProcessedData = serialized,
+                FrontSpringRate = session.FrontSpringRate,
+                RearSpringRate = session.RearSpringRate,
+                FrontVolSpc = session.FrontVolSpc,
+                RearVolSpc = session.RearVolSpc,
+                FrontHighSpeedCompression = session.FrontHighSpeedCompression,
+                RearHighSpeedCompression = session.RearHighSpeedCompression,
+                FrontLowSpeedCompression = session.FrontLowSpeedCompression,
+                RearLowSpeedCompression = session.RearLowSpeedCompression,
+                FrontLowSpeedRebound = session.FrontLowSpeedRebound,
+                RearLowSpeedRebound = session.RearLowSpeedRebound,
+                FrontHighSpeedRebound = session.FrontHighSpeedRebound,
+                RearHighSpeedRebound = session.RearHighSpeedRebound,
+                FrontTirePressure = session.FrontTirePressure,
+                RearTirePressure = session.RearTirePressure,
+                DurationSeconds = durationSeconds
+                // SourceIdentifier intentionally remains null because it is the import-dedup key
+                // for the original telemetry file.
+            };
+
+            await databaseService.PutSessionAsync(newSession);
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                var mainPagesViewModel = App.Current?.Services?.GetService<MainPagesViewModel>();
+                var svm = new SessionViewModel(newSession, true);
+                mainPagesViewModel?.SessionsPage.Source.AddOrUpdate(svm);
+                _ = Task.Run(() => svm.PrecomputeCache(cropped));
+            });
+
+            IsCropVisible = false;
+        }
+        catch (Exception e)
+        {
+            ErrorMessages.Add($"Could not save crop as copy: {e.Message}");
         }
         finally
         {

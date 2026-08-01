@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 using ScottPlot;
 using Sufni.Bridge.Models.Telemetry;
 
@@ -82,13 +83,15 @@ public class CumulativeTravelPlot(Plot plot) : TelemetryPlot(plot)
         var legendYTop = maxY * 1.05 * 0.95;
         var legendStep = maxY * 1.05 * 0.08;
 
-        var frontLegend = Plot.Add.Text("Front", legendX, legendYTop);
+        var frontLegendText = string.Create(CultureInfo.InvariantCulture, $"Front  {frontM[^1]:0} m");
+        var frontLegend = Plot.Add.Text(frontLegendText, legendX, legendYTop);
         frontLegend.LabelFontColor = FrontColor;
         frontLegend.LabelFontSize = 12;
         frontLegend.LabelAlignment = Alignment.UpperLeft;
         frontLegend.LabelOffsetX = 4;
 
-        var rearLegend = Plot.Add.Text("Rear", legendX, legendYTop - legendStep);
+        var rearLegendText = string.Create(CultureInfo.InvariantCulture, $"Rear  {rearM[^1]:0} m");
+        var rearLegend = Plot.Add.Text(rearLegendText, legendX, legendYTop - legendStep);
         rearLegend.LabelFontColor = RearColor;
         rearLegend.LabelFontSize = 12;
         rearLegend.LabelAlignment = Alignment.UpperLeft;

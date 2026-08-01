@@ -10,6 +10,9 @@ namespace Sufni.Bridge.Views;
 
 public partial class CompareSessionsView : UserControl
 {
+    // Sized for the widest BALANCE label and shared by all tables to keep columns aligned.
+    private const int LabelColumnWidth = 190;
+
     public CompareSessionsView()
     {
         InitializeComponent();
@@ -31,7 +34,7 @@ public partial class CompareSessionsView : UserControl
         var colCount = vm.SessionCount;
 
         // Build column definitions: Label + N session columns
-        var colDefs = "130";
+        var colDefs = LabelColumnWidth.ToString();
         for (var i = 0; i < colCount; i++)
             colDefs += ",*";
 

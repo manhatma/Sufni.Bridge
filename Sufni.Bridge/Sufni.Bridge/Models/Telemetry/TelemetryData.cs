@@ -142,7 +142,9 @@ public record BalanceMetrics(
     // travel is a non-linear function of shock stroke (the leverage curve).
     double? DamperSagPct,
     double? FrontVelocityShapeBeta,   // generalized-normal shape of the wheel velocity distribution
-    double? RearVelocityShapeBeta);
+    double? RearVelocityShapeBeta,
+    double? MaxRearStrokeMm = null,   // shock stroke; with ShockWheelCoeffs maps damper sag % to wheel sag %
+    double[]? ShockWheelCoeffs = null); // intercept-free cubic shock-to-wheel fit
 
 [MessagePackObject(keyAsPropertyName: true)]
 public class TelemetryData
@@ -1431,6 +1433,167 @@ public class TelemetryData
     }
 
     /// <summary>
+    /// Fits a generalized normal after discarding deviations below a left-truncation threshold.
+    /// The retained-mass normalization prevents the dead-band cut from biasing the fitted shape.
+    /// </summary>
+    private static (double Alpha, double Beta)? FitTruncatedGeneralizedNormal(
+        ReadOnlySpan<double> deviations, double truncationThreshold)
+    {
+        if (deviations.Length == 0 || !(truncationThreshold >= 0)
+            || !double.IsFinite(truncationThreshold))
+            return null;
+
+        static double LogLikelihood(
+            double logAlpha,
+            double beta,
+            double poweredDeviationSum,
+            int sampleCount,
+            double threshold)
+        {
+            if (!double.IsFinite(logAlpha) || !(beta > 0) || !double.IsFinite(beta)
+                || !(poweredDeviationSum > 0) || !double.IsFinite(poweredDeviationSum))
+                return double.NegativeInfinity;
+
+            var alpha = Math.Exp(logAlpha);
+            if (!(alpha > 0) || !double.IsFinite(alpha))
+                return double.NegativeInfinity;
+
+            var scaledThresholdPower = Math.Pow(threshold / alpha, beta);
+            if (!double.IsFinite(scaledThresholdPower))
+                return double.NegativeInfinity;
+
+            var retainedMass = 1.0 - SpecialFunctions.GammaLowerRegularized(
+                1.0 / beta, scaledThresholdPower);
+            if (!(retainedMass > 0) || !double.IsFinite(retainedMass))
+                return double.NegativeInfinity;
+
+            var poweredScale = Math.Exp(-beta * logAlpha) * poweredDeviationSum;
+            if (!double.IsFinite(poweredScale))
+                return double.NegativeInfinity;
+
+            var likelihood = sampleCount * (Math.Log(beta) - Math.Log(2.0) - logAlpha
+                - SpecialFunctions.GammaLn(1.0 / beta) - Math.Log(retainedMass))
+                - poweredScale;
+            return double.IsFinite(likelihood) ? likelihood : double.NegativeInfinity;
+        }
+
+        // The retained mass depends on alpha, so alpha needs its own nested search instead
+        // of the closed-form profile estimate used by the untruncated likelihood.
+        static (double LogAlpha, double Likelihood) OptimizeAlpha(
+            double beta, ReadOnlySpan<double> samples, double threshold)
+        {
+            var poweredDeviationSum = 0.0;
+            foreach (var deviation in samples)
+                poweredDeviationSum += Math.Pow(deviation, beta);
+
+            var meanPoweredDeviation = poweredDeviationSum / samples.Length;
+            if (!(meanPoweredDeviation > 0) || !double.IsFinite(meanPoweredDeviation))
+                return (double.NaN, double.NegativeInfinity);
+
+            var logAlphaEstimate = (Math.Log(beta) + Math.Log(meanPoweredDeviation)) / beta;
+            if (!double.IsFinite(logAlphaEstimate))
+                return (double.NaN, double.NegativeInfinity);
+
+            const double tolerance = 1e-4;
+            const double edgeTolerance = 1e-3;
+            const double goldenRatioConjugate = 0.6180339887498949;
+            var logFour = Math.Log(4.0);
+            var bracketLo = logAlphaEstimate - logFour;
+            var bracketHi = logAlphaEstimate + logFour;
+            var optimum = (LogAlpha: double.NaN, Likelihood: double.NegativeInfinity);
+
+            // One widened retry keeps a strongly truncated optimum from being clipped.
+            for (var attempt = 0; attempt < 2; attempt++)
+            {
+                var lo = bracketLo;
+                var hi = bracketHi;
+                var left = hi - goldenRatioConjugate * (hi - lo);
+                var right = lo + goldenRatioConjugate * (hi - lo);
+                var leftLikelihood = LogLikelihood(
+                    left, beta, poweredDeviationSum, samples.Length, threshold);
+                var rightLikelihood = LogLikelihood(
+                    right, beta, poweredDeviationSum, samples.Length, threshold);
+
+                while (hi - lo > tolerance)
+                {
+                    if (leftLikelihood < rightLikelihood)
+                    {
+                        lo = left;
+                        left = right;
+                        leftLikelihood = rightLikelihood;
+                        right = lo + goldenRatioConjugate * (hi - lo);
+                        rightLikelihood = LogLikelihood(
+                            right, beta, poweredDeviationSum, samples.Length, threshold);
+                    }
+                    else
+                    {
+                        hi = right;
+                        right = left;
+                        rightLikelihood = leftLikelihood;
+                        left = hi - goldenRatioConjugate * (hi - lo);
+                        leftLikelihood = LogLikelihood(
+                            left, beta, poweredDeviationSum, samples.Length, threshold);
+                    }
+                }
+
+                optimum = leftLikelihood > rightLikelihood
+                    ? (left, leftLikelihood)
+                    : (right, rightLikelihood);
+                if (attempt > 0)
+                    break;
+
+                if (optimum.LogAlpha - bracketLo <= edgeTolerance)
+                    bracketLo -= logFour;
+                else if (bracketHi - optimum.LogAlpha <= edgeTolerance)
+                    bracketHi += logFour;
+                else
+                    break;
+            }
+
+            return optimum;
+        }
+
+        const double minBeta = 0.20;
+        const double maxBeta = 3.00;
+        const double tolerance = 1e-3;
+        const double goldenRatioConjugate = 0.6180339887498949;
+
+        var lo = minBeta;
+        var hi = maxBeta;
+        var left = hi - goldenRatioConjugate * (hi - lo);
+        var right = lo + goldenRatioConjugate * (hi - lo);
+        var leftFit = OptimizeAlpha(left, deviations, truncationThreshold);
+        var rightFit = OptimizeAlpha(right, deviations, truncationThreshold);
+
+        while (hi - lo > tolerance)
+        {
+            if (leftFit.Likelihood < rightFit.Likelihood)
+            {
+                lo = left;
+                left = right;
+                leftFit = rightFit;
+                right = lo + goldenRatioConjugate * (hi - lo);
+                rightFit = OptimizeAlpha(right, deviations, truncationThreshold);
+            }
+            else
+            {
+                hi = right;
+                right = left;
+                rightFit = leftFit;
+                left = hi - goldenRatioConjugate * (hi - lo);
+                leftFit = OptimizeAlpha(left, deviations, truncationThreshold);
+            }
+        }
+
+        var beta = leftFit.Likelihood > rightFit.Likelihood ? left : right;
+        var fit = leftFit.Likelihood > rightFit.Likelihood ? leftFit : rightFit;
+        var alpha = Math.Exp(fit.LogAlpha);
+        return double.IsFinite(fit.Likelihood) && alpha > 0 && double.IsFinite(alpha)
+            ? (alpha, beta)
+            : null;
+    }
+
+    /// <summary>
     /// Evaluates the generalized-normal density in log space so its normalization and tail
     /// exponent remain numerically stable across the supported beta range.
     /// </summary>
@@ -1512,13 +1675,47 @@ public class TelemetryData
 
         var mu = Quantile(0.5);
 
-        // Pass 3: retain a deterministic stride sample of non-zero absolute deviations for beta.
+        // Pass 3: retain a deterministic stride sample outside the velocity dead band.
         const int maxFitSampleCount = 50_000;
         var stride = Math.Max(1L, n / maxFitSampleCount);
         var sampledDeviations = new double[maxFitSampleCount];
         var sampledDeviationCount = 0;
-        var firstNonZeroDeviation = 0.0;
+        var truncationThreshold = type == SuspensionType.Front
+            ? FrontVelocityDeadBand()
+            : RearWheelVelocityDeadBand();
         long sampleIndex = 0;
+        strokes = suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds);
+        foreach (var stroke in strokes)
+        {
+            if (stroke.End < stroke.Start || stroke.Start < 0 || stroke.End >= suspension.Velocity.Length) continue;
+            for (var i = stroke.Start; i <= stroke.End; i++)
+            {
+                var deviation = Math.Abs(suspension.Velocity[i] - mu);
+                if (sampleIndex % stride == 0 && deviation >= truncationThreshold
+                    && sampledDeviationCount < sampledDeviations.Length)
+                {
+                    sampledDeviations[sampledDeviationCount++] = deviation;
+                }
+                sampleIndex++;
+            }
+        }
+
+        if (sampledDeviationCount >= 100)
+        {
+            var truncatedFit = FitTruncatedGeneralizedNormal(
+                sampledDeviations.AsSpan(0, sampledDeviationCount), truncationThreshold);
+            if (truncatedFit is null)
+                return null;
+
+            var fit = truncatedFit.Value;
+            return new GeneralizedNormalFit(mu, fit.Alpha, fit.Beta, min, max);
+        }
+
+        // Very short or quiet sessions may not retain enough samples outside the dead band;
+        // preserve their previous untruncated fit instead of dropping the reference entirely.
+        sampledDeviationCount = 0;
+        var firstNonZeroDeviation = 0.0;
+        sampleIndex = 0;
         strokes = suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds);
         foreach (var stroke in strokes)
         {
@@ -1544,7 +1741,8 @@ public class TelemetryData
         if (beta is null)
             return null;
 
-        // Compute alpha over every stroke sample so the rendered density is not subsample-approximate.
+        // For the untruncated fallback, compute alpha over every stroke sample so the
+        // rendered density is not subsample-approximate.
         var poweredDeviationSum = 0.0;
         strokes = suspension.Strokes.Compressions.Concat(suspension.Strokes.Rebounds);
         foreach (var stroke in strokes)
@@ -1579,6 +1777,7 @@ public class TelemetryData
         for (var i = 0; i < ny.Length; i++)
         {
             ny[i] = fit.Value.Min + i * range / 99;
+            // Render the full, untruncated GGD; its wings can sit slightly above the truncated histogram.
             var density = GeneralizedNormalDensity(
                 ny[i], fit.Value.Mu, fit.Value.Alpha, fit.Value.Beta);
             pdf.Add(density * step * 100);
@@ -3285,7 +3484,8 @@ public class TelemetryData
             pitchMeanDeg, pitchStabilityDeg, pitchModeEnergy, goutAsymPct, goutEventCount,
             maxFrontTravelMm, maxRearTravelMm, wheelbaseMm,
             damperSag,
-            frontVelocityShapeBeta, rearVelocityShapeBeta);
+            frontVelocityShapeBeta, rearVelocityShapeBeta,
+            Linkage?.MaxRearStroke, Linkage?.ShockWheelCoeffs);
     }
 
     #endregion

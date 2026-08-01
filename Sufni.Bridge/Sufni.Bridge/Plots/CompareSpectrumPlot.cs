@@ -228,6 +228,8 @@ public class CompareSpectrumPlot(
         var gen = new NumericManual();
         var minDecade = (int)Math.Floor(Math.Log10(minHz));
         var maxDecade = (int)Math.Ceiling(Math.Log10(maxHz));
+        // Label intra-decade ticks only on narrow spans to avoid collisions on wider plots.
+        var labelIntraDecadeTicks = Math.Log10(maxHz) - Math.Log10(minHz) <= 1.5;
 
         var minIsDecade = Math.Abs(Math.Log10(minHz) - Math.Round(Math.Log10(minHz))) < 1e-9;
         if (!minIsDecade)
@@ -252,7 +254,17 @@ public class CompareSpectrumPlot(
             {
                 var f = m * decade;
                 if (f >= minHz && f <= maxHz && Math.Abs(f - minHz) > 1e-9)
-                    gen.AddMinor(Math.Log10(f));
+                {
+                    if (labelIntraDecadeTicks && m <= 5)
+                    {
+                        var fmt = f >= 1 ? "0" : "0.#";
+                        gen.AddMajor(Math.Log10(f), f.ToString(fmt, CultureInfo.InvariantCulture));
+                    }
+                    else
+                    {
+                        gen.AddMinor(Math.Log10(f));
+                    }
+                }
             }
         }
         return gen;

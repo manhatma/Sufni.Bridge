@@ -14,6 +14,7 @@ using CommunityToolkit.Mvvm.Input;
 using MathNet.Numerics.Statistics;
 using Microsoft.Extensions.DependencyInjection;
 using ScottPlot;
+using Sufni.Bridge.Models;
 using Sufni.Bridge.Models.Telemetry;
 using Sufni.Bridge.Plots;
 using Sufni.Bridge.Services;
@@ -191,36 +192,20 @@ public partial class CompareSessionsViewModel : ViewModelBase
     {
         var rows = new List<CompareTableRow>
         {
-            new("Spring", sessions.Select(s =>
-            {
-                var val = type == SuspensionType.Front ? s.SessionModel.FrontSpringRate : s.SessionModel.RearSpringRate;
-                return val ?? "-";
-            }).ToList()),
-            new("VolSpc", sessions.Select(s =>
-            {
-                var val = type == SuspensionType.Front ? s.SessionModel.FrontVolSpc : s.SessionModel.RearVolSpc;
-                return val.HasValue ? string.Create(CultureInfo.InvariantCulture, $"{val.Value:F2}") : "-";
-            }).ToList()),
-            new("HSC [clicks]", sessions.Select(s =>
-            {
-                var val = type == SuspensionType.Front ? s.SessionModel.FrontHighSpeedCompression : s.SessionModel.RearHighSpeedCompression;
-                return val.HasValue ? val.Value.ToString() : "-";
-            }).ToList()),
-            new("LSC [clicks]", sessions.Select(s =>
-            {
-                var val = type == SuspensionType.Front ? s.SessionModel.FrontLowSpeedCompression : s.SessionModel.RearLowSpeedCompression;
-                return val.HasValue ? val.Value.ToString() : "-";
-            }).ToList()),
-            new("LSR [clicks]", sessions.Select(s =>
-            {
-                var val = type == SuspensionType.Front ? s.SessionModel.FrontLowSpeedRebound : s.SessionModel.RearLowSpeedRebound;
-                return val.HasValue ? val.Value.ToString() : "-";
-            }).ToList()),
-            new("HSR [clicks]", sessions.Select(s =>
-            {
-                var val = type == SuspensionType.Front ? s.SessionModel.FrontHighSpeedRebound : s.SessionModel.RearHighSpeedRebound;
-                return val.HasValue ? val.Value.ToString() : "-";
-            }).ToList()),
+            new("Spring", sessions.Select(s => SetupValues(s,
+                model => type == SuspensionType.Front ? model.FrontSpringRate : model.RearSpringRate)).ToList()),
+            new("VolSpc", sessions.Select(s => SetupValues(s,
+                model => (type == SuspensionType.Front ? model.FrontVolSpc : model.RearVolSpc) is { } v
+                    ? string.Create(CultureInfo.InvariantCulture, $"{v:F2}")
+                    : null)).ToList()),
+            new("HSC [clicks]", sessions.Select(s => SetupValues(s,
+                model => Clicks(type == SuspensionType.Front ? model.FrontHighSpeedCompression : model.RearHighSpeedCompression))).ToList()),
+            new("LSC [clicks]", sessions.Select(s => SetupValues(s,
+                model => Clicks(type == SuspensionType.Front ? model.FrontLowSpeedCompression : model.RearLowSpeedCompression))).ToList()),
+            new("LSR [clicks]", sessions.Select(s => SetupValues(s,
+                model => Clicks(type == SuspensionType.Front ? model.FrontLowSpeedRebound : model.RearLowSpeedRebound))).ToList()),
+            new("HSR [clicks]", sessions.Select(s => SetupValues(s,
+                model => Clicks(type == SuspensionType.Front ? model.FrontHighSpeedRebound : model.RearHighSpeedRebound))).ToList()),
             new("Pos [AVG, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.Average, s.MaxTravel)).ToList()),
             new("Pos [95th, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.P95, s.MaxTravel)).ToList()),
             new("Pos [MAX, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.Max, s.MaxTravel)).ToList()),
@@ -239,16 +224,74 @@ public partial class CompareSessionsViewModel : ViewModelBase
         return rows;
     }
 
+    private static string? Clicks(int? value) =>
+        value?.ToString(CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Renders one setup value for a compare column. A combined session inherits its whole setup
+    /// verbatim from the chronologically first sub-session, so showing that single value would hide
+    /// the fact that the sub-sessions ran different clicks — list every distinct leaf value instead.
+    /// The selector already formats, so de-duplication happens on what the user actually sees.
+    /// </summary>
+    private static string SetupValues(SessionViewModel session, Func<Session, string?> selector)
+    {
+        if (!session.IsCombinedSession || session.SubSessions.Count == 0)
+            return selector(session.SessionModel) ?? "-";
+
+        var values = new List<string>();
+        foreach (var leaf in LeafSessions(session).OrderBy(s => s.Timestamp ?? DateTime.MinValue))
+        {
+            if (selector(leaf.SessionModel) is { } value && !values.Contains(value))
+                values.Add(value);
+        }
+        return values.Count > 0 ? string.Join("/", values) : "-";
+    }
+
+    private static IEnumerable<SessionViewModel> LeafSessions(SessionViewModel session)
+    {
+        if (!session.IsCombinedSession || session.SubSessions.Count == 0)
+        {
+            yield return session;
+            yield break;
+        }
+
+        foreach (var subSession in session.SubSessions)
+        foreach (var leaf in LeafSessions(subSession))
+            yield return leaf;
+    }
+
     private static string FormatBalanceValue(double? value, string format) =>
         value.HasValue ? value.Value.ToString(format, CultureInfo.InvariantCulture) : "-";
 
     private static string FormatBalanceCount(int? value) =>
         value.HasValue ? value.Value.ToString(CultureInfo.InvariantCulture) : "-";
 
-    private static List<CompareTableRow> BuildBalanceRows(List<BalanceMetrics> metricsList)
+    private static List<CompareTableRow> BuildBalanceRows(List<BalanceMetrics> metricsList, List<TelemetryData> telemetry)
     {
         List<string> Values(Func<BalanceMetrics, string> formatter) =>
             metricsList.Select(formatter).ToList();
+
+        var travelTotals = telemetry.Select(data =>
+        {
+            var front = data.Front.Present
+                ? data.CalculateCumulativeTravel(SuspensionType.Front)
+                : [];
+            var rear = data.Rear.Present
+                ? data.CalculateCumulativeTravel(SuspensionType.Rear)
+                : [];
+            var frontTotalM = front.Length > 0 ? front[^1] / 1000.0 : (double?)null;
+            var rearTotalM = rear.Length > 0 ? rear[^1] / 1000.0 : (double?)null;
+            var durationMinutes = data.SampleRate > 0
+                ? Math.Max(front.Length, rear.Length) / (double)data.SampleRate / 60.0
+                : 0.0;
+            var rate = durationMinutes > 0 && (frontTotalM.HasValue || rearTotalM.HasValue)
+                ? (frontTotalM.GetValueOrDefault() + rearTotalM.GetValueOrDefault()) / durationMinutes
+                : (double?)null;
+            return (frontTotalM, rearTotalM, rate);
+        }).ToList();
+
+        List<string> TravelValues(Func<(double? frontTotalM, double? rearTotalM, double? rate), double?> selector,
+            string format) => travelTotals.Select(t => FormatBalanceValue(selector(t), format)).ToList();
 
         return
         [
@@ -275,6 +318,9 @@ public partial class CompareSessionsViewModel : ViewModelBase
             new("Peak amp ratio", Values(m => FormatBalanceValue(m.PeakAmplitudeRatio, "0.000"))),
             new("Head angle static [°]", Values(m => FormatBalanceValue(m.HeadAngleStaticDeg, "0.0"))),
             new("Head angle shift [°]", Values(m => FormatBalanceValue(m.HeadAngleShiftDeg, "0.0"))),
+            new("Cumulative travel F [m]", TravelValues(t => t.frontTotalM, "0")),
+            new("Cumulative travel R [m]", TravelValues(t => t.rearTotalM, "0")),
+            new("Travel rate [m/min]", TravelValues(t => t.rate, "0.0")),
         ];
     }
 
@@ -582,7 +628,7 @@ public partial class CompareSessionsViewModel : ViewModelBase
 
             var frontRows = BuildSummaryRows(frontStatsList, Sessions, SuspensionType.Front);
             var rearRows = BuildSummaryRows(rearStatsList, Sessions, SuspensionType.Rear);
-            var balanceRows = BuildBalanceRows(balanceMetrics);
+            var balanceRows = BuildBalanceRows(balanceMetrics, sessionData.Select(s => s.data).ToList());
 
             Dispatcher.UIThread.Post(() =>
             {

@@ -262,7 +262,7 @@ public class TelemetryPlot(Plot plot) : SufniPlot(plot)
     }
 
     /// <summary>
-    /// Compact single-colour (gold) stats box for the combined front+rear time plots: rows max/min/rms,
+    /// Compact single-colour (gold) stats box for the combined front+rear time plots: rows max/min/rms/crest,
     /// columns headed "front"/"rear" (whichever sides are present), CENTRED over their right-aligned
     /// numeric columns. The header line starts with the unit (a non-whitespace char) so the SVG renderer
     /// does not trim the leading padding and shift the header left. Anchored upper-right at (x, yTop).
@@ -275,6 +275,7 @@ public class TelemetryPlot(Plot plot) : SufniPlot(plot)
         if (!hasF && !hasR) return;
 
         const int minCol = 7;
+        const int labelWidth = 6;
         const string sep = "\u00A0";
 
         static string Nbsp(string s) => s.Replace(' ', '\u00A0');
@@ -292,12 +293,19 @@ public class TelemetryPlot(Plot plot) : SufniPlot(plot)
                 if (s.Length > m) m = s.Length;
             return m;
         }
+        // Crest factor is peak/RMS, a roughness/impulsiveness indicator (high means spiky and dominated by isolated hits).
+        static string Crest((double Max, double Min, double Rms) stats)
+        {
+            if (stats.Rms == 0) return "—";
+            var ratio = Math.Max(Math.Abs(stats.Max), Math.Abs(stats.Min)) / stats.Rms;
+            return double.IsFinite(ratio) ? ratio.ToString("F2") : "—";
+        }
 
         var fv = hasF
-            ? new[] { front!.Value.Max.ToString("F3"), front.Value.Min.ToString("F3"), front.Value.Rms.ToString("F3") }
+            ? new[] { front!.Value.Max.ToString("F3"), front.Value.Min.ToString("F3"), front.Value.Rms.ToString("F3"), Crest(front.Value) }
             : Array.Empty<string>();
         var rv = hasR
-            ? new[] { rear!.Value.Max.ToString("F3"), rear.Value.Min.ToString("F3"), rear.Value.Rms.ToString("F3") }
+            ? new[] { rear!.Value.Max.ToString("F3"), rear.Value.Min.ToString("F3"), rear.Value.Rms.ToString("F3"), Crest(rear.Value) }
             : Array.Empty<string>();
 
         // The front column reserves one character more than its widest number, so a long negative
@@ -306,9 +314,10 @@ public class TelemetryPlot(Plot plot) : SufniPlot(plot)
         var fw = hasF ? Math.Max(minCol, MaxLen(fv) + 1) : 0;
         var rw = hasR ? Math.Max(minCol, MaxLen(rv)) : 0;
 
-        // Corner cell = unit, padded to the "max:" label-column width. Starts with a non-whitespace
+        // Corner cell = unit, padded to the longest row-label width. Starts with a non-whitespace
         // character so the header row is not left-shifted by SVG whitespace trimming.
-        var corner = Nbsp(unit.Length >= 4 ? unit : unit + new string(' ', 4 - unit.Length));
+        var cornerWidth = Math.Max(labelWidth, unit.Length);
+        var corner = Nbsp(unit + new string(' ', cornerWidth - unit.Length));
 
         var header = corner;
         if (hasF) header += Ctr("front", fw);
@@ -317,7 +326,7 @@ public class TelemetryPlot(Plot plot) : SufniPlot(plot)
 
         string Row(string label, int i)
         {
-            var s = label;
+            var s = Nbsp(label.PadRight(cornerWidth));
             if (hasF) s += Nbsp(fv[i].PadLeft(fw));
             if (hasF && hasR) s += sep;
             if (hasR) s += Nbsp(rv[i].PadLeft(rw));
@@ -328,7 +337,8 @@ public class TelemetryPlot(Plot plot) : SufniPlot(plot)
             header + "\n" +
             Row("max:", 0) + "\n" +
             Row("min:", 1) + "\n" +
-            Row("rms:", 2);
+            Row("rms:", 2) + "\n" +
+            Row("crest:", 3);
 
         var color = Color.FromHex("#FFD700");
         var label = Plot.Add.Text(text, x, yTop);

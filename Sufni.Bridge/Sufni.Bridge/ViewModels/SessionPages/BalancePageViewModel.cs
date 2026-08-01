@@ -133,19 +133,29 @@ public partial class BalanceMetricsViewModel : ObservableObject
         return BalanceTargetDefaults.DefaultGreen(key, discipline);
     }
 
+    private (double min, double? max) EffectiveRearSagDefault(Discipline? discipline)
+    {
+        return BalanceTargetDefaults.RearSagDefault(targetOverrides, discipline,
+            lastMetrics?.MaxRearStrokeMm, lastMetrics?.ShockWheelCoeffs, lastMetrics?.MaxRearTravelMm);
+    }
+
     private void SeedEditor(BalanceMetricRow row)
     {
-        var (min, max) = EffectiveGreen(row.Key, lastDiscipline);
+        var (min, max) = row.Key == "RearSag"
+            && (!targetOverrides.TryGetValue("RearSag", out var rearOverride) || !rearOverride.min.HasValue)
+            ? EffectiveRearSagDefault(lastDiscipline)
+            : EffectiveGreen(row.Key, lastDiscipline);
         row.GreenMin = min;
         row.GreenMax = max;
     }
 
     // Sets Value/Status for an editable metric from its effective green bounds, deriving the
     // yellow band via the registry, and regenerates the Target string so it tracks edits.
-    private void ApplyEditable(BalanceMetricRow row, double? value, Discipline? discipline)
+    private void ApplyEditable(BalanceMetricRow row, double? value, Discipline? discipline,
+        (double min, double? max)? greenBand = null)
     {
         var def = BalanceTargetDefaults.All[row.Key];
-        var (min, max) = EffectiveGreen(row.Key, discipline);
+        var (min, max) = greenBand ?? EffectiveGreen(row.Key, discipline);
         row.Target = def.TargetFormatter(min, max);
         if (!value.HasValue) { row.Value = "—"; row.Status = BalanceStatus.Unknown; return; }
         row.Value = string.Format(CultureInfo.InvariantCulture, def.ValueFormat, value.Value);
@@ -164,7 +174,9 @@ public partial class BalanceMetricsViewModel : ObservableObject
             double? max = def.HasRange ? row.GreenMax : null;
             if (!IsValidGreen(def, min, max)) { SeedEditor(row); continue; }
 
-            var (defMin, defMax) = BalanceTargetDefaults.DefaultGreen(row.Key, discipline);
+            var (defMin, defMax) = row.Key == "RearSag"
+                ? EffectiveRearSagDefault(discipline)
+                : BalanceTargetDefaults.DefaultGreen(row.Key, discipline);
             var isDefault = NearlyEqual(min!.Value, defMin) && NullableNearlyEqual(max, defMax);
             if (isDefault)
             {
@@ -194,7 +206,9 @@ public partial class BalanceMetricsViewModel : ObservableObject
     private void ResetMetric(BalanceMetricRow? row)
     {
         if (row is null) return;
-        var (min, max) = BalanceTargetDefaults.DefaultGreen(row.Key, lastDiscipline);
+        var (min, max) = row.Key == "RearSag"
+            ? EffectiveRearSagDefault(lastDiscipline)
+            : BalanceTargetDefaults.DefaultGreen(row.Key, lastDiscipline);
         row.GreenMin = min;
         row.GreenMax = max;
     }
@@ -222,8 +236,12 @@ public partial class BalanceMetricsViewModel : ObservableObject
             foreach (var kv in overrideMap) targetOverrides[kv.Key] = kv.Value;
         }
 
+        var rearSagBand = targetOverrides.TryGetValue("RearSag", out var rearOverride)
+            && rearOverride.min.HasValue
+            ? (rearOverride.min.Value, rearOverride.max)
+            : EffectiveRearSagDefault(discipline);
         ApplyEditable(FrontSag, m.FrontSagPct,     discipline);
-        ApplyEditable(RearSag,  m.RearSagPct,      discipline);
+        ApplyEditable(RearSag,  m.RearSagPct,      discipline, rearSagBand);
         ApplyEditable(SagDiff,  m.SagDifferencePp, discipline);
         ApplyEditable(DamperSag, m.DamperSagPct,   discipline);
         ApplyEditable(FrontP95, m.FrontP95Pct,     discipline);
@@ -235,7 +253,7 @@ public partial class BalanceMetricsViewModel : ObservableObject
         SetHeadAngle(EffectiveHeadAngle, m.HeadAngleStaticDeg, m.HeadAngleShiftDeg);
         SetPitchAttitude(PitchAttitude, m.PitchMeanDeg,
             BalanceTargetDefaults.ExpectedPitchBand(
-                EffectiveGreen("FrontSag", discipline), EffectiveGreen("RearSag", discipline),
+                EffectiveGreen("FrontSag", discipline), rearSagBand,
                 m.MaxFrontTravelMm, m.MaxRearTravelMm, m.WheelbaseMm));
         ApplyEditable(PitchStability, m.PitchStabilityDeg, discipline);
         ApplyEditable(GoutSymmetry, m.GoutAsymmetryPct, discipline);

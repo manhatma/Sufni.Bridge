@@ -142,6 +142,49 @@ public static class BalanceTargetDefaults
     }
 
     /// <summary>
+    /// Rear WHEEL sag band implied by the damper sag band and the leverage curve. Returns null when
+    /// the linkage geometry is unavailable, in which case the fixed "RearSag" default applies.
+    /// </summary>
+    public static (double min, double max)? DerivedRearSagBand(
+        (double min, double? max) damperSagBand, double? maxRearStrokeMm,
+        double[]? shockWheelCoeffs, double? maxRearTravelMm)
+    {
+        if (damperSagBand.max is null || maxRearStrokeMm is not > 0 || maxRearTravelMm is not > 0
+            || shockWheelCoeffs is null || shockWheelCoeffs.Length < 2
+            || shockWheelCoeffs.All(c => c == 0))
+            return null;
+
+        var polynomial = new MathNet.Numerics.Polynomial(shockWheelCoeffs);
+        double Map(double damperPct) => Math.Clamp(
+            polynomial.Evaluate(damperPct / 100.0 * maxRearStrokeMm.Value)
+            / maxRearTravelMm.Value * 100.0, 0, 100);
+
+        var min = Map(damperSagBand.min);
+        var max = Map(damperSagBand.max.Value);
+        return min < max ? (min, max) : null;
+    }
+
+    /// <summary>Rear sag default derived from the effective damper band, or the fixed default.</summary>
+    public static (double min, double? max) RearSagDefault(
+        IReadOnlyDictionary<string, (double? min, double? max)>? overrides, Discipline? discipline,
+        double? maxRearStrokeMm, double[]? shockWheelCoeffs, double? maxRearTravelMm)
+    {
+        var derived = DerivedRearSagBand(EffectiveGreen(overrides, "DamperSag", discipline),
+            maxRearStrokeMm, shockWheelCoeffs, maxRearTravelMm);
+        return derived is { } band ? (band.min, band.max) : DefaultGreen("RearSag", discipline);
+    }
+
+    /// <summary>Effective rear sag band: stored rear override, derived default, then fixed default.</summary>
+    public static (double min, double? max) EffectiveRearSagBand(
+        IReadOnlyDictionary<string, (double? min, double? max)>? overrides, Discipline? discipline,
+        double? maxRearStrokeMm, double[]? shockWheelCoeffs, double? maxRearTravelMm)
+    {
+        if (overrides is not null && overrides.TryGetValue("RearSag", out var o) && o.min.HasValue)
+            return (o.min.Value, o.max);
+        return RearSagDefault(overrides, discipline, maxRearStrokeMm, shockWheelCoeffs, maxRearTravelMm);
+    }
+
+    /// <summary>
     /// Expected chassis-pitch band (degrees, nose-down positive) implied by the front/rear SAG
     /// green ranges and bike geometry. Used as the μ metric's traffic-light reference and the
     /// pitch plot's expected band. Returns null if geometry or the SAG ranges are unavailable.

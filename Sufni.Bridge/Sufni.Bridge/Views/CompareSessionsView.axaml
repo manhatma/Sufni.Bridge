@@ -15,14 +15,14 @@
         <Style Selector="Border.compare-cell">
             <Setter Property="BorderBrush" Value="{StaticResource SufniBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="Padding" Value="5,6" />
             <Setter Property="Background" Value="{StaticResource SufniBackground}" />
         </Style>
         <Style Selector="Border.compare-header-cell">
             <Setter Property="Background" Value="#66c2a5" />
             <Setter Property="BorderBrush" Value="{StaticResource SufniBorderBrush}" />
             <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Padding" Value="8,6" />
+            <Setter Property="Padding" Value="5,6" />
         </Style>
         <Style Selector="Border.compare-header-cell TextBlock">
             <Setter Property="FontWeight" Value="Bold" />
@@ -78,20 +78,6 @@
         <!-- Main content -->
         <ScrollViewer Grid.Row="2" IsScrollChainingEnabled="False">
             <StackPanel Orientation="Vertical" Spacing="8" Margin="0,0,0,4">
-
-                <!-- Compared session legend -->
-                <ItemsControl ItemsSource="{Binding SessionLegend}" Margin="4,0">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:CompareLegendEntry">
-                            <StackPanel Orientation="Horizontal" Spacing="6" Margin="0,1">
-                                <Border Width="18" Height="3" CornerRadius="1.5"
-                                        VerticalAlignment="Center" Background="{Binding Color}" />
-                                <TextBlock Text="{Binding Name}" FontSize="11"
-                                           Foreground="{Binding Color}" VerticalAlignment="Center" />
-                            </StackPanel>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
 
                 <!-- Front Wheel Table -->
                 <Grid RowDefinitions="auto auto" ColumnDefinitions="*"

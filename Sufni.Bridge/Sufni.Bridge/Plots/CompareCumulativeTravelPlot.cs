@@ -27,6 +27,8 @@ public class CompareCumulativeTravelPlot(Plot plot) : SufniPlot(plot)
             var durationSamples = 0;
             var frontTotalMm = 0.0;
             var rearTotalMm = 0.0;
+            var hasFront = false;
+            var hasRear = false;
 
             if (data.Front.Present)
             {
@@ -39,6 +41,7 @@ public class CompareCumulativeTravelPlot(Plot plot) : SufniPlot(plot)
                     signal.LineWidth = 1;
                     signal.LinePattern = LinePattern.Solid;
                     frontTotalMm = cumulativeMm[^1];
+                    hasFront = true;
                     durationSamples = Math.Max(durationSamples, cumulativeMm.Length);
                     maxTravelM = Math.Max(maxTravelM, cumulativeM[^1]);
                 }
@@ -53,8 +56,9 @@ public class CompareCumulativeTravelPlot(Plot plot) : SufniPlot(plot)
                     var signal = Plot.Add.Signal(cumulativeM, period);
                     signal.Color = color;
                     signal.LineWidth = 1;
-                    signal.LinePattern = LinePattern.Dotted;
+                    signal.LinePattern = LinePattern.Dashed;
                     rearTotalMm = cumulativeMm[^1];
+                    hasRear = true;
                     durationSamples = Math.Max(durationSamples, cumulativeMm.Length);
                     maxTravelM = Math.Max(maxTravelM, cumulativeM[^1]);
                 }
@@ -72,7 +76,13 @@ public class CompareCumulativeTravelPlot(Plot plot) : SufniPlot(plot)
             var rateText = double.IsNaN(travelRate)
                 ? "—"
                 : travelRate.ToString("0.0", CultureInfo.InvariantCulture);
-            labels.Add((color, $"{name}: F {shareText}% · {rateText} m/min"));
+            var frontText = hasFront
+                ? (frontTotalMm / 1000.0).ToString("0", CultureInfo.InvariantCulture)
+                : "—";
+            var rearText = hasRear
+                ? (rearTotalMm / 1000.0).ToString("0", CultureInfo.InvariantCulture)
+                : "—";
+            labels.Add((color, $"{name}: F {frontText} m / R {rearText} m · {shareText}% · {rateText} m/min"));
             maxDuration = Math.Max(maxDuration, durationSeconds);
         }
 
