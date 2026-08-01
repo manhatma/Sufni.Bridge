@@ -613,7 +613,7 @@ public class SqLiteDatabaseService : IDatabaseService
                 if (rebuilt is not null) return rebuilt;
             }
 
-            await RehydrateLinkageAsync(td, sessions[0].Setup);
+            await RefreshLinkageFromSetupAsync(td, sessions[0].Setup);
             var updatedBlob = td.ReprocessVelocity();
             await connection.ExecuteAsync("UPDATE session SET data=? WHERE id=?", [updatedBlob, id]);
         }
@@ -622,33 +622,34 @@ public class SqLiteDatabaseService : IDatabaseService
     }
 
     /// <summary>
-    /// Blobs written by builds that didn't serialize the linkage's leverage curve (or
-    /// stripped it) deserialize with an unusable zero polynomial, which would blank the
-    /// rear channel on migration. Re-attach the leverage CSV from the linkage table so
-    /// ReprocessVelocity runs against the real curve and the migrated blob carries the
-    /// curve again. Only the curve is restored — the blob keeps its historical geometry
-    /// (head angle, strokes) from import time.
+    /// The linkage table is the source of truth; the blob's linkage is only an import-time
+    /// snapshot. Refreshing it lets ReprocessVelocity re-bake rear wheel travel from the
+    /// stored shock travel through the corrected leverage polynomial. Front travel is not
+    /// rescaled and keeps the head angle baked in at import, matching the existing
+    /// setup-reassignment path.
     /// </summary>
-    private async Task RehydrateLinkageAsync(TelemetryData td, Guid? setupId)
+    private async Task RefreshLinkageFromSetupAsync(TelemetryData td, Guid? setupId)
     {
-        // A cubic fit needs at least 4 points; anything less degrades to the zero polynomial.
-        if (td.Linkage.LeverageRatio is { Length: >= 4 } || setupId is null) return;
+        if (setupId is null) return;
 
         // Deliberately ignore the deleted flag: a session may still reference a
-        // soft-deleted setup, and its linkage curve is the correct historical one.
+        // soft-deleted setup or linkage, and that linkage is still the correct row.
         var setups = await connection.QueryAsync<Setup>(
             "SELECT linkage_id FROM setup WHERE id = ?", setupId.Value);
         if (setups.Count != 1) return;
         var linkages = await connection.QueryAsync<Linkage>(
-            "SELECT raw_lr_data FROM linkage WHERE id = ?", setups[0].LinkageId);
-        if (linkages.Count != 1 || linkages[0].RawData is null) return;
+            "SELECT id, name, head_angle, front_stroke, rear_stroke, wheelbase, raw_lr_data FROM linkage WHERE id = ?",
+            setups[0].LinkageId);
+        if (linkages.Count != 1) return;
 
-        // Fresh instance: the deserialized Linkage's lazily-cached derivations
-        // (MaxRearTravel, ShockWheelCoeffs) may already hold the zero-polynomial
-        // values and cannot be reset through their setters.
-        var old = td.Linkage;
-        td.Linkage = new Linkage(old.Id, old.Name, old.HeadAngle,
-            old.MaxFrontStroke, old.MaxRearStroke, old.Wheelbase, linkages[0].RawData);
+        var row = linkages[0];
+        var refreshed = new Linkage(row.Id, row.Name, row.HeadAngle,
+            row.MaxFrontStroke, row.MaxRearStroke, row.Wheelbase, row.RawData);
+
+        // A cubic fit needs at least 4 points; anything less degrades to the zero polynomial.
+        if (refreshed.LeverageRatio is not { Length: >= 4 }) return;
+
+        td.Linkage = refreshed;
     }
 
     /// <summary>
