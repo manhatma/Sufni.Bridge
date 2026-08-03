@@ -22,24 +22,6 @@ public class DamperVelocityHistogramPlot(Plot plot) : TelemetryPlot(plot)
         Color.FromHex("#9e0142"),
     ];
 
-    private static readonly Color ReferenceDistributionColor = Color.FromHex("#d53e4f");
-
-    private void AddReferenceDistributionLabel(double? beta, double limit, double yRangeTop)
-    {
-        var text = beta.HasValue ? $"Gen. normal (β {beta:0.00})" : "Reference distribution";
-        var label = Plot.Add.Text(text, limit, yRangeTop * 0.97);
-        label.LabelFontColor = ReferenceDistributionColor;
-        label.LabelFontSize = 10;
-        label.LabelFontName = "Menlo";
-        label.LabelAlignment = Alignment.UpperRight;
-        label.LabelOffsetX = -5;
-        label.LabelBold = true;
-        label.LabelBackgroundColor = Color.FromHex("#15191C").WithAlpha(220);
-        label.LabelBorderColor = ReferenceDistributionColor.WithAlpha(80);
-        label.LabelBorderWidth = 1;
-        label.LabelPadding = 5;
-    }
-
     public override void LoadTelemetryData(TelemetryData telemetryData)
     {
         base.LoadTelemetryData(telemetryData);
@@ -101,16 +83,6 @@ public class DamperVelocityHistogramPlot(Plot plot) : TelemetryPlot(plot)
 
         Plot.Add.VerticalLine(0, 1f, Color.FromHex("#dddddd"), LinePattern.Dotted);
 
-        // Reference overlay: X = shaft velocity (mm/s), Y = pdf (time %)
-        var referenceData = telemetryData.CalculateDamperReferenceDistribution();
-        var reference = Plot.Add.Scatter(
-            referenceData.Y.ToArray(),
-            referenceData.Pdf.ToArray());
-        reference.Color = ReferenceDistributionColor;
-        reference.MarkerStyle.IsVisible = false;
-        reference.LineStyle.Width = 3;
-        reference.LineStyle.Pattern = LinePattern.Dotted;
-
         AddBinColorLegend(palette, -limit, limit, yRangeTop);
 
         var symmetry = telemetryData.CalculateDamperVelocitySymmetry(step, deadBand);
@@ -128,8 +100,6 @@ public class DamperVelocityHistogramPlot(Plot plot) : TelemetryPlot(plot)
         label.LabelBorderColor = RearColor.WithAlpha(80);
         label.LabelBorderWidth = 1;
         label.LabelPadding = 5;
-
-        AddReferenceDistributionLabel(referenceData.Beta, limit, yRangeTop);
     }
 
     // Picks a round tick spacing (~4 divisions per side) so mm/s labels stay readable and
