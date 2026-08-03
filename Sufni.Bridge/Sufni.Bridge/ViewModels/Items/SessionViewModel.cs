@@ -2186,7 +2186,6 @@ public partial class SessionViewModel : ItemViewModelBase
             // Crop cleared → analysis data is the full session again: rebuild zoom state + mini-map.
             _analysisData = null;
             InitializeTimeZoom();
-            IsCropVisible = false;
         }
         catch (Exception e)
         {
