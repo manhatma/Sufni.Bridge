@@ -27,7 +27,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    internal const int CurrentPlotVersion = 232;
+    internal const int CurrentPlotVersion = 233;
 
     // Approximate rendered height of the VelocityBandView control (margin + title text +
     // 44 px band grid). Used to size the low-speed velocity histograms so the
