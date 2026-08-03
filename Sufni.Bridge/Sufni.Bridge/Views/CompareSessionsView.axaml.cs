@@ -89,24 +89,26 @@ public partial class CompareSessionsView : UserControl
     private static Border CreateHeaderCell(string text, string? accentColor = null)
     {
         var foreground = Color.Parse(accentColor ?? "#15191c");
+        var textBlock = new TextBlock
+        {
+            Text = text,
+            FontWeight = FontWeight.Bold,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            TextAlignment = TextAlignment.Center,
+            TextWrapping = TextWrapping.Wrap,
+            FontSize = 11
+        };
+        if (accentColor is null)
+            textBlock.Foreground = new SolidColorBrush(foreground);
+
         var border = new Border
         {
-            Classes = { "compare-header-cell" },
-            Child = new TextBlock
-            {
-                Text = text,
-                FontWeight = FontWeight.Bold,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                TextAlignment = TextAlignment.Center,
-                TextWrapping = TextWrapping.Wrap,
-                Foreground = new SolidColorBrush(foreground),
-                FontSize = 11
-            }
+            Classes = { accentColor is null ? "compare-header-cell" : "compare-cell" },
+            Child = textBlock
         };
 
         if (accentColor is not null)
         {
-            border.Background = new SolidColorBrush(Color.FromArgb(0x33, foreground.R, foreground.G, foreground.B));
             border.BorderBrush = new SolidColorBrush(foreground);
             border.BorderThickness = new Thickness(0, 0, 0, 3);
         }
