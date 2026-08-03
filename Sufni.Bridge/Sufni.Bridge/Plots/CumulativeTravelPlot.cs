@@ -49,6 +49,7 @@ public class CumulativeTravelPlot(Plot plot) : TelemetryPlot(plot)
         var rearSig = Plot.Add.Signal(rearM, period);
         rearSig.Color = RearColor;
         rearSig.LineWidth = 1;
+        rearSig.LinePattern = LinePattern.DenselyDashed;
 
         var rightAxis = Plot.Axes.Right;
         rightAxis.Label.Text = "Front share (%)";
