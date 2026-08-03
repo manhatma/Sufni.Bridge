@@ -128,7 +128,29 @@ public class Strokes
         return Math.Clamp(sorted[index], 0, maxTravel * Parameters.TopOutMaxRatio);
     }
 
-    public void Categorize(Stroke[] strokes, double[] travel, double maxTravel)
+    public static bool IsSettledSample(
+        double travel, double velocity, double topOut, double maxTravel) =>
+        travel - topOut <= Parameters.AirtimeSettledTravelRatio * maxTravel &&
+        Math.Abs(velocity) <= Parameters.AirtimeQuiescentVelocity;
+
+    /// <summary>
+    /// Fraction of all samples in the stroke that are settled. Unlike RestsAtTopOut, this does
+    /// not require the samples to form a contiguous run.
+    /// </summary>
+    public static double SettledSampleFraction(
+        double[] travel, double[] velocity, Stroke stroke, double topOut, double maxTravel)
+    {
+        var settledSamples = 0;
+        for (var i = stroke.Start; i <= stroke.End; i++)
+        {
+            if (IsSettledSample(travel[i], velocity[i], topOut, maxTravel))
+                settledSamples++;
+        }
+
+        return settledSamples / (double)(stroke.End - stroke.Start + 1);
+    }
+
+    public void Categorize(Stroke[] strokes, double[] travel, double[] velocity, double maxTravel)
     {
         var compressions = new List<Stroke>();
         var rebounds = new List<Stroke>();
@@ -149,6 +171,7 @@ public class Strokes
         for (var i = 0; i < strokes.Length; i++)
         {
             var stroke = strokes[i];
+            var settledFraction = SettledSampleFraction(travel, velocity, stroke, TopOut, maxTravel);
 
             // A stroke is a possible airtime if the element hovered near its top-out position
             // (mean travel, so the initial extension ramp doesn't disqualify it), barely moved
@@ -158,8 +181,9 @@ public class Strokes
             if (i > 0 && i < strokes.Length - 1 &&
                 stroke.Duration >= Parameters.AirtimeDurationThreshold &&
                 stroke.Duration <= Parameters.AirtimeDurationMax &&
-                Math.Abs(stroke.Length) <=
-                    Parameters.StrokeLengthThreshold + Parameters.AirtimeCreepRate * stroke.Duration &&
+                (Math.Abs(stroke.Length) <=
+                    Parameters.StrokeLengthThreshold + Parameters.AirtimeCreepRate * stroke.Duration ||
+                 settledFraction >= Parameters.AirtimeCreepWaiverSettledFraction) &&
                 stroke.Stat.SumTravel / stroke.Stat.Count <= airtimeTravelThreshold &&
                 strokes[i + 1].Stat.MaxVelocity >= Parameters.AirtimeVelocityThreshold)
             {

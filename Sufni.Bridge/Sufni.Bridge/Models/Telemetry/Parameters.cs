@@ -7,8 +7,10 @@ public static class Parameters
     // (s) minimum duration to consider stroke an idle period; currently unused.
     public const double IdlingDurationThreshold = 0.10;
 
-    // (s) minimum duration to consider stroke an airtime
-    public const double AirtimeDurationThreshold = 0.20;
+    // (s) minimum duration to consider stroke an airtime. The reference front stroke misses
+    // 0.200 s by exactly one millisecond; 0.2 s is a rounded value without physical separation
+    // power at that boundary, so the gate allows that one-sample timing difference.
+    public const double AirtimeDurationThreshold = 0.190;
 
     // (s) maximum duration. A bike leaning, hanging or being carried has both elements extended
     // and dead still, and is set down hard enough to look like a landing — indistinguishable
@@ -63,6 +65,12 @@ public static class Parameters
     // a drift below 0.6 mm/s — far under the measurement noise floor, let alone real
     // suspension behaviour. The budget is StrokeLengthThreshold + this * duration.
     public const double AirtimeCreepRate = 15.0;
+
+    // Fraction of ALL samples in a stroke that must be settled to waive the creep budget. That
+    // budget is only a coarse proxy for "moves hardly at all"; the per-sample settled check asks
+    // the same question directly and more precisely. A stroke that is practically continuously
+    // motionless at top-out therefore no longer needs to satisfy the displacement budget.
+    public const double AirtimeCreepWaiverSettledFraction = 0.90;
 
     // Top-out estimation. A suspension element does not necessarily read 0 mm when fully
     // extended: calibration offsets, coil preload, top-out bumpers and the shock→wheel

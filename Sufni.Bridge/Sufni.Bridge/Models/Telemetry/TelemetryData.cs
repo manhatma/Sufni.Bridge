@@ -153,7 +153,7 @@ public class TelemetryData
 
     // Increment when velocity processing parameters change (e.g. smoother lambda).
     // Blobs with a lower version are automatically re-processed from Travel arrays on load.
-    public const int CurrentProcessingVersion = 28;
+    public const int CurrentProcessingVersion = 29;
 
     #region Public properties
 
@@ -258,22 +258,21 @@ public class TelemetryData
     /// rear was doing at the same moment.
     /// </summary>
     private static bool RestsAtTopOut(
-        double[] travel, double[] velocity, Stroke stroke, double topOut, double threshold)
+        double[] travel, double[] velocity, Stroke stroke, double topOut, double maxTravel)
     {
-        var required = Math.Max(
+        var requiredConsecutiveSamples = Math.Max(
             1, (int)((stroke.End - stroke.Start + 1) * Parameters.AirtimeSettleFraction));
 
-        var run = 0;
+        var consecutiveSettledSamples = 0;
         for (var i = stroke.Start; i <= stroke.End; i++)
         {
-            if (travel[i] - topOut <= threshold &&
-                Math.Abs(velocity[i]) <= Parameters.AirtimeQuiescentVelocity)
+            if (Strokes.IsSettledSample(travel[i], velocity[i], topOut, maxTravel))
             {
-                if (++run >= required) return true;
+                if (++consecutiveSettledSamples >= requiredConsecutiveSamples) return true;
             }
             else
             {
-                run = 0;
+                consecutiveSettledSamples = 0;
             }
         }
 
@@ -322,12 +321,9 @@ public class TelemetryData
             // average of the two. Averaging lets a topped-out fork mask a loaded shock, so a
             // manual or a front wheel lifted over a lip (fork pinned at 0.5 mm while the shock
             // bounces around 20 mm) reads as an airtime.
-            var frontSettledThreshold = Linkage.MaxFrontTravel * Parameters.AirtimeSettledTravelRatio;
-            var rearSettledThreshold = Linkage.MaxRearTravel * Parameters.AirtimeSettledTravelRatio;
-
             bool BothEndsAtRest(Stroke stroke) =>
-                RestsAtTopOut(Front.Travel, Front.Velocity, stroke, frontTopOut, frontSettledThreshold) &&
-                RestsAtTopOut(Rear.Travel, Rear.Velocity, stroke, rearTopOut, rearSettledThreshold);
+                RestsAtTopOut(Front.Travel, Front.Velocity, stroke, frontTopOut, Linkage.MaxFrontTravel) &&
+                RestsAtTopOut(Rear.Travel, Rear.Velocity, stroke, rearTopOut, Linkage.MaxRearTravel);
 
             // Candidates the overlap pass above could not pair up still describe a real jump if
             // the other end of the bike had come to rest at its top-out too — that is what these
@@ -369,7 +365,7 @@ public class TelemetryData
             {
                 if (!f.AirCandidate) continue;
                 if (!RestsAtTopOut(Front.Travel, Front.Velocity, f, frontTopOut,
-                        Linkage.MaxFrontTravel * Parameters.AirtimeSettledTravelRatio)) continue;
+                        Linkage.MaxFrontTravel)) continue;
 
                 var at = new Airtime
                 {
@@ -385,7 +381,7 @@ public class TelemetryData
             {
                 if (!r.AirCandidate) continue;
                 if (!RestsAtTopOut(Rear.Travel, Rear.Velocity, r, rearTopOut,
-                        Linkage.MaxRearTravel * Parameters.AirtimeSettledTravelRatio)) continue;
+                        Linkage.MaxRearTravel)) continue;
 
                 var at = new Airtime
                 {
@@ -574,7 +570,7 @@ public class TelemetryData
 
             var strokes = Strokes.FilterStrokes(v, Front.Travel, Linkage.MaxFrontTravel, SampleRate,
                 Parameters.ForkVelocityZeroThreshold(Front.TravelPerLsb, SampleRate));
-            Front.Strokes.Categorize(strokes, Front.Travel, Linkage.MaxFrontTravel);
+            Front.Strokes.Categorize(strokes, Front.Travel, v, Linkage.MaxFrontTravel);
             if (Front.Strokes.Compressions.Length == 0 && Front.Strokes.Rebounds.Length == 0)
             {
                 Front.Present = false;
@@ -636,7 +632,7 @@ public class TelemetryData
             var strokes = Strokes.FilterStrokes(v, Rear.Travel, Linkage.MaxRearTravel, SampleRate,
                 RearWheelVelocityZeroThreshold(
                     Rear.TravelPerLsb, SampleRate, Linkage, Rear.ShockTravel, Rear.Travel));
-            Rear.Strokes.Categorize(strokes, Rear.Travel, Linkage.MaxRearTravel);
+            Rear.Strokes.Categorize(strokes, Rear.Travel, v, Linkage.MaxRearTravel);
             if (Rear.Strokes.Compressions.Length == 0 && Rear.Strokes.Rebounds.Length == 0)
             {
                 Rear.Present = false;
@@ -707,7 +703,7 @@ public class TelemetryData
             Front.Strokes = new Strokes();
             var strokes = Strokes.FilterStrokes(v, Front.Travel, Linkage.MaxFrontTravel, SampleRate,
                 Parameters.ForkVelocityZeroThreshold(Front.TravelPerLsb, SampleRate));
-            Front.Strokes.Categorize(strokes, Front.Travel, Linkage.MaxFrontTravel);
+            Front.Strokes.Categorize(strokes, Front.Travel, v, Linkage.MaxFrontTravel);
             if (Front.Strokes.Compressions.Length == 0 && Front.Strokes.Rebounds.Length == 0)
                 Front.Present = false;
             else
@@ -750,7 +746,7 @@ public class TelemetryData
             var strokes = Strokes.FilterStrokes(v, Rear.Travel, Linkage.MaxRearTravel, SampleRate,
                 RearWheelVelocityZeroThreshold(
                     Rear.TravelPerLsb, SampleRate, Linkage, Rear.ShockTravel, Rear.Travel));
-            Rear.Strokes.Categorize(strokes, Rear.Travel, Linkage.MaxRearTravel);
+            Rear.Strokes.Categorize(strokes, Rear.Travel, v, Linkage.MaxRearTravel);
             if (Rear.Strokes.Compressions.Length == 0 && Rear.Strokes.Rebounds.Length == 0)
                 Rear.Present = false;
             else
@@ -873,7 +869,7 @@ public class TelemetryData
 
             var strokes = Strokes.FilterStrokes(v, cropped.Front.Travel, Linkage.MaxFrontTravel, SampleRate,
                 Parameters.ForkVelocityZeroThreshold(cropped.Front.TravelPerLsb, SampleRate));
-            cropped.Front.Strokes.Categorize(strokes, cropped.Front.Travel, Linkage.MaxFrontTravel);
+            cropped.Front.Strokes.Categorize(strokes, cropped.Front.Travel, v, Linkage.MaxFrontTravel);
             if (cropped.Front.Strokes.Compressions.Length == 0 && cropped.Front.Strokes.Rebounds.Length == 0)
                 cropped.Front.Present = false;
             else
@@ -908,7 +904,7 @@ public class TelemetryData
                 RearWheelVelocityZeroThreshold(
                     cropped.Rear.TravelPerLsb, SampleRate, Linkage,
                     cropped.Rear.ShockTravel, cropped.Rear.Travel));
-            cropped.Rear.Strokes.Categorize(strokes, cropped.Rear.Travel, Linkage.MaxRearTravel);
+            cropped.Rear.Strokes.Categorize(strokes, cropped.Rear.Travel, v, Linkage.MaxRearTravel);
             if (cropped.Rear.Strokes.Compressions.Length == 0 && cropped.Rear.Strokes.Rebounds.Length == 0)
                 cropped.Rear.Present = false;
             else
@@ -977,7 +973,8 @@ public class TelemetryData
             var strokes = FilterStrokesSegmented(v, combined.Front.Travel,
                 first.Linkage.MaxFrontTravel, first.SampleRate,
                 Parameters.ForkVelocityZeroThreshold(combined.Front.TravelPerLsb, first.SampleRate), frontSegments);
-            combined.Front.Strokes.Categorize(strokes, combined.Front.Travel, first.Linkage.MaxFrontTravel);
+            combined.Front.Strokes.Categorize(
+                strokes, combined.Front.Travel, v, first.Linkage.MaxFrontTravel);
             if (combined.Front.Strokes.Compressions.Length == 0 && combined.Front.Strokes.Rebounds.Length == 0)
                 combined.Front.Present = false;
             else
@@ -1016,7 +1013,8 @@ public class TelemetryData
                 RearWheelVelocityZeroThreshold(
                     combined.Rear.TravelPerLsb, first.SampleRate, first.Linkage,
                     combined.Rear.ShockTravel, combined.Rear.Travel), rearSegments);
-            combined.Rear.Strokes.Categorize(strokes, combined.Rear.Travel, first.Linkage.MaxRearTravel);
+            combined.Rear.Strokes.Categorize(
+                strokes, combined.Rear.Travel, v, first.Linkage.MaxRearTravel);
             if (combined.Rear.Strokes.Compressions.Length == 0 && combined.Rear.Strokes.Rebounds.Length == 0)
                 combined.Rear.Present = false;
             else
