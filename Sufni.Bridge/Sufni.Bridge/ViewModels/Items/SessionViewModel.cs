@@ -20,6 +20,7 @@ using Sufni.Bridge.Models.Telemetry;
 using Sufni.Bridge.Plots;
 using HapticFeedback;
 using Sufni.Bridge.Services;
+using Sufni.Bridge.ViewModels;
 using Sufni.Bridge.ViewModels.SessionPages;
 
 namespace Sufni.Bridge.ViewModels.Items;
@@ -107,6 +108,11 @@ public partial class SessionViewModel : ItemViewModelBase
         OnPropertyChanged(nameof(ContextSaveCommand));
         OnPropertyChanged(nameof(ContextResetCommand));
         OnPropertyChanged(nameof(SaveLabel));
+    }
+
+    partial void OnIsCombinedSessionChanged(bool value)
+    {
+        NotesPage.IsCombinedSession = value;
     }
 
     [RelayCommand]
@@ -1893,6 +1899,23 @@ public partial class SessionViewModel : ItemViewModelBase
         Name = session.Name;
 
         NotesPage.Description = session.Description;
+        PopulateNotesSetup();
+
+        Timestamp = DateTimeOffset.FromUnixTimeSeconds(session.Timestamp ?? 0).LocalDateTime;
+
+        if (session.Setup is { } setupId)
+        {
+            var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
+            if (databaseService != null)
+            {
+                var pending = await databaseService.GetPendingSetupChangesAsync(setupId);
+                NotesPage.LoadPending(pending);
+            }
+        }
+    }
+
+    private void PopulateNotesSetup()
+    {
         NotesPage.ForkSettings.SpringRate = session.FrontSpringRate;
         NotesPage.ForkSettings.VolSpc = session.FrontVolSpc;
         NotesPage.ForkSettings.HighSpeedCompression = session.FrontHighSpeedCompression;
@@ -1909,18 +1932,28 @@ public partial class SessionViewModel : ItemViewModelBase
         NotesPage.ShockSettings.HighSpeedRebound = session.RearHighSpeedRebound;
         NotesPage.ShockSettings.TirePressure = session.RearTirePressure;
 
-        Timestamp = DateTimeOffset.FromUnixTimeSeconds(session.Timestamp ?? 0).LocalDateTime;
+        NotesPage.ForkSettings.SpringRateDisplay = SessionSetupValues.Get(this, model => model.FrontSpringRate);
+        NotesPage.ForkSettings.VolSpcDisplay = SessionSetupValues.Get(this, model => FormatSetupDouble(model.FrontVolSpc));
+        NotesPage.ForkSettings.HighSpeedCompressionDisplay = SessionSetupValues.Get(this, model => FormatSetupInt(model.FrontHighSpeedCompression));
+        NotesPage.ForkSettings.LowSpeedCompressionDisplay = SessionSetupValues.Get(this, model => FormatSetupInt(model.FrontLowSpeedCompression));
+        NotesPage.ForkSettings.LowSpeedReboundDisplay = SessionSetupValues.Get(this, model => FormatSetupInt(model.FrontLowSpeedRebound));
+        NotesPage.ForkSettings.HighSpeedReboundDisplay = SessionSetupValues.Get(this, model => FormatSetupInt(model.FrontHighSpeedRebound));
+        NotesPage.ForkSettings.TirePressureDisplay = FormatSetupDouble(session.FrontTirePressure);
 
-        if (session.Setup is { } setupId)
-        {
-            var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
-            if (databaseService != null)
-            {
-                var pending = await databaseService.GetPendingSetupChangesAsync(setupId);
-                NotesPage.LoadPending(pending);
-            }
-        }
+        NotesPage.ShockSettings.SpringRateDisplay = SessionSetupValues.Get(this, model => model.RearSpringRate);
+        NotesPage.ShockSettings.VolSpcDisplay = SessionSetupValues.Get(this, model => FormatSetupDouble(model.RearVolSpc));
+        NotesPage.ShockSettings.HighSpeedCompressionDisplay = SessionSetupValues.Get(this, model => FormatSetupInt(model.RearHighSpeedCompression));
+        NotesPage.ShockSettings.LowSpeedCompressionDisplay = SessionSetupValues.Get(this, model => FormatSetupInt(model.RearLowSpeedCompression));
+        NotesPage.ShockSettings.LowSpeedReboundDisplay = SessionSetupValues.Get(this, model => FormatSetupInt(model.RearLowSpeedRebound));
+        NotesPage.ShockSettings.HighSpeedReboundDisplay = SessionSetupValues.Get(this, model => FormatSetupInt(model.RearHighSpeedRebound));
+        NotesPage.ShockSettings.TirePressureDisplay = FormatSetupDouble(session.RearTirePressure);
     }
+
+    private static string? FormatSetupDouble(double? value) =>
+        value?.ToString("F2", System.Globalization.CultureInfo.InvariantCulture);
+
+    private static string? FormatSetupInt(int? value) =>
+        value?.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     #endregion
 
@@ -2284,6 +2317,8 @@ public partial class SessionViewModel : ItemViewModelBase
         {
             var swTotal = Stopwatch.StartNew();
             LastKnownBounds = bounds;
+            if (IsCombinedSession)
+                PopulateNotesSetup();
             var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
             Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
 

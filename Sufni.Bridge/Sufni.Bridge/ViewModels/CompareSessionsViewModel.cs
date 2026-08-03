@@ -46,6 +46,42 @@ public class CompareLegendEntry
     }
 }
 
+internal static class SessionSetupValues
+{
+    /// <summary>
+    /// Renders one setup value for a session. A combined session inherits its whole setup
+    /// verbatim from the chronologically first sub-session, so showing that single value would hide
+    /// the fact that the sub-sessions ran different clicks — list every distinct leaf value instead.
+    /// The selector already formats, so de-duplication happens on what the user actually sees.
+    /// </summary>
+    internal static string Get(SessionViewModel session, Func<Session, string?> selector)
+    {
+        if (!session.IsCombinedSession || session.SubSessions.Count == 0)
+            return selector(session.SessionModel) ?? "-";
+
+        var values = new List<string>();
+        foreach (var leaf in LeafSessions(session).OrderBy(s => s.Timestamp ?? DateTime.MinValue))
+        {
+            if (selector(leaf.SessionModel) is { } value && !values.Contains(value))
+                values.Add(value);
+        }
+        return values.Count > 0 ? string.Join(" / ", values) : "-";
+    }
+
+    private static IEnumerable<SessionViewModel> LeafSessions(SessionViewModel session)
+    {
+        if (!session.IsCombinedSession || session.SubSessions.Count == 0)
+        {
+            yield return session;
+            yield break;
+        }
+
+        foreach (var subSession in session.SubSessions)
+        foreach (var leaf in LeafSessions(subSession))
+            yield return leaf;
+    }
+}
+
 public partial class CompareSessionsViewModel : ViewModelBase
 {
     private static readonly Color[] SessionColors =
@@ -192,19 +228,19 @@ public partial class CompareSessionsViewModel : ViewModelBase
     {
         var rows = new List<CompareTableRow>
         {
-            new("Spring", sessions.Select(s => SetupValues(s,
+            new("Spring", sessions.Select(s => SessionSetupValues.Get(s,
                 model => type == SuspensionType.Front ? model.FrontSpringRate : model.RearSpringRate)).ToList()),
-            new("VolSpc", sessions.Select(s => SetupValues(s,
+            new("VolSpc", sessions.Select(s => SessionSetupValues.Get(s,
                 model => (type == SuspensionType.Front ? model.FrontVolSpc : model.RearVolSpc) is { } v
                     ? string.Create(CultureInfo.InvariantCulture, $"{v:F2}")
                     : null)).ToList()),
-            new("HSC [clicks]", sessions.Select(s => SetupValues(s,
+            new("HSC [clicks]", sessions.Select(s => SessionSetupValues.Get(s,
                 model => Clicks(type == SuspensionType.Front ? model.FrontHighSpeedCompression : model.RearHighSpeedCompression))).ToList()),
-            new("LSC [clicks]", sessions.Select(s => SetupValues(s,
+            new("LSC [clicks]", sessions.Select(s => SessionSetupValues.Get(s,
                 model => Clicks(type == SuspensionType.Front ? model.FrontLowSpeedCompression : model.RearLowSpeedCompression))).ToList()),
-            new("LSR [clicks]", sessions.Select(s => SetupValues(s,
+            new("LSR [clicks]", sessions.Select(s => SessionSetupValues.Get(s,
                 model => Clicks(type == SuspensionType.Front ? model.FrontLowSpeedRebound : model.RearLowSpeedRebound))).ToList()),
-            new("HSR [clicks]", sessions.Select(s => SetupValues(s,
+            new("HSR [clicks]", sessions.Select(s => SessionSetupValues.Get(s,
                 model => Clicks(type == SuspensionType.Front ? model.FrontHighSpeedRebound : model.RearHighSpeedRebound))).ToList()),
             new("Pos [AVG, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.Average, s.MaxTravel)).ToList()),
             new("Pos [95th, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.P95, s.MaxTravel)).ToList()),
@@ -226,39 +262,6 @@ public partial class CompareSessionsViewModel : ViewModelBase
 
     private static string? Clicks(int? value) =>
         value?.ToString(CultureInfo.InvariantCulture);
-
-    /// <summary>
-    /// Renders one setup value for a compare column. A combined session inherits its whole setup
-    /// verbatim from the chronologically first sub-session, so showing that single value would hide
-    /// the fact that the sub-sessions ran different clicks — list every distinct leaf value instead.
-    /// The selector already formats, so de-duplication happens on what the user actually sees.
-    /// </summary>
-    private static string SetupValues(SessionViewModel session, Func<Session, string?> selector)
-    {
-        if (!session.IsCombinedSession || session.SubSessions.Count == 0)
-            return selector(session.SessionModel) ?? "-";
-
-        var values = new List<string>();
-        foreach (var leaf in LeafSessions(session).OrderBy(s => s.Timestamp ?? DateTime.MinValue))
-        {
-            if (selector(leaf.SessionModel) is { } value && !values.Contains(value))
-                values.Add(value);
-        }
-        return values.Count > 0 ? string.Join("/", values) : "-";
-    }
-
-    private static IEnumerable<SessionViewModel> LeafSessions(SessionViewModel session)
-    {
-        if (!session.IsCombinedSession || session.SubSessions.Count == 0)
-        {
-            yield return session;
-            yield break;
-        }
-
-        foreach (var subSession in session.SubSessions)
-        foreach (var leaf in LeafSessions(subSession))
-            yield return leaf;
-    }
 
     private static string FormatBalanceValue(double? value, string format) =>
         value.HasValue ? value.Value.ToString(format, CultureInfo.InvariantCulture) : "-";

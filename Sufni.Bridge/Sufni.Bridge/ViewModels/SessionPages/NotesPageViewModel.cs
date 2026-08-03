@@ -13,6 +13,14 @@ public partial class SuspensionSettings : ObservableObject
     [ObservableProperty] private string? springRate;
     [ObservableProperty] private double? volSpc;
 
+    [ObservableProperty] private string? springRateDisplay;
+    [ObservableProperty] private string? volSpcDisplay;
+    [ObservableProperty] private string? highSpeedCompressionDisplay;
+    [ObservableProperty] private string? lowSpeedCompressionDisplay;
+    [ObservableProperty] private string? lowSpeedReboundDisplay;
+    [ObservableProperty] private string? highSpeedReboundDisplay;
+    [ObservableProperty] private string? tirePressureDisplay;
+
     partial void OnVolSpcChanged(double? value)
     {
         if (value.HasValue)
@@ -120,6 +128,7 @@ public partial class PendingChangeEntry : ObservableObject
 public partial class NotesPageViewModel : PageViewModelBase
 {
     [ObservableProperty] private string? description;
+    [ObservableProperty] private bool isCombinedSession;
 
     public SuspensionSettings ForkSettings { get; } = new();
     public SuspensionSettings ShockSettings { get; } = new();
