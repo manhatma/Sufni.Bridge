@@ -123,7 +123,9 @@ public partial class TimeZoomViewModel : ObservableObject
         var clamped = Math.Clamp(StartSeconds, 0, MaxStartSeconds);
         if (clamped != StartSeconds)
         {
+#pragma warning disable MVVMTK0034 // The property setter would re-enter this hook and fire WindowChanged twice.
             startSeconds = clamped;
+#pragma warning restore MVVMTK0034
             OnPropertyChanged(nameof(StartSeconds));
         }
     }
