@@ -116,14 +116,16 @@ public partial class TimeZoomViewModel : ObservableObject
     }
 
     // Keeps StartSeconds inside [0, MaxStartSeconds] whenever WindowSeconds or TotalDurationSeconds
-    // shrink the valid range. Setting the property (rather than the backing field) re-enters this
-    // same handler once more, which terminates immediately: clamping an already-in-range value is
-    // a no-op, so there is no infinite recursion — just one extra (harmless) notification pass.
+    // shrink the valid range. Write the generated property's backing field directly so the current
+    // change hook remains the single notification pass.
     private void ClampStart()
     {
         var clamped = Math.Clamp(StartSeconds, 0, MaxStartSeconds);
         if (clamped != StartSeconds)
-            StartSeconds = clamped;
+        {
+            startSeconds = clamped;
+            OnPropertyChanged(nameof(StartSeconds));
+        }
     }
 
     // Raises PropertyChanged for every computed/derived property and fires WindowChanged. Called

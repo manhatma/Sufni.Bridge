@@ -265,15 +265,17 @@ public partial class SessionViewModel : ItemViewModelBase
 
     private void RestoreFullTimePlots()
     {
-        if (!_timeZoomSnapshotTaken) return;
         Dispatcher.UIThread.Post(() =>
         {
-            SpringPage.FrontTravelTimeCropped     = _fullFrontTravel;
-            SpringPage.RearTravelTimeCropped      = _fullRearTravel;
-            DamperPage.FrontVelocityTimeCropped   = _fullFrontVelocity;
-            DamperPage.RearVelocityTimeCropped    = _fullRearVelocity;
-            MiscPage.FrontAccelerationTimeCropped = _fullFrontAccel;
-            MiscPage.RearAccelerationTimeCropped  = _fullRearAccel;
+            if (_timeZoomSnapshotTaken)
+            {
+                SpringPage.FrontTravelTimeCropped     = _fullFrontTravel;
+                SpringPage.RearTravelTimeCropped      = _fullRearTravel;
+                DamperPage.FrontVelocityTimeCropped   = _fullFrontVelocity;
+                DamperPage.RearVelocityTimeCropped    = _fullRearVelocity;
+                MiscPage.FrontAccelerationTimeCropped = _fullFrontAccel;
+                MiscPage.RearAccelerationTimeCropped  = _fullRearAccel;
+            }
             SpringPage.CombinedTravelTimeZoomed     = null;
             DamperPage.CombinedVelocityTimeZoomed   = null;
             MiscPage.CombinedAccelerationTimeZoomed = null;
