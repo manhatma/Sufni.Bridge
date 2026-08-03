@@ -35,6 +35,7 @@ internal class TelemetryDataStoreService : ITelemetryDataStoreService
 {
     private const string ServiceType = ITelemetryDataStoreService.ServiceType;
     private static readonly object DataStoreLock = new();
+    private readonly Dictionary<string, NetworkTelemetryDataStore> initializingNetworkDataStores = new();
     public ObservableCollection<ITelemetryDataStore> DataStores { get; } = new();
 
     private static bool IsMassStorageCandidate(DriveInfo drive)
@@ -98,6 +99,7 @@ internal class TelemetryDataStoreService : ITelemetryDataStoreService
 
         lock (DataStoreLock)
         {
+            initializingNetworkDataStores.Remove(name);
             var toRemove = DataStores.FirstOrDefault(x => x.Name == name);
             if (toRemove is not null)
             {
@@ -113,18 +115,46 @@ internal class TelemetryDataStoreService : ITelemetryDataStoreService
         var protocolVersion = e.Announcement.ProtocolVersion;
         var name = $"gosst://{ipAddress}:{port}";
 
-        var ds = new NetworkTelemetryDataStore(ipAddress, port, protocolVersion);
-        await ds.Initialization;
+        NetworkTelemetryDataStore ds;
+        lock (DataStoreLock)
+        {
+            if (DataStores.Any(x => x.Name == name) || initializingNetworkDataStores.ContainsKey(name))
+            {
+                return;
+            }
+
+            ds = new NetworkTelemetryDataStore(ipAddress, port, protocolVersion);
+            initializingNetworkDataStores.Add(name, ds);
+        }
+
+        try
+        {
+            await ds.Initialization;
+        }
+        catch
+        {
+            lock (DataStoreLock)
+            {
+                if (initializingNetworkDataStores.TryGetValue(name, out var initializing) &&
+                    ReferenceEquals(initializing, ds))
+                {
+                    initializingNetworkDataStores.Remove(name);
+                }
+            }
+
+            throw;
+        }
 
         lock (DataStoreLock)
         {
-            var existing = DataStores.FirstOrDefault(x => x.Name == name);
-            if (existing is not null)
+            if (!initializingNetworkDataStores.TryGetValue(name, out var initializing) ||
+                !ReferenceEquals(initializing, ds))
             {
-                var index = DataStores.IndexOf(existing);
-                DataStores[index] = ds;
+                return;
             }
-            else
+
+            initializingNetworkDataStores.Remove(name);
+            if (!DataStores.Any(x => x.Name == name))
             {
                 DataStores.Add(ds);
             }

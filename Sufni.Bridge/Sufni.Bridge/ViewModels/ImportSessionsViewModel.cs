@@ -55,20 +55,33 @@ public partial class ImportSessionsViewModel : ViewModelBase
 
     private async Task GetDataStoreFiles(ITelemetryDataStore dataStore)
     {
+        var generation = Interlocked.Increment(ref dataStoreFilesGeneration);
         ImportInProgress = true;
 
-        TelemetryFiles.Clear();
-        var files = await dataStore.GetFiles();
-        await ApplyImportDefaults(files);
-        Dispatcher.UIThread.Post(() =>
+        try
         {
-            foreach (var file in files)
-            {
-                TelemetryFiles.Add(file);
-            }
-        });
+            var files = await dataStore.GetFiles();
+            await ApplyImportDefaults(files);
+            if (generation != Volatile.Read(ref dataStoreFilesGeneration)) return;
 
-        ImportInProgress = false;
+            Dispatcher.UIThread.Post(() =>
+            {
+                if (generation != Volatile.Read(ref dataStoreFilesGeneration)) return;
+
+                TelemetryFiles.Clear();
+                foreach (var file in files)
+                {
+                    TelemetryFiles.Add(file);
+                }
+            });
+        }
+        finally
+        {
+            if (generation == Volatile.Read(ref dataStoreFilesGeneration))
+            {
+                ImportInProgress = false;
+            }
+        }
     }
 
     async partial void OnSelectedDataStoreChanged(ITelemetryDataStore? value)
@@ -77,6 +90,7 @@ public partial class ImportSessionsViewModel : ViewModelBase
 
         if (value == null)
         {
+            Interlocked.Increment(ref dataStoreFilesGeneration);
             TelemetryFiles.Clear();
             SelectedSetup = null;
             return;
@@ -105,6 +119,7 @@ public partial class ImportSessionsViewModel : ViewModelBase
     #region Private members
 
     private readonly IDatabaseService? databaseService;
+    private int dataStoreFilesGeneration;
 
     #endregion Private members
 
@@ -378,11 +393,14 @@ public partial class ImportSessionsViewModel : ViewModelBase
 
         var files = await SelectedDataStore.GetFiles();
         await ApplyImportDefaults(files);
-        TelemetryFiles.Clear();
-        foreach (var file in files)
+        await Dispatcher.UIThread.InvokeAsync(() =>
         {
-            TelemetryFiles.Add(file);
-        }
+            TelemetryFiles.Clear();
+            foreach (var file in files)
+            {
+                TelemetryFiles.Add(file);
+            }
+        });
 
         ImportInProgress = false;
     }
