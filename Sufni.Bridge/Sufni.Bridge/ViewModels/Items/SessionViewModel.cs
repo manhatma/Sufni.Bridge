@@ -245,7 +245,7 @@ public partial class SessionViewModel : ItemViewModelBase
     /// setup is missing/unreadable. Used by the balance metrics box to pick
     /// discipline-specific eigenfrequency target bands.
     /// </summary>
-    private async Task<Discipline?> GetSessionDisciplineAsync()
+    internal async Task<Discipline?> GetSessionDisciplineAsync()
     {
         if (!session.Setup.HasValue) return null;
         var dbSvc = App.Current?.Services?.GetService<IDatabaseService>();

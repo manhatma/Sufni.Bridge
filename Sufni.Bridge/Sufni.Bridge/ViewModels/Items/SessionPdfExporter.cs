@@ -133,8 +133,9 @@ internal static class SessionPdfExporter
                 return;
             }
 
+            var discipline = await viewModel.GetSessionDisciplineAsync();
             var pdfPath = await Task.Run(() => RenderSvgsToPdf(
-                viewModel, validSvgs, viewModel.SummaryPage, viewModel.NotesPage));
+                viewModel, validSvgs, viewModel.SummaryPage, viewModel.NotesPage, discipline?.ToString()));
 
             viewModel.IsGeneratingPdf = false;
             var shareService = App.Current?.Services?.GetService<IShareService>();
@@ -152,7 +153,8 @@ internal static class SessionPdfExporter
         SessionViewModel viewModel,
         List<PdfSvgEntry> svgEntries,
         SummaryPageViewModel summary,
-        NotesPageViewModel notes)
+        NotesPageViewModel notes,
+        string? discipline)
     {
         var tempDir = System.IO.Path.GetTempPath();
         // Strip characters that are invalid in filenames or URLs (space, #, %, &, etc.)
@@ -163,7 +165,7 @@ internal static class SessionPdfExporter
 
         return SkiaPdfWriter.WritePdf(pdfPath, svgXml, (document, svgObjects) =>
         {
-            DrawSummaryPage(document, summary, (float)SessionViewModel.LastKnownBounds.Width);
+            DrawSummaryPage(document, summary, discipline, (float)SessionViewModel.LastKnownBounds.Width);
 
             for (var i = 0; i < svgObjects.Count; i++)
             {
@@ -184,7 +186,11 @@ internal static class SessionPdfExporter
         });
     }
 
-    private static void DrawSummaryPage(SkiaSharp.SKDocument document, SummaryPageViewModel summary, float pageWidth)
+    private static void DrawSummaryPage(
+        SkiaSharp.SKDocument document,
+        SummaryPageViewModel summary,
+        string? discipline,
+        float pageWidth)
     {
         const float margin = 30f;
         const float rowH = 26f;
@@ -206,6 +212,7 @@ internal static class SessionPdfExporter
 
         // Calculate total page height
         float pageHeight = margin * 2f
+            + rowH + sectionGap
             + titleH + summary.RunDataRows.Count * rowH
             + sectionGap
             + rowH + summary.WheelRows.Count * rowH
@@ -236,7 +243,24 @@ internal static class SessionPdfExporter
             canvas.DrawText(text, tx, ty, p);
         }
 
+        float setupLabelWidth = Math.Max(
+            boldPaint.MeasureText("SETUP"),
+            boldPaint.MeasureText("DISCIPLINE")) + 12f;
+        float setupValueWidth = (contentWidth - setupLabelWidth * 2f) / 2f;
         float curY = margin;
+
+        var selectedSetupName = summary.SelectedSetup?.Name;
+        var setupName = string.IsNullOrWhiteSpace(selectedSetupName) ? "-" : selectedSetupName;
+        var disciplineName = string.IsNullOrWhiteSpace(discipline) ? "-" : discipline;
+
+        DrawCell(margin, curY, setupLabelWidth, rowH, headerBg, headerFg, "SETUP", false, true);
+        DrawCell(margin + setupLabelWidth, curY, setupValueWidth, rowH,
+            cellBg, cellFg, setupName, false, false);
+        DrawCell(margin + setupLabelWidth + setupValueWidth, curY, setupLabelWidth, rowH,
+            headerBg, headerFg, "DISCIPLINE", false, true);
+        DrawCell(margin + setupLabelWidth * 2f + setupValueWidth, curY, setupValueWidth, rowH,
+            cellBg, cellFg, disciplineName, false, false);
+        curY += rowH + sectionGap;
 
         // RUN DATA
         DrawCell(margin, curY, contentWidth, titleH, headerBg, headerFg, "RUN DATA", false, true);
