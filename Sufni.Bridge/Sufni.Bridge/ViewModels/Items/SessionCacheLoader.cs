@@ -77,7 +77,7 @@ internal static class SessionCacheLoader
         {
             try
             {
-                var summary = JsonSerializer.Deserialize<SessionViewModel.CachedSummaryData>(cache.SummaryJson);
+                var summary = JsonSerializer.Deserialize<SessionSummaryBuilder.CachedSummaryData>(cache.SummaryJson);
                 if (summary is not null)
                 {
                     SummaryPage.RunDataRows = new ObservableCollection<SummaryValueRow>(

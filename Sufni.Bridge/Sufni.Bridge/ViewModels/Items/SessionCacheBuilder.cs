@@ -28,7 +28,7 @@ internal static class SessionCacheBuilder
         Func<Task<Discipline?>> getSessionDisciplineAsync,
         Func<Discipline?, Task<Dictionary<string, (double? min, double? max)>?>> getBalanceOverridesAsync,
         Func<TelemetryData, Task<VelocityBands?>, Task<VelocityBands?>,
-            Task<SessionViewModel.CachedSummaryData>> populateSummaryAsync,
+            Task<SessionSummaryBuilder.CachedSummaryData>> populateSummaryAsync,
         Func<string, Action, Task> throttledPlotTask)
     {
         var SpringPage = viewModel.SpringPage;
