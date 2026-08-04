@@ -178,7 +178,7 @@ internal static class SessionCacheLoader
                     velDistCompTask, posVelCompTask, frontPosVelTask, rearPosVelTask,
                     frontTravelCropTask, rearTravelCropTask, frontVelCropTask, rearVelCropTask,
                     frontAccelCropTask, rearAccelCropTask,
-                    combinedFftTask, combinedFftHighTask,
+                    combinedFftTask, combinedFftHighTask, combinedVelFftTask,
                     pitchBalanceTask, pitchCoherenceTask, goutScatterTask, cumulativeTravelTask);
 
                 PerfLog.Log("load/bgSvg", swBg.Elapsed.TotalMilliseconds);
