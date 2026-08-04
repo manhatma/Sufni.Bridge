@@ -172,9 +172,6 @@ public partial class CompareSessionsViewModel : ViewModelBase
     private static string FormatColor(Color color) => string.Create(
         CultureInfo.InvariantCulture, $"#{color.Red:X2}{color.Green:X2}{color.Blue:X2}");
 
-    private static string FormatPercent(double value) =>
-        string.Create(CultureInfo.InvariantCulture, $"{value:F1}");
-
     private sealed record SessionStats(
         DetailedTravelStatistics Travel,
         VelocityStatistics Velocity,
@@ -238,10 +235,10 @@ public partial class CompareSessionsViewModel : ViewModelBase
             new("Reb [95th, mm/s]", statsList.Select(s => s is null ? "-" : SessionFormat.VelocityPlain(s.Reb95th)).ToList()),
             new("Comp [MAX, mm/s]", statsList.Select(s => s is null ? "-" : SessionFormat.VelocityPlain(s.Velocity.MaxCompression)).ToList()),
             new("Reb [MAX, mm/s]", statsList.Select(s => s is null ? "-" : SessionFormat.VelocityPlain(s.Velocity.MaxRebound)).ToList()),
-            new("HSR [%]", statsList.Select(s => s?.Bands is null ? "-" : FormatPercent(s.Bands.HighSpeedRebound)).ToList()),
-            new("LSR [%]", statsList.Select(s => s?.Bands is null ? "-" : FormatPercent(s.Bands.LowSpeedRebound)).ToList()),
-            new("LSC [%]", statsList.Select(s => s?.Bands is null ? "-" : FormatPercent(s.Bands.LowSpeedCompression)).ToList()),
-            new("HSC [%]", statsList.Select(s => s?.Bands is null ? "-" : FormatPercent(s.Bands.HighSpeedCompression)).ToList()),
+            new("HSR [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.PercentFixedPoint(s.Bands.HighSpeedRebound)).ToList()),
+            new("LSR [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.PercentFixedPoint(s.Bands.LowSpeedRebound)).ToList()),
+            new("LSC [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.PercentFixedPoint(s.Bands.LowSpeedCompression)).ToList()),
+            new("HSC [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.PercentFixedPoint(s.Bands.HighSpeedCompression)).ToList()),
         };
         return rows;
     }

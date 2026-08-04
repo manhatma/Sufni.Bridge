@@ -35,4 +35,14 @@ internal static class SessionFormat
         string.Create(CultureInfo.InvariantCulture, $"{value:0.0}");
 
     internal static string BottomoutsPlain(int value) => $"{value}";
+
+    // These differ only at exact decimal midpoints (for example, 0.15 is "0.2" vs "0.1").
+    // Do not merge them without a deliberate decision, because that would change displayed values.
+    internal static string PercentAwayFromZero(double value)
+    {
+        return string.Create(CultureInfo.InvariantCulture, $"{value:0.0}");
+    }
+
+    internal static string PercentFixedPoint(double value) =>
+        string.Create(CultureInfo.InvariantCulture, $"{value:F1}");
 }

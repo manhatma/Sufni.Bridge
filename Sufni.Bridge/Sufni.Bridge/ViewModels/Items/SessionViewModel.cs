@@ -1217,11 +1217,6 @@ public partial class SessionViewModel : ItemViewModelBase
         string Airtime = "—",
         string? DataQuality = null);
 
-    private static string FormatPercent(double value)
-    {
-        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{value:0.0}");
-    }
-
     private static string FormatCumulativeTravel(TelemetryData telemetryData, SuspensionType type)
     {
         var cum = telemetryData.CalculateCumulativeTravel(type);
@@ -1688,17 +1683,17 @@ public partial class SessionViewModel : ItemViewModelBase
                 frontWheelStats is null ? "-" : SessionFormat.VelocityWithUnits(frontWheelStats.MaxRebound),
                 rearWheelStats is null ? "-" : SessionFormat.VelocityWithUnits(rearWheelStats.MaxRebound)),
             new SummaryComparisonRow("HSR [%]",
-                frontBands is null ? "-" : FormatPercent(frontBands.HighSpeedRebound),
-                rearBands is null ? "-" : FormatPercent(rearBands.HighSpeedRebound)),
+                frontBands is null ? "-" : SessionFormat.PercentAwayFromZero(frontBands.HighSpeedRebound),
+                rearBands is null ? "-" : SessionFormat.PercentAwayFromZero(rearBands.HighSpeedRebound)),
             new SummaryComparisonRow("LSR [%]",
-                frontBands is null ? "-" : FormatPercent(frontBands.LowSpeedRebound),
-                rearBands is null ? "-" : FormatPercent(rearBands.LowSpeedRebound)),
+                frontBands is null ? "-" : SessionFormat.PercentAwayFromZero(frontBands.LowSpeedRebound),
+                rearBands is null ? "-" : SessionFormat.PercentAwayFromZero(rearBands.LowSpeedRebound)),
             new SummaryComparisonRow("LSC [%]",
-                frontBands is null ? "-" : FormatPercent(frontBands.LowSpeedCompression),
-                rearBands is null ? "-" : FormatPercent(rearBands.LowSpeedCompression)),
+                frontBands is null ? "-" : SessionFormat.PercentAwayFromZero(frontBands.LowSpeedCompression),
+                rearBands is null ? "-" : SessionFormat.PercentAwayFromZero(rearBands.LowSpeedCompression)),
             new SummaryComparisonRow("HSC [%]",
-                frontBands is null ? "-" : FormatPercent(frontBands.HighSpeedCompression),
-                rearBands is null ? "-" : FormatPercent(rearBands.HighSpeedCompression)),
+                frontBands is null ? "-" : SessionFormat.PercentAwayFromZero(frontBands.HighSpeedCompression),
+                rearBands is null ? "-" : SessionFormat.PercentAwayFromZero(rearBands.HighSpeedCompression)),
             new SummaryComparisonRow("Cum. Travel [m]",
                 telemetryData.Front.Present ? FormatCumulativeTravel(telemetryData, SuspensionType.Front) : "-",
                 telemetryData.Rear.Present ? FormatCumulativeTravel(telemetryData, SuspensionType.Rear) : "-")
