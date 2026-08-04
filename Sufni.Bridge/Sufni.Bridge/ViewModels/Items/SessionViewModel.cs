@@ -104,13 +104,12 @@ public partial class SessionViewModel : ItemViewModelBase
     public System.Windows.Input.ICommand ContextResetCommand => IsCropVisible ? CropPage.ResetCropCommand! : ResetCommand;
     public string SaveLabel => IsCropVisible ? (CropPage.IsModified ? "apply" : "cancel") : "save";
 
-    private System.Windows.Input.ICommand? _sessionOpenPreviousPageCommand;
-    public new System.Windows.Input.ICommand OpenPreviousPageCommand =>
-        _sessionOpenPreviousPageCommand ??= new RelayCommand(() =>
-        {
-            IsCropVisible = false;
-            OpenPreviousPage();
-        });
+    [RelayCommand]
+    private void CloseSession()
+    {
+        IsCropVisible = false;
+        OpenPreviousPage();
+    }
 
     partial void OnIsCropVisibleChanged(bool value)
     {
