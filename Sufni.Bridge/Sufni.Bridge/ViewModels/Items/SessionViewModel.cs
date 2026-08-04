@@ -105,9 +105,15 @@ public partial class SessionViewModel : ItemViewModelBase
     public string SaveLabel => IsCropVisible ? (CropPage.IsModified ? "apply" : "cancel") : "save";
 
     [RelayCommand]
-    private void CloseSession()
+    private void GoBack()
     {
-        IsCropVisible = false;
+        // The back arrow first backs out of the crop overlay and only then out of the session.
+        if (IsCropVisible)
+        {
+            IsCropVisible = false;
+            return;
+        }
+
         OpenPreviousPage();
     }
 
