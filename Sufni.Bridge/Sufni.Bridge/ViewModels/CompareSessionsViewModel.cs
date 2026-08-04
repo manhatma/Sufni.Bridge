@@ -696,22 +696,8 @@ public partial class CompareSessionsViewModel : ViewModelBase
         var tempDir = System.IO.Path.GetTempPath();
         var pdfPath = System.IO.Path.Combine(tempDir, $"{fileName}.pdf");
 
-        var svgObjects = svgXmlList
-            .AsParallel()
-            .AsOrdered()
-            .Select(xml =>
-            {
-                var svg = new Svg.Skia.SKSvg();
-                svg.FromSvg(xml);
-                return svg;
-            })
-            .ToList();
-
-        try
+        return SkiaPdfWriter.WritePdf(pdfPath, svgXmlList, (document, svgObjects) =>
         {
-            using var stream = new System.IO.FileStream(pdfPath, System.IO.FileMode.Create);
-            using var document = SkiaSharp.SKDocument.CreatePdf(stream);
-
             var firstPicture = svgObjects.Select(svg => svg.Picture).FirstOrDefault(picture => picture is not null);
             var pageWidth = firstPicture?.CullRect.Width ?? 400f;
             var plotPageHeight = firstPicture?.CullRect.Height ?? 560f;
@@ -727,16 +713,7 @@ public partial class CompareSessionsViewModel : ViewModelBase
                 canvas.DrawPicture(picture);
                 document.EndPage();
             }
-
-            document.Close();
-        }
-        finally
-        {
-            foreach (var svg in svgObjects)
-                svg.Dispose();
-        }
-
-        return pdfPath;
+        });
     }
 
     private static void DrawOverviewPages(
