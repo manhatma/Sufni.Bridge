@@ -725,14 +725,12 @@ public partial class CompareSessionsViewModel : ViewModelBase
         List<CompareTableRow> rearRows)
     {
         const float margin = 24f;
-        const float legendRowHeight = 18f;
         const float tableRowHeight = 24f;
         const float sectionGap = 14f;
         const float labelColumnWidth = 130f;
 
         var naturalHeight = margin * 2f
-            + legend.Count * legendRowHeight
-            + sectionGap * 2f
+            + sectionGap
             + (frontRows.Count + rearRows.Count + 2) * tableRowHeight;
         var pageHeight = Math.Max(plotPageHeight, Math.Min(naturalHeight, pageWidth * 1.4142f));
         var contentWidth = pageWidth - margin * 2f;
@@ -784,17 +782,27 @@ public partial class CompareSessionsViewModel : ViewModelBase
             completedCanvas?.Dispose();
         }
 
-        void DrawCell(float x, float top, float width, string text, bool header, bool rightAlign)
+        void DrawCell(
+            float x,
+            float top,
+            float width,
+            string text,
+            bool header,
+            bool rightAlign,
+            bool lightHeader = false,
+            bool centerAlign = false)
         {
             var rect = new SkiaSharp.SKRect(x, top, x + width, top + tableRowHeight);
             fillPaint.Color = header ? headerBackground : cellBackground;
             canvas!.DrawRect(rect, fillPaint);
             canvas.DrawRect(rect, borderPaint);
 
-            var paint = header ? boldPaint : textPaint;
+            var paint = header || lightHeader ? boldPaint : textPaint;
             paint.Color = header ? darkText : lightText;
             var textWidth = paint.MeasureText(text);
-            var textX = rightAlign ? x + width - 6f - textWidth : x + 6f;
+            var textX = centerAlign
+                ? x + (width - textWidth) / 2f
+                : rightAlign ? x + width - 6f - textWidth : x + 6f;
             var textY = top + tableRowHeight / 2f + paint.TextSize * 0.35f;
             canvas.DrawText(text, textX, textY, paint);
         }
@@ -804,13 +812,22 @@ public partial class CompareSessionsViewModel : ViewModelBase
             DrawCell(margin, y, labelColumnWidth, title, true, false);
             for (var i = 0; i < legend.Count; i++)
             {
+                var x = margin + labelColumnWidth + i * valueColumnWidth;
                 DrawCell(
-                    margin + labelColumnWidth + i * valueColumnWidth,
+                    x,
                     y,
                     valueColumnWidth,
                     legend[i].Name,
-                    true,
-                    true);
+                    false,
+                    false,
+                    lightHeader: true,
+                    centerAlign: true);
+                fillPaint.Color = SkiaSharp.SKColor.Parse(legend[i].Color);
+                canvas!.DrawRect(new SkiaSharp.SKRect(
+                    x,
+                    y + tableRowHeight - 3f,
+                    x + valueColumnWidth,
+                    y + tableRowHeight), fillPaint);
             }
             y += tableRowHeight;
         }
@@ -853,18 +870,6 @@ public partial class CompareSessionsViewModel : ViewModelBase
         }
 
         BeginPage();
-
-        foreach (var entry in legend)
-        {
-            var color = SkiaSharp.SKColor.Parse(entry.Color);
-            fillPaint.Color = color;
-            canvas!.DrawRect(new SkiaSharp.SKRect(margin, y + 7f, margin + 18f, y + 10f), fillPaint);
-            textPaint.Color = color;
-            canvas.DrawText(entry.Name, margin + 25f, y + 12f, textPaint);
-            y += legendRowHeight;
-        }
-
-        y += sectionGap;
         DrawTable("FRONT WHEEL", frontRows);
         y += sectionGap;
         DrawTable("REAR WHEEL", rearRows);
