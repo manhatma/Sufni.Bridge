@@ -225,10 +225,6 @@ public class SqLiteDatabaseService : IDatabaseService
         await AddColumnIfMissing("travel_comparison_histogram");
         await AddColumnIfMissing("rear_damper_velocity_histogram");
         await AddColumnIfMissing("front_rear_travel_scatter");
-        await AddColumnIfMissing("front_position_distribution");
-        await AddColumnIfMissing("rear_position_distribution");
-        await AddColumnIfMissing("front_velocity_distribution");
-        await AddColumnIfMissing("rear_velocity_distribution");
         await AddColumnIfMissing("front_position_velocity");
         await AddColumnIfMissing("rear_position_velocity");
         await AddColumnIfMissing("velocity_distribution_comparison");
@@ -239,8 +235,6 @@ public class SqLiteDatabaseService : IDatabaseService
         await AddColumnIfMissing("crop_start_sample", "INTEGER");
         await AddColumnIfMissing("crop_end_sample", "INTEGER");
         await AddColumnIfMissing("travel_time_history");
-        await AddColumnIfMissing("travel_time_cropped");
-        await AddColumnIfMissing("velocity_time_cropped");
         await AddColumnIfMissing("front_acceleration_time_cropped");
         await AddColumnIfMissing("rear_acceleration_time_cropped");
         await AddColumnIfMissing("front_travel_time_cropped");
