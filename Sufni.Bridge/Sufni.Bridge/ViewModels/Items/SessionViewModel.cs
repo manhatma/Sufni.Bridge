@@ -51,7 +51,7 @@ public partial class SessionViewModel : ItemViewModelBase
     internal DamperPageViewModel DamperPage { get; } = new();
     internal BalancePageViewModel BalancePage { get; } = new();
     internal MiscPageViewModel MiscPage { get; } = new();
-    private SummaryPageViewModel SummaryPage { get; } = new();
+    internal SummaryPageViewModel SummaryPage { get; } = new();
 
     private void ShareBalanceMetricsWithSummary() =>
         SummaryPage.EffectiveHeadAngle = BalancePage.Metrics.EffectiveHeadAngle;
@@ -367,208 +367,14 @@ public partial class SessionViewModel : ItemViewModelBase
     // scalar projection of the cache row, already fetched by the caller — the wide row (~30
     // SVG columns, often tens of MB) is only materialized after meta passed the staleness
     // checks, so a stale cache (e.g. after a PlotVersion bump) never pays the full fetch.
-    private async Task<(bool found, bool hasVdc, bool hasPvc)> LoadCache(SessionCacheMeta? meta)
-    {
-        var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
-        Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
-
-        Debug.WriteLine($"Session {Id}: LoadCache - cache found={meta is not null}");
-        if (!await IsCacheMetaCurrentAsync(meta))
-        {
-            return (false, false, false);
-        }
-
-        SessionCache? cache;
-        using (PerfLog.Measure("load/cacheRow"))
-        {
-            cache = await databaseService.GetSessionCacheAsync(Id);
-        }
-        // Row vanished between the meta probe and the wide fetch (e.g. invalidated by a
-        // concurrent setup reassignment) — treat as stale.
-        if (cache is null)
-        {
-            return (false, false, false);
-        }
-
-        var swParse = Stopwatch.StartNew();
-
-        // Load TravelTimeHistory (full data, always in cache)
-        if (cache.TravelTimeHistory is not null)
-        {
-            var tthSrc = await Task.Run(() => SvgToSource(cache.TravelTimeHistory));
-            CropPage.TravelTimeHistory = SourceToImage(tthSrc);
-        }
-
-        var hasVdc = cache.VelocityDistributionComparison is not null;
-
-        // Combined sessions never get the phase-portrait plots cached (CreateCache skips them
-        // and leaves the columns null by design) — treat that as "complete" rather than stale,
-        // or the cache would never be considered valid and CreateCache would rerun on every open.
-        var isCombined = (await databaseService.GetCombinedSourcesAsync(Id)).Count > 0;
-        var hasPvc = isCombined || cache.PositionVelocityComparison is not null;
-
-        // 1. Summary: pure JSON, no SVG parsing — populate immediately
-        if (cache.SummaryJson is not null)
-        {
-            try
-            {
-                var summary = JsonSerializer.Deserialize<CachedSummaryData>(cache.SummaryJson);
-                if (summary is not null)
-                {
-                    SummaryPage.RunDataRows = new ObservableCollection<SummaryValueRow>(
-                        summary.RunDataRows.Select(r => new SummaryValueRow(r[0], r[1])));
-                    SummaryPage.ForkShockRows = new ObservableCollection<SummaryComparisonRow>(
-                        summary.ForkShockRows.Select(r => new SummaryComparisonRow(r[0], r[1], r[2])));
-                    SummaryPage.WheelRows = new ObservableCollection<SummaryComparisonRow>(
-                        summary.WheelRows.Select(r => new SummaryComparisonRow(r[0], r[1], r[2])));
-                    SummaryPage.Airtime = summary.Airtime;
-                    SummaryPage.DataQuality = summary.DataQuality;
-                }
-            }
-            catch
-            {
-                // Ignore corrupt summary cache - will be rebuilt from DB
-            }
-        }
-
-        // 2. SpringPage SVGs: parse in parallel and await — first page with plots the user will see
-        var travelCompTask       = Task.Run(() => SvgToSource(cache.TravelComparisonHistogram));
-        var frontRearScatterTask = Task.Run(() => SvgToSource(cache.FrontRearTravelScatter));
-        var frontTravelHistTask  = Task.Run(() => SvgToSource(cache.FrontTravelHistogram));
-        var rearTravelHistTask   = Task.Run(() => SvgToSource(cache.RearTravelHistogram));
-
-        await Task.WhenAll(travelCompTask, frontRearScatterTask, frontTravelHistTask, rearTravelHistTask);
-
-        // SvgImage requires UI thread — Loaded command always runs on UI thread
-        SpringPage.TravelComparisonHistogram = SourceToImage(travelCompTask.Result);
-        SpringPage.FrontRearTravelScatter    = SourceToImage(frontRearScatterTask.Result);
-        SpringPage.FrontTravelHistogram      = SourceToImage(frontTravelHistTask.Result);
-        SpringPage.RearTravelHistogram       = SourceToImage(rearTravelHistTask.Result);
-
-        PerfLog.Log("load/springSvg", swParse.Elapsed.TotalMilliseconds);
-
-        // 3. Remaining pages: parse in background, only when cache is complete.
-        //    Incomplete caches have hasVdc/hasPvc=false → caller triggers CreateCache() instead.
-        if (hasVdc && hasPvc)
-        {
-            _backgroundSvgParse = Task.Run(async () =>
-            {
-                var swBg = Stopwatch.StartNew();
-                var frontVelHistTask   = Task.Run(() => SvgToSource(cache.FrontVelocityHistogram));
-                var frontLsVelHistTask = Task.Run(() => SvgToSource(cache.FrontLowSpeedVelocityHistogram));
-                var rearVelHistTask    = Task.Run(() => SvgToSource(cache.RearVelocityHistogram));
-                var rearDamperVelHistTask = Task.Run(() => SvgToSource(cache.RearDamperVelocityHistogram));
-                var rearLsVelHistTask  = Task.Run(() => SvgToSource(cache.RearLowSpeedVelocityHistogram));
-                var combBalTask      = Task.Run(() => SvgToSource(cache.CombinedBalance));
-                var compBalTask      = Task.Run(() => SvgToSource(cache.CompressionBalance));
-                var rebBalTask       = Task.Run(() => SvgToSource(cache.ReboundBalance));
-                var velDistCompTask  = Task.Run(() => SvgToSource(cache.VelocityDistributionComparison));
-                var posVelCompTask   = Task.Run(() => SvgToSource(cache.PositionVelocityComparison));
-                var frontPosVelTask  = Task.Run(() => SvgToSource(cache.FrontPositionVelocity));
-                var rearPosVelTask   = Task.Run(() => SvgToSource(cache.RearPositionVelocity));
-                var frontTravelCropTask = Task.Run(() => SvgToSource(cache.FrontTravelTimeCropped));
-                var rearTravelCropTask  = Task.Run(() => SvgToSource(cache.RearTravelTimeCropped));
-                var frontVelCropTask    = Task.Run(() => SvgToSource(cache.FrontVelocityTimeCropped));
-                var rearVelCropTask     = Task.Run(() => SvgToSource(cache.RearVelocityTimeCropped));
-                var frontAccelCropTask  = Task.Run(() => SvgToSource(cache.FrontAccelerationTimeCropped));
-                var rearAccelCropTask   = Task.Run(() => SvgToSource(cache.RearAccelerationTimeCropped));
-                var combinedFftTask     = Task.Run(() => SvgToSource(cache.CombinedTravelFft));
-                var combinedFftHighTask = Task.Run(() => SvgToSource(cache.CombinedTravelFftHigh));
-                var combinedVelFftTask  = Task.Run(() => SvgToSource(cache.CombinedVelocityFft));
-                var pitchBalanceTask    = Task.Run(() => SvgToSource(cache.PitchBalance));
-                var pitchCoherenceTask  = Task.Run(() => SvgToSource(cache.PitchCoherence));
-                var goutScatterTask     = Task.Run(() => SvgToSource(cache.GoutScatter));
-                var cumulativeTravelTask = Task.Run(() => SvgToSource(cache.CumulativeTravel));
-
-                await Task.WhenAll(frontVelHistTask, frontLsVelHistTask, rearVelHistTask, rearDamperVelHistTask, rearLsVelHistTask,
-                    combBalTask, compBalTask, rebBalTask,
-                    velDistCompTask, posVelCompTask, frontPosVelTask, rearPosVelTask,
-                    frontTravelCropTask, rearTravelCropTask, frontVelCropTask, rearVelCropTask,
-                    frontAccelCropTask, rearAccelCropTask,
-                    combinedFftTask, combinedFftHighTask,
-                    pitchBalanceTask, pitchCoherenceTask, goutScatterTask, cumulativeTravelTask);
-
-                PerfLog.Log("load/bgSvg", swBg.Elapsed.TotalMilliseconds);
-
-                var frontVelHistSrc   = frontVelHistTask.Result;
-                var frontLsVelHistSrc = frontLsVelHistTask.Result;
-                var rearVelHistSrc    = rearVelHistTask.Result;
-                var rearDamperVelHistSrc = rearDamperVelHistTask.Result;
-                var rearLsVelHistSrc  = rearLsVelHistTask.Result;
-                var combBalSrc      = combBalTask.Result;
-                var compBalSrc      = compBalTask.Result;
-                var rebBalSrc       = rebBalTask.Result;
-                var velDistCompSrc  = velDistCompTask.Result;
-                var posVelCompSrc   = posVelCompTask.Result;
-                var frontPosVelSrc  = frontPosVelTask.Result;
-                var rearPosVelSrc   = rearPosVelTask.Result;
-
-                // Resolve discipline up-front (async DB lookup) — the UI-thread
-                // lambda below is sync and can't await.
-                var sessionDiscipline = cache.BalanceMetricsJson is not null
-                    ? await GetSessionDisciplineAsync()
-                    : null;
-                var balanceOverrides = await GetBalanceOverridesAsync(sessionDiscipline);
-
-                await Dispatcher.UIThread.InvokeAsync(() =>
-                {
-                    DamperPage.FrontVelocityHistogram          = SourceToImage(frontVelHistSrc);
-                    DamperPage.FrontLowSpeedVelocityHistogram = SourceToImage(frontLsVelHistSrc);
-                    DamperPage.RearVelocityHistogram           = SourceToImage(rearVelHistSrc);
-                    DamperPage.RearDamperVelocityHistogram     = SourceToImage(rearDamperVelHistSrc);
-                    DamperPage.RearLowSpeedVelocityHistogram  = SourceToImage(rearLsVelHistSrc);
-                    DamperPage.FrontHscPercentage     = cache.FrontHscPercentage;
-                    DamperPage.RearHscPercentage      = cache.RearHscPercentage;
-                    DamperPage.FrontLscPercentage     = cache.FrontLscPercentage;
-                    DamperPage.RearLscPercentage      = cache.RearLscPercentage;
-                    DamperPage.FrontLsrPercentage     = cache.FrontLsrPercentage;
-                    DamperPage.RearLsrPercentage      = cache.RearLsrPercentage;
-                    DamperPage.FrontHsrPercentage     = cache.FrontHsrPercentage;
-                    DamperPage.RearHsrPercentage      = cache.RearHsrPercentage;
-
-                    if (compBalSrc is not null)
-                    {
-                        BalancePage.CombinedBalance    = SourceToImage(combBalSrc);
-                        BalancePage.CompressionBalance = SourceToImage(compBalSrc);
-                        BalancePage.ReboundBalance     = SourceToImage(rebBalSrc);
-                        BalancePage.CombinedTravelFft     = SourceToImage(combinedFftTask.Result);
-                        BalancePage.CombinedTravelFftHigh = SourceToImage(combinedFftHighTask.Result);
-                        BalancePage.CombinedVelocityFft   = SourceToImage(combinedVelFftTask.Result);
-                        BalancePage.PitchBalance          = SourceToImage(pitchBalanceTask.Result);
-                        BalancePage.PitchCoherence        = SourceToImage(pitchCoherenceTask.Result);
-                        BalancePage.GoutScatter           = SourceToImage(goutScatterTask.Result);
-                        BalancePage.CumulativeTravel      = SourceToImage(cumulativeTravelTask.Result);
-                        if (cache.BalanceMetricsJson is not null)
-                        {
-                            try
-                            {
-                                var m = JsonSerializer.Deserialize<BalanceMetrics>(cache.BalanceMetricsJson);
-                                if (m is not null) BalancePage.Metrics.Apply(m, sessionDiscipline, balanceOverrides);
-                            }
-                            catch { /* corrupt metrics cache; will be rebuilt */ }
-                        }
-                    }
-                    else
-                    {
-                        Pages.Remove(BalancePage);
-                    }
-
-                    DamperPage.VelocityDistributionComparison = SourceToImage(velDistCompSrc);
-                    SpringPage.FrontTravelTimeCropped         = SourceToImage(frontTravelCropTask.Result);
-                    SpringPage.RearTravelTimeCropped          = SourceToImage(rearTravelCropTask.Result);
-                    DamperPage.FrontVelocityTimeCropped       = SourceToImage(frontVelCropTask.Result);
-                    DamperPage.RearVelocityTimeCropped        = SourceToImage(rearVelCropTask.Result);
-                    MiscPage.PositionVelocityComparison       = SourceToImage(posVelCompSrc);
-                    MiscPage.FrontPositionVelocity            = SourceToImage(frontPosVelSrc);
-                    MiscPage.RearPositionVelocity             = SourceToImage(rearPosVelSrc);
-                    MiscPage.FrontAccelerationTimeCropped     = SourceToImage(frontAccelCropTask.Result);
-                    MiscPage.RearAccelerationTimeCropped      = SourceToImage(rearAccelCropTask.Result);
-                });
-            });
-        }
-
-        return (true, hasVdc, hasPvc);
-    }
+    private Task<(bool found, bool hasVdc, bool hasPvc)> LoadCache(SessionCacheMeta? meta) =>
+        SessionCacheLoader.LoadAsync(
+            this,
+            meta,
+            IsCacheMetaCurrentAsync,
+            GetSessionDisciplineAsync,
+            GetBalanceOverridesAsync,
+            task => _backgroundSvgParse = task);
 
     // Kicks off the deferred load of the full telemetry blob (crop slider fallback, zoom
     // mini-map, windowed re-renders). With a valid cache the open path doesn't need the blob —
