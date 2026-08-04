@@ -104,8 +104,22 @@ public partial class SessionViewModel : ItemViewModelBase
     public System.Windows.Input.ICommand ContextResetCommand => IsCropVisible ? CropPage.ResetCropCommand! : ResetCommand;
     public string SaveLabel => IsCropVisible ? (CropPage.IsModified ? "apply" : "cancel") : "save";
 
+    private System.Windows.Input.ICommand? _sessionOpenPreviousPageCommand;
+    public new System.Windows.Input.ICommand OpenPreviousPageCommand =>
+        _sessionOpenPreviousPageCommand ??= new RelayCommand(() =>
+        {
+            IsCropVisible = false;
+            OpenPreviousPage();
+        });
+
     partial void OnIsCropVisibleChanged(bool value)
     {
+        if (!value)
+        {
+            CropPage.CropStartSample = CropPage.OriginalStartSample;
+            CropPage.CropEndSample   = CropPage.OriginalEndSample;
+        }
+
         OnPropertyChanged(nameof(ContextSaveCommand));
         OnPropertyChanged(nameof(ContextResetCommand));
         OnPropertyChanged(nameof(SaveLabel));
@@ -228,8 +242,8 @@ public partial class SessionViewModel : ItemViewModelBase
                 CropPage.CropStartSample = CropPage.OriginalStartSample;
                 CropPage.CropEndSample   = CropPage.OriginalEndSample;
             }
-            CropPage.FullData   = fullData;
             CropPage.ViewBounds = LastKnownBounds;
+            CropPage.FullData   = fullData;
 
             // Zoom state waited for this data — no-op if already initialised (e.g. crop apply).
             _timeZoomRenderer.InitializeTimeZoomIfNeeded();
@@ -953,8 +967,8 @@ public partial class SessionViewModel : ItemViewModelBase
                     CropPage.OriginalEndSample   = session.CropEndSample   ?? totalSamples;
                     CropPage.CropStartSample = CropPage.OriginalStartSample;
                     CropPage.CropEndSample   = CropPage.OriginalEndSample;
-                    CropPage.FullData    = fullData;
                     CropPage.ViewBounds  = bounds;
+                    CropPage.FullData    = fullData;
 
                     // If crop boundaries are set, analyze the cropped slice; TravelTimeHistory always uses full data
                     TelemetryData analyzeData;
@@ -995,8 +1009,8 @@ public partial class SessionViewModel : ItemViewModelBase
                     CropPage.OriginalEndSample   = session.CropEndSample   ?? meta.SampleCount.Value;
                     CropPage.CropStartSample = CropPage.OriginalStartSample;
                     CropPage.CropEndSample   = CropPage.OriginalEndSample;
-                    CropPage.ViewBounds  = LastKnownBounds;
                 }
+                CropPage.ViewBounds = LastKnownBounds;
 
                 // Full telemetry (CropPage.FullData, zoom mini-map) loads deferred, after the
                 // SVG parse burst — the open path no longer waits for the blob deserialize.
