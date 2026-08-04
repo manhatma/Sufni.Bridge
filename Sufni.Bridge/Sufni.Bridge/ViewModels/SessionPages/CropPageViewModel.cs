@@ -23,7 +23,17 @@ public partial class CropPageViewModel() : PageViewModelBase("Crop")
     [ObservableProperty] private int cropEndSample;
     [ObservableProperty] private int sampleRate = 1;
 
-    internal TelemetryData? FullData { get; set; }
+    private TelemetryData? _fullData;
+    internal TelemetryData? FullData
+    {
+        get => _fullData;
+        set
+        {
+            _fullData = value;
+            if (TotalSamples > 0)
+                SchedulePreviewUpdate();
+        }
+    }
     internal Rect ViewBounds { get; set; }
 
     // Snapshot of values at the time the crop page was last initialized — used to detect user changes.
