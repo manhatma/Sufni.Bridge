@@ -212,8 +212,7 @@ internal static class SessionPdfExporter
 
         // Calculate total page height
         float pageHeight = margin * 2f
-            + rowH + sectionGap
-            + titleH + summary.RunDataRows.Count * rowH
+            + titleH + (summary.RunDataRows.Count + 2) * rowH
             + sectionGap
             + rowH + summary.WheelRows.Count * rowH
             + sectionGap
@@ -243,24 +242,11 @@ internal static class SessionPdfExporter
             canvas.DrawText(text, tx, ty, p);
         }
 
-        float setupLabelWidth = Math.Max(
-            boldPaint.MeasureText("SETUP"),
-            boldPaint.MeasureText("DISCIPLINE")) + 12f;
-        float setupValueWidth = (contentWidth - setupLabelWidth * 2f) / 2f;
         float curY = margin;
 
         var selectedSetupName = summary.SelectedSetup?.Name;
         var setupName = string.IsNullOrWhiteSpace(selectedSetupName) ? "-" : selectedSetupName;
         var disciplineName = string.IsNullOrWhiteSpace(discipline) ? "-" : discipline;
-
-        DrawCell(margin, curY, setupLabelWidth, rowH, headerBg, headerFg, "SETUP", false, true);
-        DrawCell(margin + setupLabelWidth, curY, setupValueWidth, rowH,
-            cellBg, cellFg, setupName, false, false);
-        DrawCell(margin + setupLabelWidth + setupValueWidth, curY, setupLabelWidth, rowH,
-            headerBg, headerFg, "DISCIPLINE", false, true);
-        DrawCell(margin + setupLabelWidth * 2f + setupValueWidth, curY, setupValueWidth, rowH,
-            cellBg, cellFg, disciplineName, false, false);
-        curY += rowH + sectionGap;
 
         // RUN DATA
         DrawCell(margin, curY, contentWidth, titleH, headerBg, headerFg, "RUN DATA", false, true);
@@ -271,6 +257,12 @@ internal static class SessionPdfExporter
             DrawCell(margin + col0,   curY, contentWidth - col0, rowH, cellBg, cellFg, row.Value, true,  false);
             curY += rowH;
         }
+        DrawCell(margin,        curY, col0,               rowH, cellBg, cellFg, "Setup", false, false);
+        DrawCell(margin + col0, curY, contentWidth - col0, rowH, cellBg, cellFg, setupName, true, false);
+        curY += rowH;
+        DrawCell(margin,        curY, col0,               rowH, cellBg, cellFg, "Discipline", false, false);
+        DrawCell(margin + col0, curY, contentWidth - col0, rowH, cellBg, cellFg, disciplineName, true, false);
+        curY += rowH;
 
         curY += sectionGap;
 
