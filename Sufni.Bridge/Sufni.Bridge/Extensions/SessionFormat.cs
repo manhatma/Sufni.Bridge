@@ -36,13 +36,9 @@ internal static class SessionFormat
 
     internal static string BottomoutsPlain(int value) => $"{value}";
 
-    // These differ only at exact decimal midpoints (for example, 0.15 is "0.2" vs "0.1").
-    // Do not merge them without a deliberate decision, because that would change displayed values.
-    internal static string PercentAwayFromZero(double value)
-    {
-        return string.Create(CultureInfo.InvariantCulture, $"{value:0.0}");
-    }
-
-    internal static string PercentFixedPoint(double value) =>
-        string.Create(CultureInfo.InvariantCulture, $"{value:F1}");
+    // The summary page and compare table used to round differently: "0.0" rounds the shortest
+    // round-trippable decimal away from zero, while "F1" rounds the exact binary value (for example,
+    // 0.15 became "0.2" vs "0.1"). Use "0.0" for both so the views agree.
+    internal static string Percent(double value) =>
+        string.Create(CultureInfo.InvariantCulture, $"{value:0.0}");
 }

@@ -235,10 +235,10 @@ public partial class CompareSessionsViewModel : ViewModelBase
             new("Reb [95th, mm/s]", statsList.Select(s => s is null ? "-" : SessionFormat.VelocityPlain(s.Reb95th)).ToList()),
             new("Comp [MAX, mm/s]", statsList.Select(s => s is null ? "-" : SessionFormat.VelocityPlain(s.Velocity.MaxCompression)).ToList()),
             new("Reb [MAX, mm/s]", statsList.Select(s => s is null ? "-" : SessionFormat.VelocityPlain(s.Velocity.MaxRebound)).ToList()),
-            new("HSR [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.PercentFixedPoint(s.Bands.HighSpeedRebound)).ToList()),
-            new("LSR [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.PercentFixedPoint(s.Bands.LowSpeedRebound)).ToList()),
-            new("LSC [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.PercentFixedPoint(s.Bands.LowSpeedCompression)).ToList()),
-            new("HSC [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.PercentFixedPoint(s.Bands.HighSpeedCompression)).ToList()),
+            new("HSR [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.Percent(s.Bands.HighSpeedRebound)).ToList()),
+            new("LSR [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.Percent(s.Bands.LowSpeedRebound)).ToList()),
+            new("LSC [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.Percent(s.Bands.LowSpeedCompression)).ToList()),
+            new("HSC [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.Percent(s.Bands.HighSpeedCompression)).ToList()),
         };
         return rows;
     }
