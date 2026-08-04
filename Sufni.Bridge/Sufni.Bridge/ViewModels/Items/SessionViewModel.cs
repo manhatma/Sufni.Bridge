@@ -20,8 +20,10 @@ using Sufni.Bridge.Models.Telemetry;
 using Sufni.Bridge.Plots;
 using HapticFeedback;
 using Sufni.Bridge.Services;
+using Sufni.Bridge.Extensions;
 using Sufni.Bridge.ViewModels;
 using Sufni.Bridge.ViewModels.SessionPages;
+using static Sufni.Bridge.Extensions.SvgHelpers;
 
 namespace Sufni.Bridge.ViewModels.Items;
 
@@ -322,14 +324,6 @@ public partial class SessionViewModel : ItemViewModelBase
                    img => { MiscPage.CombinedAccelerationTimeZoomed = img; MiscPage.FrontAccelerationTimeCropped = null; MiscPage.RearAccelerationTimeCropped = null; });
         }
     }
-
-    // Call on background thread — SvgSource : Object, thread-safe
-    private static SvgSource? SvgToSource(string? svgXml) =>
-        svgXml is null ? null : SvgSource.LoadFromSvg(svgXml);
-
-    // Call on UI thread — SvgImage : AvaloniaObject, requires UI thread
-    private static SvgImage? SourceToImage(SvgSource? source) =>
-        source is null ? null : new SvgImage { Source = source };
 
     // Staleness decision for a cache row, on scalars only: row exists, current PlotVersion,
     // crop bounds match the session, and the pitch-band signature still matches the band
@@ -1223,28 +1217,10 @@ public partial class SessionViewModel : ItemViewModelBase
         string Airtime = "—",
         string? DataQuality = null);
 
-    private static string FormatTravel(double value, double maxTravel)
-    {
-        if (maxTravel <= 0)
-        {
-            return "-";
-        }
-
-        return string.Create(System.Globalization.CultureInfo.InvariantCulture,
-            $"{value / maxTravel * 100.0:0.0} % - {value:0.0} mm");
-    }
-
-    private static string FormatVelocity(double value)
-    {
-        return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{value:0.0} mm/s");
-    }
-
     private static string FormatPercent(double value)
     {
         return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{value:0.0}");
     }
-
-    private static string FormatBottomouts(int value) => $"{value} times";
 
     private static string FormatCumulativeTravel(TelemetryData telemetryData, SuspensionType type)
     {
@@ -1648,69 +1624,69 @@ public partial class SessionViewModel : ItemViewModelBase
         var forkShockRows = new ObservableCollection<SummaryComparisonRow>(
         [
             new SummaryComparisonRow("Pos [AVG]",
-                forkStats is null ? "-" : FormatTravel(forkStats.AvgTravel, telemetryData.Linkage.MaxFrontStroke ?? 0),
-                shockStats is null ? "-" : FormatTravel(shockStats.AvgTravel, telemetryData.Linkage.MaxRearStroke ?? 0)),
+                forkStats is null ? "-" : SessionFormat.TravelWithUnits(forkStats.AvgTravel, telemetryData.Linkage.MaxFrontStroke ?? 0),
+                shockStats is null ? "-" : SessionFormat.TravelWithUnits(shockStats.AvgTravel, telemetryData.Linkage.MaxRearStroke ?? 0)),
             new SummaryComparisonRow("Pos [95th]",
-                forkStats is null ? "-" : FormatTravel(forkStats.P95Travel, telemetryData.Linkage.MaxFrontStroke ?? 0),
-                shockStats is null ? "-" : FormatTravel(shockStats.P95Travel, telemetryData.Linkage.MaxRearStroke ?? 0)),
+                forkStats is null ? "-" : SessionFormat.TravelWithUnits(forkStats.P95Travel, telemetryData.Linkage.MaxFrontStroke ?? 0),
+                shockStats is null ? "-" : SessionFormat.TravelWithUnits(shockStats.P95Travel, telemetryData.Linkage.MaxRearStroke ?? 0)),
             new SummaryComparisonRow("Pos [MAX]",
-                forkStats is null ? "-" : FormatTravel(forkStats.MaxTravel, telemetryData.Linkage.MaxFrontStroke ?? 0),
-                shockStats is null ? "-" : FormatTravel(shockStats.MaxTravel, telemetryData.Linkage.MaxRearStroke ?? 0)),
+                forkStats is null ? "-" : SessionFormat.TravelWithUnits(forkStats.MaxTravel, telemetryData.Linkage.MaxFrontStroke ?? 0),
+                shockStats is null ? "-" : SessionFormat.TravelWithUnits(shockStats.MaxTravel, telemetryData.Linkage.MaxRearStroke ?? 0)),
             new SummaryComparisonRow("Bottom out",
-                forkStats is null ? "-" : FormatBottomouts(forkStats.Bottomouts),
-                shockStats is null ? "-" : FormatBottomouts(shockStats.Bottomouts)),
+                forkStats is null ? "-" : SessionFormat.BottomoutsWithUnits(forkStats.Bottomouts),
+                shockStats is null ? "-" : SessionFormat.BottomoutsWithUnits(shockStats.Bottomouts)),
             new SummaryComparisonRow("Comp [AVG]",
-                forkStats is null ? "-" : FormatVelocity(forkStats.AvgCompression),
-                shockStats is null ? "-" : FormatVelocity(shockStats.AvgCompression)),
+                forkStats is null ? "-" : SessionFormat.VelocityWithUnits(forkStats.AvgCompression),
+                shockStats is null ? "-" : SessionFormat.VelocityWithUnits(shockStats.AvgCompression)),
             new SummaryComparisonRow("Reb [AVG]",
-                forkStats is null ? "-" : FormatVelocity(forkStats.AvgRebound),
-                shockStats is null ? "-" : FormatVelocity(shockStats.AvgRebound)),
+                forkStats is null ? "-" : SessionFormat.VelocityWithUnits(forkStats.AvgRebound),
+                shockStats is null ? "-" : SessionFormat.VelocityWithUnits(shockStats.AvgRebound)),
             new SummaryComparisonRow("Comp [95th]",
-                forkStats is null ? "-" : FormatVelocity(forkStats.Comp95th),
-                shockStats is null ? "-" : FormatVelocity(shockStats.Comp95th)),
+                forkStats is null ? "-" : SessionFormat.VelocityWithUnits(forkStats.Comp95th),
+                shockStats is null ? "-" : SessionFormat.VelocityWithUnits(shockStats.Comp95th)),
             new SummaryComparisonRow("Reb [95th]",
-                forkStats is null ? "-" : FormatVelocity(forkStats.Reb95th),
-                shockStats is null ? "-" : FormatVelocity(shockStats.Reb95th)),
+                forkStats is null ? "-" : SessionFormat.VelocityWithUnits(forkStats.Reb95th),
+                shockStats is null ? "-" : SessionFormat.VelocityWithUnits(shockStats.Reb95th)),
             new SummaryComparisonRow("Comp [MAX]",
-                forkStats is null ? "-" : FormatVelocity(forkStats.MaxCompression),
-                shockStats is null ? "-" : FormatVelocity(shockStats.MaxCompression)),
+                forkStats is null ? "-" : SessionFormat.VelocityWithUnits(forkStats.MaxCompression),
+                shockStats is null ? "-" : SessionFormat.VelocityWithUnits(shockStats.MaxCompression)),
             new SummaryComparisonRow("Reb [MAX]",
-                forkStats is null ? "-" : FormatVelocity(forkStats.MaxRebound),
-                shockStats is null ? "-" : FormatVelocity(shockStats.MaxRebound))
+                forkStats is null ? "-" : SessionFormat.VelocityWithUnits(forkStats.MaxRebound),
+                shockStats is null ? "-" : SessionFormat.VelocityWithUnits(shockStats.MaxRebound))
         ]);
 
         var wheelRows = new ObservableCollection<SummaryComparisonRow>(
         [
             new SummaryComparisonRow("Pos [AVG]",
-                frontWheelStats is null ? "-" : FormatTravel(frontWheelStats.AvgTravel, telemetryData.Linkage.MaxFrontTravel),
-                rearWheelStats is null ? "-" : FormatTravel(rearWheelStats.AvgTravel, telemetryData.Linkage.MaxRearTravel)),
+                frontWheelStats is null ? "-" : SessionFormat.TravelWithUnits(frontWheelStats.AvgTravel, telemetryData.Linkage.MaxFrontTravel),
+                rearWheelStats is null ? "-" : SessionFormat.TravelWithUnits(rearWheelStats.AvgTravel, telemetryData.Linkage.MaxRearTravel)),
             new SummaryComparisonRow("Pos [95th]",
-                frontWheelStats is null ? "-" : FormatTravel(frontWheelStats.P95Travel, telemetryData.Linkage.MaxFrontTravel),
-                rearWheelStats is null ? "-" : FormatTravel(rearWheelStats.P95Travel, telemetryData.Linkage.MaxRearTravel)),
+                frontWheelStats is null ? "-" : SessionFormat.TravelWithUnits(frontWheelStats.P95Travel, telemetryData.Linkage.MaxFrontTravel),
+                rearWheelStats is null ? "-" : SessionFormat.TravelWithUnits(rearWheelStats.P95Travel, telemetryData.Linkage.MaxRearTravel)),
             new SummaryComparisonRow("Pos [MAX]",
-                frontWheelStats is null ? "-" : FormatTravel(frontWheelStats.MaxTravel, telemetryData.Linkage.MaxFrontTravel),
-                rearWheelStats is null ? "-" : FormatTravel(rearWheelStats.MaxTravel, telemetryData.Linkage.MaxRearTravel)),
+                frontWheelStats is null ? "-" : SessionFormat.TravelWithUnits(frontWheelStats.MaxTravel, telemetryData.Linkage.MaxFrontTravel),
+                rearWheelStats is null ? "-" : SessionFormat.TravelWithUnits(rearWheelStats.MaxTravel, telemetryData.Linkage.MaxRearTravel)),
             new SummaryComparisonRow("Bottom out",
-                frontWheelStats is null ? "-" : FormatBottomouts(frontWheelStats.Bottomouts),
-                rearWheelStats is null ? "-" : FormatBottomouts(rearWheelStats.Bottomouts)),
+                frontWheelStats is null ? "-" : SessionFormat.BottomoutsWithUnits(frontWheelStats.Bottomouts),
+                rearWheelStats is null ? "-" : SessionFormat.BottomoutsWithUnits(rearWheelStats.Bottomouts)),
             new SummaryComparisonRow("Comp [AVG]",
-                frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.AvgCompression),
-                rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.AvgCompression)),
+                frontWheelStats is null ? "-" : SessionFormat.VelocityWithUnits(frontWheelStats.AvgCompression),
+                rearWheelStats is null ? "-" : SessionFormat.VelocityWithUnits(rearWheelStats.AvgCompression)),
             new SummaryComparisonRow("Reb [AVG]",
-                frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.AvgRebound),
-                rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.AvgRebound)),
+                frontWheelStats is null ? "-" : SessionFormat.VelocityWithUnits(frontWheelStats.AvgRebound),
+                rearWheelStats is null ? "-" : SessionFormat.VelocityWithUnits(rearWheelStats.AvgRebound)),
             new SummaryComparisonRow("Comp [95th]",
-                frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.Comp95th),
-                rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.Comp95th)),
+                frontWheelStats is null ? "-" : SessionFormat.VelocityWithUnits(frontWheelStats.Comp95th),
+                rearWheelStats is null ? "-" : SessionFormat.VelocityWithUnits(rearWheelStats.Comp95th)),
             new SummaryComparisonRow("Reb [95th]",
-                frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.Reb95th),
-                rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.Reb95th)),
+                frontWheelStats is null ? "-" : SessionFormat.VelocityWithUnits(frontWheelStats.Reb95th),
+                rearWheelStats is null ? "-" : SessionFormat.VelocityWithUnits(rearWheelStats.Reb95th)),
             new SummaryComparisonRow("Comp [MAX]",
-                frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.MaxCompression),
-                rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.MaxCompression)),
+                frontWheelStats is null ? "-" : SessionFormat.VelocityWithUnits(frontWheelStats.MaxCompression),
+                rearWheelStats is null ? "-" : SessionFormat.VelocityWithUnits(rearWheelStats.MaxCompression)),
             new SummaryComparisonRow("Reb [MAX]",
-                frontWheelStats is null ? "-" : FormatVelocity(frontWheelStats.MaxRebound),
-                rearWheelStats is null ? "-" : FormatVelocity(rearWheelStats.MaxRebound)),
+                frontWheelStats is null ? "-" : SessionFormat.VelocityWithUnits(frontWheelStats.MaxRebound),
+                rearWheelStats is null ? "-" : SessionFormat.VelocityWithUnits(rearWheelStats.MaxRebound)),
             new SummaryComparisonRow("HSR [%]",
                 frontBands is null ? "-" : FormatPercent(frontBands.HighSpeedRebound),
                 rearBands is null ? "-" : FormatPercent(rearBands.HighSpeedRebound)),

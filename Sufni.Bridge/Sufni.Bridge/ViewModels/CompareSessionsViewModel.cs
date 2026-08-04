@@ -18,7 +18,9 @@ using Sufni.Bridge.Models;
 using Sufni.Bridge.Models.Telemetry;
 using Sufni.Bridge.Plots;
 using Sufni.Bridge.Services;
+using Sufni.Bridge.Extensions;
 using Sufni.Bridge.ViewModels.Items;
+using static Sufni.Bridge.Extensions.SvgHelpers;
 
 namespace Sufni.Bridge.ViewModels;
 
@@ -170,24 +172,8 @@ public partial class CompareSessionsViewModel : ViewModelBase
     private static string FormatColor(Color color) => string.Create(
         CultureInfo.InvariantCulture, $"#{color.Red:X2}{color.Green:X2}{color.Blue:X2}");
 
-    private static SvgSource? SvgToSource(string? svgXml) =>
-        svgXml is null ? null : SvgSource.LoadFromSvg(svgXml);
-
-    private static SvgImage? SourceToImage(SvgSource? source) =>
-        source is null ? null : new SvgImage { Source = source };
-
     private static string FormatPercent(double value) =>
         string.Create(CultureInfo.InvariantCulture, $"{value:F1}");
-
-    private static string FormatTravel(double value, double maxTravel) =>
-        maxTravel <= 0
-            ? "-"
-            : string.Create(CultureInfo.InvariantCulture, $"{value / maxTravel * 100.0:0.0}");
-
-    private static string FormatVelocity(double value) =>
-        string.Create(CultureInfo.InvariantCulture, $"{value:0.0}");
-
-    private static string FormatBottomouts(int value) => $"{value}";
 
     private sealed record SessionStats(
         DetailedTravelStatistics Travel,
@@ -242,16 +228,16 @@ public partial class CompareSessionsViewModel : ViewModelBase
                 model => Clicks(type == SuspensionType.Front ? model.FrontLowSpeedRebound : model.RearLowSpeedRebound))).ToList()),
             new("HSR [clicks]", sessions.Select(s => SessionSetupValues.Get(s,
                 model => Clicks(type == SuspensionType.Front ? model.FrontHighSpeedRebound : model.RearHighSpeedRebound))).ToList()),
-            new("Pos [AVG, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.Average, s.MaxTravel)).ToList()),
-            new("Pos [95th, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.P95, s.MaxTravel)).ToList()),
-            new("Pos [MAX, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.Max, s.MaxTravel)).ToList()),
-            new("Bottom out [times]", statsList.Select(s => s is null ? "-" : FormatBottomouts(s.Travel.Bottomouts)).ToList()),
-            new("Comp [AVG, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Velocity.AverageCompression)).ToList()),
-            new("Reb [AVG, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Velocity.AverageRebound)).ToList()),
-            new("Comp [95th, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Comp95th)).ToList()),
-            new("Reb [95th, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Reb95th)).ToList()),
-            new("Comp [MAX, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Velocity.MaxCompression)).ToList()),
-            new("Reb [MAX, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Velocity.MaxRebound)).ToList()),
+            new("Pos [AVG, %]", statsList.Select(s => s is null ? "-" : SessionFormat.TravelPercentOnly(s.Travel.Average, s.MaxTravel)).ToList()),
+            new("Pos [95th, %]", statsList.Select(s => s is null ? "-" : SessionFormat.TravelPercentOnly(s.Travel.P95, s.MaxTravel)).ToList()),
+            new("Pos [MAX, %]", statsList.Select(s => s is null ? "-" : SessionFormat.TravelPercentOnly(s.Travel.Max, s.MaxTravel)).ToList()),
+            new("Bottom out [times]", statsList.Select(s => s is null ? "-" : SessionFormat.BottomoutsPlain(s.Travel.Bottomouts)).ToList()),
+            new("Comp [AVG, mm/s]", statsList.Select(s => s is null ? "-" : SessionFormat.VelocityPlain(s.Velocity.AverageCompression)).ToList()),
+            new("Reb [AVG, mm/s]", statsList.Select(s => s is null ? "-" : SessionFormat.VelocityPlain(s.Velocity.AverageRebound)).ToList()),
+            new("Comp [95th, mm/s]", statsList.Select(s => s is null ? "-" : SessionFormat.VelocityPlain(s.Comp95th)).ToList()),
+            new("Reb [95th, mm/s]", statsList.Select(s => s is null ? "-" : SessionFormat.VelocityPlain(s.Reb95th)).ToList()),
+            new("Comp [MAX, mm/s]", statsList.Select(s => s is null ? "-" : SessionFormat.VelocityPlain(s.Velocity.MaxCompression)).ToList()),
+            new("Reb [MAX, mm/s]", statsList.Select(s => s is null ? "-" : SessionFormat.VelocityPlain(s.Velocity.MaxRebound)).ToList()),
             new("HSR [%]", statsList.Select(s => s?.Bands is null ? "-" : FormatPercent(s.Bands.HighSpeedRebound)).ToList()),
             new("LSR [%]", statsList.Select(s => s?.Bands is null ? "-" : FormatPercent(s.Bands.LowSpeedRebound)).ToList()),
             new("LSC [%]", statsList.Select(s => s?.Bands is null ? "-" : FormatPercent(s.Bands.LowSpeedCompression)).ToList()),

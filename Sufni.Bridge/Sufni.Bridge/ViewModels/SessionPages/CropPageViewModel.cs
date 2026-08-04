@@ -10,6 +10,7 @@ using CommunityToolkit.Mvvm.Input;
 using ScottPlot;
 using Sufni.Bridge.Models.Telemetry;
 using Sufni.Bridge.Plots;
+using static Sufni.Bridge.Extensions.SvgHelpers;
 
 namespace Sufni.Bridge.ViewModels.SessionPages;
 
@@ -129,11 +130,11 @@ public partial class CropPageViewModel() : PageViewModelBase("Crop")
 
         if (token.IsCancellationRequested) return;
 
-        var source = SvgSource.LoadFromSvg(svgXml);
+        var source = SvgToSource(svgXml);
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             if (!token.IsCancellationRequested)
-                CropPreview = new SvgImage { Source = source };
+                CropPreview = SourceToImage(source);
         });
     }
 
