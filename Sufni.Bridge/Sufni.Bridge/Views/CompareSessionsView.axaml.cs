@@ -11,7 +11,7 @@ namespace Sufni.Bridge.Views;
 public partial class CompareSessionsView : UserControl
 {
     // Shared by all tables to keep columns aligned while preserving room for three value columns.
-    private const int LabelColumnWidth = 130;
+    private const int LabelColumnWidth = 165;
 
     public CompareSessionsView()
     {
@@ -64,8 +64,7 @@ public partial class CompareSessionsView : UserControl
                 Classes = { "compare-cell" },
                 Child = new TextBlock
                 {
-                    Text = row.Label,
-                    TextWrapping = TextWrapping.Wrap
+                    Text = row.Label
                 }
             };
             Grid.SetColumn(labelBorder, 0);

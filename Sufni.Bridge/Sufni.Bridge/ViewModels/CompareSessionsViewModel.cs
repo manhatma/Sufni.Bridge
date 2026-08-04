@@ -267,16 +267,10 @@ public partial class CompareSessionsViewModel : ViewModelBase
                 : [];
             var frontTotalM = front.Length > 0 ? front[^1] / 1000.0 : (double?)null;
             var rearTotalM = rear.Length > 0 ? rear[^1] / 1000.0 : (double?)null;
-            var durationMinutes = data.SampleRate > 0
-                ? Math.Max(front.Length, rear.Length) / (double)data.SampleRate / 60.0
-                : 0.0;
-            var rate = durationMinutes > 0 && (frontTotalM.HasValue || rearTotalM.HasValue)
-                ? (frontTotalM.GetValueOrDefault() + rearTotalM.GetValueOrDefault()) / durationMinutes
-                : (double?)null;
-            return (frontTotalM, rearTotalM, rate);
+            return (frontTotalM, rearTotalM);
         }).ToList();
 
-        List<string> TravelValues(Func<(double? frontTotalM, double? rearTotalM, double? rate), double?> selector,
+        List<string> TravelValues(Func<(double? frontTotalM, double? rearTotalM), double?> selector,
             string format) => travelTotals.Select(t => FormatBalanceValue(selector(t), format)).ToList();
 
         return
@@ -291,22 +285,20 @@ public partial class CompareSessionsViewModel : ViewModelBase
             new("Pitch μ [°]", Values(m => FormatBalanceValue(m.PitchMeanDeg, "0.00"))),
             new("Pitch stability σ [°]", Values(m => FormatBalanceValue(m.PitchStabilityDeg, "0.00"))),
             new("G-out asymmetry [%]", Values(m => m.GoutAsymmetryPct.HasValue
-                ? $"{FormatBalanceValue(m.GoutAsymmetryPct, "0.0")} (N={FormatBalanceCount(m.GoutEventCount)})"
+                ? $"{FormatBalanceValue(m.GoutAsymmetryPct, "0.0")} ({FormatBalanceCount(m.GoutEventCount)})"
                 : "-")),
             new("Comp vel ratio", Values(m => FormatBalanceValue(m.CompressionVelocityRatio, "0.000"))),
             new("Reb vel ratio", Values(m => FormatBalanceValue(m.ReboundVelocityRatio, "0.000"))),
             new("MSD Compression [%]", Values(m => FormatBalanceValue(m.CompressionMsd, "0.0"))),
             new("MSD Rebound [%]", Values(m => FormatBalanceValue(m.ReboundMsd, "0.0"))),
-            new("Velocity shape β F / R", Values(m => $"{FormatBalanceValue(m.FrontVelocityShapeBeta, "0.00")} / {FormatBalanceValue(m.RearVelocityShapeBeta, "0.00")}")),
+            new("Velocity shape β F / R", Values(m => $"{FormatBalanceValue(m.FrontVelocityShapeBeta, "0.00")}/{FormatBalanceValue(m.RearVelocityShapeBeta, "0.00")}")),
             new("Front freq [Hz]", Values(m => FormatBalanceValue(m.FrontPeakFrequencyHz, "0.00"))),
             new("Rear freq [Hz]", Values(m => FormatBalanceValue(m.RearPeakFrequencyHz, "0.00"))),
             new("Freq diff [Hz]", Values(m => FormatBalanceValue(m.FrequencyDifferenceHz, "0.00"))),
             new("Peak amp ratio", Values(m => FormatBalanceValue(m.PeakAmplitudeRatio, "0.000"))),
             new("Head angle static [°]", Values(m => FormatBalanceValue(m.HeadAngleStaticDeg, "0.0"))),
-            new("Head angle shift [°]", Values(m => FormatBalanceValue(m.HeadAngleShiftDeg, "0.0"))),
             new("Cumulative travel F [m]", TravelValues(t => t.frontTotalM, "0")),
             new("Cumulative travel R [m]", TravelValues(t => t.rearTotalM, "0")),
-            new("Travel rate [m/min]", TravelValues(t => t.rate, "0.0")),
         ];
     }
 
