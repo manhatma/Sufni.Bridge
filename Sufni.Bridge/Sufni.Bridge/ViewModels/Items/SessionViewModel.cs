@@ -348,7 +348,7 @@ public partial class SessionViewModel : ItemViewModelBase
         SummaryPage.ChangeSetupCommand = new AsyncRelayCommand(HandleSetupReassign);
         ShareBalanceMetricsWithSummary();
         CropPage.ApplyCropCommand = new AsyncRelayCommand(HandleApplyCrop);
-        CropPage.ResetCropCommand = new AsyncRelayCommand(HandleResetCrop);
+        CropPage.ResetCropCommand = new RelayCommand(HandleResetCrop);
         CropPage.SaveCropAsCopyCommand = new AsyncRelayCommand(HandleSaveCropAsCopy);
         BalancePage.Metrics.TargetsSaved = HandleBalanceTargetsSaved;
 
@@ -367,7 +367,7 @@ public partial class SessionViewModel : ItemViewModelBase
         SummaryPage.ChangeSetupCommand = new AsyncRelayCommand(HandleSetupReassign);
         ShareBalanceMetricsWithSummary();
         CropPage.ApplyCropCommand = new AsyncRelayCommand(HandleApplyCrop);
-        CropPage.ResetCropCommand = new AsyncRelayCommand(HandleResetCrop);
+        CropPage.ResetCropCommand = new RelayCommand(HandleResetCrop);
         CropPage.SaveCropAsCopyCommand = new AsyncRelayCommand(HandleSaveCropAsCopy);
         BalancePage.Metrics.TargetsSaved = HandleBalanceTargetsSaved;
 
@@ -602,9 +602,10 @@ public partial class SessionViewModel : ItemViewModelBase
 
         var start = CropPage.CropStartSample;
         var end   = CropPage.CropEndSample;
+        var isFullRange = start == 0 && end == CropPage.TotalSamples;
 
         // Minimum crop length guard
-        if (end - start < 100)
+        if (!isFullRange && end - start < 100)
         {
             ErrorMessages.Add("Crop region too short (minimum 100 samples).");
             return;
@@ -623,8 +624,8 @@ public partial class SessionViewModel : ItemViewModelBase
         {
             IsAnalyzingData = true;
 
-            session.CropStartSample = start;
-            session.CropEndSample   = end;
+            session.CropStartSample = isFullRange ? null : start;
+            session.CropEndSample   = isFullRange ? null : end;
             await databaseService.PutSessionAsync(session);
 
             var fullData = await databaseService.GetSessionPsstAsync(Id);
@@ -633,8 +634,10 @@ public partial class SessionViewModel : ItemViewModelBase
             CropPage.FullData   = fullData;
             CropPage.ViewBounds = LastKnownBounds;
 
-            var cropped = fullData.CreateCroppedCopy(start, end);
-            await CreateCache(LastKnownBounds, cropped, fullData);
+            if (isFullRange)
+                await CreateCache(LastKnownBounds, fullData);
+            else
+                await CreateCache(LastKnownBounds, fullData.CreateCroppedCopy(start, end), fullData);
             CropPage.OriginalStartSample = start;
             CropPage.OriginalEndSample   = end;
 
@@ -781,45 +784,11 @@ public partial class SessionViewModel : ItemViewModelBase
         }
     }
 
-    private async Task HandleResetCrop()
+    private void HandleResetCrop()
     {
-        var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
-        Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
-
-        try
-        {
-            IsAnalyzingData = true;
-
-            session.CropStartSample = null;
-            session.CropEndSample   = null;
-            await databaseService.PutSessionAsync(session);
-
-            // Reset UI sliders to full range
-            CropPage.CropStartSample = 0;
-            CropPage.CropEndSample   = CropPage.TotalSamples;
-
-            var fullData = await databaseService.GetSessionPsstAsync(Id);
-            if (fullData is null) throw new Exception("Session data not found.");
-
-            CropPage.FullData   = fullData;
-            CropPage.ViewBounds = LastKnownBounds;
-
-            await CreateCache(LastKnownBounds, fullData);
-            CropPage.OriginalStartSample = 0;
-            CropPage.OriginalEndSample   = CropPage.TotalSamples;
-
-            // Crop cleared → analysis data is the full session again: rebuild zoom state + mini-map.
-            _analysisData = null;
-            _timeZoomRenderer.InitializeTimeZoom();
-        }
-        catch (Exception e)
-        {
-            ErrorMessages.Add($"Reset crop failed: {e.Message}");
-        }
-        finally
-        {
-            IsAnalyzingData = false;
-        }
+        // Reset only stages the full range in the UI; Apply performs the re-analysis.
+        CropPage.CropStartSample = 0;
+        CropPage.CropEndSample   = CropPage.TotalSamples;
     }
 
     private async Task HandleSetupReassign()
