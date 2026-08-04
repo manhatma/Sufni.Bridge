@@ -62,6 +62,7 @@ public partial class SessionViewModel : ItemViewModelBase
     private CancellationTokenSource? _zoomRenderCts;
     private SvgImage? _fullFrontTravel, _fullRearTravel, _fullFrontVelocity, _fullRearVelocity, _fullFrontAccel, _fullRearAccel;
     private bool _timeZoomSnapshotTaken;
+    private readonly SessionTimeZoomRenderer _timeZoomRenderer;
 
     // Read-path state. _pagesPopulated: pages hold a complete render of the current cache row
     // (valid load or rebuild), so a later Loaded() only re-validates the scalar cache meta and
@@ -123,205 +124,18 @@ public partial class SessionViewModel : ItemViewModelBase
 
     #region Private methods
 
-    // ---- Session-wide time-zoom -------------------------------------------------------------
-    //
-    // The Spring/Damper/Misc pages each host a TimeZoomControl bound to the shared _timeZoom. When
-    // the user picks a 2/5/10 s window and pans it, the six time-series plots (travel, velocity,
-    // acceleration × front/rear) re-render zoomed to that window. Renders are debounced, cancellable
-    // and never written to the DB cache — zoom is a transient view state, so no PlotVersion bump.
-
-    // Analysis data actually plotted in the time-series charts: the cropped copy when the session is
-    // cropped, else the full data. Derived once from CropPage.FullData and memoized (CreateCroppedCopy
-    // re-smooths, so it is not free); _analysisData is nulled whenever the crop changes.
-    private TelemetryData? EnsureAnalysisData()
-    {
-        if (_analysisData is not null) return _analysisData;
-        var full = CropPage.FullData;
-        if (full is null) return null;
-        _analysisData = session.CropStartSample.HasValue && session.CropEndSample.HasValue
-            ? full.CreateCroppedCopy(session.CropStartSample.Value, session.CropEndSample.Value)
-            : full;
-        return _analysisData;
-    }
-
-    // Runs once per data-load: EnsureAnalysisData sets _analysisData on first success, so later Loaded
-    // re-entries skip. Crop apply/reset null _analysisData to force a rebuild.
-    private void InitializeTimeZoomIfNeeded()
-    {
-        if (_analysisData is not null) return;
-        InitializeTimeZoom();
-    }
-
-    // (Re)initialises the shared zoom state for the current analysis data: session duration, context
-    // mini-map, and window reset to full/off. Call on the UI thread.
-    private void InitializeTimeZoom()
-    {
-        _timeZoomSnapshotTaken = false;
-        _fullFrontTravel = _fullRearTravel = _fullFrontVelocity = _fullRearVelocity = _fullFrontAccel = _fullRearAccel = null;
-
-        var data = EnsureAnalysisData();
-        var len = data is null ? 0
-            : data.Front.Present ? data.Front.Travel.Length
-            : data.Rear.Present ? data.Rear.Travel.Length : 0;
-        var rate = data?.SampleRate ?? 0;
-
-        if (data is null || len == 0 || rate <= 0)
-        {
-            _timeZoom.IsEnabled = false;
-            return;
-        }
-
-        var duration = len / (double)rate;
-        _timeZoom.WindowSeconds = 0;
-        _timeZoom.StartSeconds = 0;
-        _timeZoom.TotalDurationSeconds = duration;
-        _timeZoom.IsEnabled = duration > 2.0;   // needs room for at least the smallest (2 s) window
-
-        GenerateMiniMap(data);
-    }
-
-    // Renders the full-session context strip (front+rear travel over time) that the TimeZoomControl
-    // overlays the highlight band on. Uses TravelTimeHistoryPlot so its PixelPadding(55,14,50,40)
-    // matches the control's overlay Margin(55,40,14,50). Background thread → posts to _timeZoom.
-    private void GenerateMiniMap(TelemetryData data)
-    {
-        var b = LastKnownBounds;
-        var width = (int)b.Width;
-        const double CollapsedTabBarHeight = 30.0;
-        var miniHeight = (int)(((b.Height - CollapsedTabBarHeight) * 0.4 + b.Width / 2.0 + CollapsedTabBarHeight) / 2.0);
-        if (width <= 0 || miniHeight <= 0) return;
-
-        Task.Run(() =>
-        {
-            try
-            {
-                var swMini = Stopwatch.StartNew();
-                // One overview strip per domain (travel / velocity / acceleration), each with prominent
-                // airtime bands for navigation. The TimeZoomControl on each page shows the matching one.
-                var travelSrc = SvgToSource(RenderOverviewXml(new TravelTimeHistoryPlot(new Plot(), showAirtimeBands: true), data, width, miniHeight));
-                var velocitySrc = SvgToSource(RenderOverviewXml(new VelocityTimeHistoryPlot(new Plot(), showAirtimeBands: true), data, width, miniHeight));
-                var accelSrc = SvgToSource(RenderOverviewXml(new AccelerationTimeHistoryPlot(new Plot(), showAirtimeBands: true), data, width, miniHeight));
-                PerfLog.Log("load/miniMap", swMini.Elapsed.TotalMilliseconds);
-                Dispatcher.UIThread.Post(() =>
-                {
-                    _timeZoom.MiniMapTravel = SourceToImage(travelSrc);
-                    _timeZoom.MiniMapVelocity = SourceToImage(velocitySrc);
-                    _timeZoom.MiniMapAcceleration = SourceToImage(accelSrc);
-                });
-            }
-            catch
-            {
-                // Best-effort context strips; the selector/slider still work without them.
-            }
-        });
-    }
-
-    private static string RenderOverviewXml(TelemetryPlot plot, TelemetryData data, int width, int height)
-    {
-        plot.LoadTelemetryData(data);
-        plot.Plot.Axes.Title.Label.Text = "Session overview";
-        return plot.Plot.GetSvgXml(width, height);
-    }
-
-    // Debounced, cancellable reaction to the shared zoom window changing. Off → restore the snapshot;
-    // on → schedule a windowed re-render of the six time-series plots.
-    private void OnZoomWindowChanged(object? sender, EventArgs e)
-    {
-        _zoomRenderCts?.Cancel();
-
-        if (!_timeZoom.IsZoomActive)
-        {
-            RestoreFullTimePlots();
-            return;
-        }
-
-        SnapshotFullTimePlotsIfNeeded();
-
-        var cts = new CancellationTokenSource();
-        _zoomRenderCts = cts;
-        var token = cts.Token;
-        var winStart = _timeZoom.StartSeconds;
-        var winEnd = _timeZoom.WindowEndSeconds;
-
-        Task.Run(async () =>
-        {
-            try
-            {
-                await Task.Delay(280, token);   // settle after the last pan/selection
-                if (token.IsCancellationRequested) return;
-                RenderTimePlotsForWindow(winStart, winEnd, token);
-            }
-            catch (OperationCanceledException) { }
-        }, token);
-    }
-
-    // Captures the current full-range time-plot images once (before the first windowed overwrite) so
-    // RestoreFullTimePlots can put them back instantly on reset. UI thread.
-    private void SnapshotFullTimePlotsIfNeeded()
-    {
-        if (_timeZoomSnapshotTaken) return;
-        _fullFrontTravel   = SpringPage.FrontTravelTimeCropped;
-        _fullRearTravel    = SpringPage.RearTravelTimeCropped;
-        _fullFrontVelocity = DamperPage.FrontVelocityTimeCropped;
-        _fullRearVelocity  = DamperPage.RearVelocityTimeCropped;
-        _fullFrontAccel    = MiscPage.FrontAccelerationTimeCropped;
-        _fullRearAccel     = MiscPage.RearAccelerationTimeCropped;
-        _timeZoomSnapshotTaken = true;
-    }
-
-    private void RestoreFullTimePlots()
-    {
-        Dispatcher.UIThread.Post(() =>
-        {
-            if (_timeZoomSnapshotTaken)
-            {
-                SpringPage.FrontTravelTimeCropped     = _fullFrontTravel;
-                SpringPage.RearTravelTimeCropped      = _fullRearTravel;
-                DamperPage.FrontVelocityTimeCropped   = _fullFrontVelocity;
-                DamperPage.RearVelocityTimeCropped    = _fullRearVelocity;
-                MiscPage.FrontAccelerationTimeCropped = _fullFrontAccel;
-                MiscPage.RearAccelerationTimeCropped  = _fullRearAccel;
-            }
-            SpringPage.CombinedTravelTimeZoomed     = null;
-            DamperPage.CombinedVelocityTimeZoomed   = null;
-            MiscPage.CombinedAccelerationTimeZoomed = null;
-        });
-    }
-
-    // Renders the six time-series plots zoomed to [winStart, winEnd] from the in-memory analysis data.
-    // Background thread; each plot is posted to its page as it finishes, with the token checked between
-    // plots so a superseding pan abandons stale work. Does not touch the DB cache.
-    private void RenderTimePlotsForWindow(double winStart, double winEnd, CancellationToken token)
-    {
-        var data = _analysisData;
-        if (data is null) return;
-
-        var b = LastKnownBounds;
-        var (width, height) = ((int)b.Width, (int)(b.Height / 2.0));
-        if (width <= 0 || height <= 0) return;
-
-        void Render(Func<string> makeSvg, Action<SvgImage?> assign)
-        {
-            if (token.IsCancellationRequested) return;
-            var src = SvgToSource(makeSvg());
-            if (token.IsCancellationRequested) return;
-            Dispatcher.UIThread.Post(() => { if (!token.IsCancellationRequested) assign(SourceToImage(src)); });
-        }
-
-        // Each domain (travel / velocity / acceleration) is shown as ONE combined front+rear plot
-        // while zoomed; the separate per-side plots are hidden by nulling them (IsNotNull bindings).
-        if (data.Front.Present || data.Rear.Present)
-        {
-            Render(() => { var p = new TravelTimeCombinedPlot(new Plot(), winStart, winEnd); p.LoadTelemetryData(data); return p.Plot.GetSvgXml(width, height); },
-                   img => { SpringPage.CombinedTravelTimeZoomed = img; SpringPage.FrontTravelTimeCropped = null; SpringPage.RearTravelTimeCropped = null; });
-
-            Render(() => { var p = new VelocityTimeCombinedPlot(new Plot(), winStart, winEnd); p.LoadTelemetryData(data); return p.Plot.GetSvgXml(width, height); },
-                   img => { DamperPage.CombinedVelocityTimeZoomed = img; DamperPage.FrontVelocityTimeCropped = null; DamperPage.RearVelocityTimeCropped = null; });
-
-            Render(() => { var p = new AccelerationTimeCombinedPlot(new Plot(), winStart, winEnd); p.LoadTelemetryData(data); return p.Plot.GetSvgXml(width, height); },
-                   img => { MiscPage.CombinedAccelerationTimeZoomed = img; MiscPage.FrontAccelerationTimeCropped = null; MiscPage.RearAccelerationTimeCropped = null; });
-        }
-    }
+    private SessionTimeZoomRenderer CreateTimeZoomRenderer() =>
+        new(
+            this,
+            _timeZoom,
+            () => _analysisData,
+            value => _analysisData = value,
+            () => _zoomRenderCts,
+            value => _zoomRenderCts = value,
+            () => (_fullFrontTravel, _fullRearTravel, _fullFrontVelocity, _fullRearVelocity, _fullFrontAccel, _fullRearAccel),
+            value => (_fullFrontTravel, _fullRearTravel, _fullFrontVelocity, _fullRearVelocity, _fullFrontAccel, _fullRearAccel) = value,
+            () => _timeZoomSnapshotTaken,
+            value => _timeZoomSnapshotTaken = value);
 
     // Staleness decision for a cache row, on scalars only: row exists, current PlotVersion,
     // crop bounds match the session, and the pitch-band signature still matches the band
@@ -418,7 +232,7 @@ public partial class SessionViewModel : ItemViewModelBase
             CropPage.ViewBounds = LastKnownBounds;
 
             // Zoom state waited for this data — no-op if already initialised (e.g. crop apply).
-            InitializeTimeZoomIfNeeded();
+            _timeZoomRenderer.InitializeTimeZoomIfNeeded();
         }
         catch
         {
@@ -541,7 +355,8 @@ public partial class SessionViewModel : ItemViewModelBase
         SpringPage.TimeZoom = _timeZoom;
         DamperPage.TimeZoom = _timeZoom;
         MiscPage.TimeZoom = _timeZoom;
-        _timeZoom.WindowChanged += OnZoomWindowChanged;
+        _timeZoomRenderer = CreateTimeZoomRenderer();
+        _timeZoomRenderer.Subscribe();
     }
 
     public SessionViewModel(Session session, bool fromDatabase)
@@ -559,7 +374,8 @@ public partial class SessionViewModel : ItemViewModelBase
         SpringPage.TimeZoom = _timeZoom;
         DamperPage.TimeZoom = _timeZoom;
         MiscPage.TimeZoom = _timeZoom;
-        _timeZoom.WindowChanged += OnZoomWindowChanged;
+        _timeZoomRenderer = CreateTimeZoomRenderer();
+        _timeZoomRenderer.Subscribe();
 
         NotesPage.ForkSettings.PropertyChanged += (_, _) => EvaluateDirtiness();
         NotesPage.ShockSettings.PropertyChanged += (_, _) => EvaluateDirtiness();
@@ -824,7 +640,7 @@ public partial class SessionViewModel : ItemViewModelBase
 
             // New crop → new analysis data: rebuild zoom state + mini-map and reset the window.
             _analysisData = null;
-            InitializeTimeZoom();
+            _timeZoomRenderer.InitializeTimeZoom();
             IsCropVisible = false;
         }
         catch (Exception e)
@@ -994,7 +810,7 @@ public partial class SessionViewModel : ItemViewModelBase
 
             // Crop cleared → analysis data is the full session again: rebuild zoom state + mini-map.
             _analysisData = null;
-            InitializeTimeZoom();
+            _timeZoomRenderer.InitializeTimeZoom();
         }
         catch (Exception e)
         {
@@ -1128,7 +944,7 @@ public partial class SessionViewModel : ItemViewModelBase
             if (_pagesPopulated && await IsCacheMetaCurrentAsync(meta))
             {
                 EnsureFullDataLoaded(databaseService);
-                InitializeTimeZoomIfNeeded();
+                _timeZoomRenderer.InitializeTimeZoomIfNeeded();
                 PerfLog.Log($"load/reopen {Id}", swTotal.Elapsed.TotalMilliseconds);
                 return;
             }
@@ -1222,7 +1038,7 @@ public partial class SessionViewModel : ItemViewModelBase
 
             // (Re)initialise the shared time-zoom state and context mini-map. No-ops while the
             // deferred full-data load is still pending — it re-triggers this on completion.
-            InitializeTimeZoomIfNeeded();
+            _timeZoomRenderer.InitializeTimeZoomIfNeeded();
             PerfLog.Log($"load/total {Id}", swTotal.Elapsed.TotalMilliseconds);
         }
         catch (Exception e)
