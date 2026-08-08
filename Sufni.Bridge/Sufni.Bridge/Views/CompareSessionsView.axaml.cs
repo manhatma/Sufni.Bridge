@@ -10,8 +10,8 @@ namespace Sufni.Bridge.Views;
 
 public partial class CompareSessionsView : UserControl
 {
-    // Sized for the widest BALANCE label and shared by all tables to keep columns aligned.
-    private const int LabelColumnWidth = 190;
+    // Shared by all tables to keep columns aligned while preserving room for three value columns.
+    private const int LabelColumnWidth = 165;
 
     public CompareSessionsView()
     {
@@ -62,7 +62,10 @@ public partial class CompareSessionsView : UserControl
             var labelBorder = new Border
             {
                 Classes = { "compare-cell" },
-                Child = new TextBlock { Text = row.Label }
+                Child = new TextBlock
+                {
+                    Text = row.Label
+                }
             };
             Grid.SetColumn(labelBorder, 0);
             grid.Children.Add(labelBorder);

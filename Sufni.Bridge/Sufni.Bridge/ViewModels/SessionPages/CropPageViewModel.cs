@@ -10,6 +10,7 @@ using CommunityToolkit.Mvvm.Input;
 using ScottPlot;
 using Sufni.Bridge.Models.Telemetry;
 using Sufni.Bridge.Plots;
+using static Sufni.Bridge.Extensions.SvgHelpers;
 
 namespace Sufni.Bridge.ViewModels.SessionPages;
 
@@ -22,7 +23,17 @@ public partial class CropPageViewModel() : PageViewModelBase("Crop")
     [ObservableProperty] private int cropEndSample;
     [ObservableProperty] private int sampleRate = 1;
 
-    internal TelemetryData? FullData { get; set; }
+    private TelemetryData? _fullData;
+    internal TelemetryData? FullData
+    {
+        get => _fullData;
+        set
+        {
+            _fullData = value;
+            if (TotalSamples > 0)
+                SchedulePreviewUpdate();
+        }
+    }
     internal Rect ViewBounds { get; set; }
 
     // Snapshot of values at the time the crop page was last initialized — used to detect user changes.
@@ -129,11 +140,11 @@ public partial class CropPageViewModel() : PageViewModelBase("Crop")
 
         if (token.IsCancellationRequested) return;
 
-        var source = SvgSource.LoadFromSvg(svgXml);
+        var source = SvgToSource(svgXml);
         await Dispatcher.UIThread.InvokeAsync(() =>
         {
             if (!token.IsCancellationRequested)
-                CropPreview = new SvgImage { Source = source };
+                CropPreview = SourceToImage(source);
         });
     }
 

@@ -18,7 +18,9 @@ using Sufni.Bridge.Models;
 using Sufni.Bridge.Models.Telemetry;
 using Sufni.Bridge.Plots;
 using Sufni.Bridge.Services;
+using Sufni.Bridge.Extensions;
 using Sufni.Bridge.ViewModels.Items;
+using static Sufni.Bridge.Extensions.SvgHelpers;
 
 namespace Sufni.Bridge.ViewModels;
 
@@ -170,25 +172,6 @@ public partial class CompareSessionsViewModel : ViewModelBase
     private static string FormatColor(Color color) => string.Create(
         CultureInfo.InvariantCulture, $"#{color.Red:X2}{color.Green:X2}{color.Blue:X2}");
 
-    private static SvgSource? SvgToSource(string? svgXml) =>
-        svgXml is null ? null : SvgSource.LoadFromSvg(svgXml);
-
-    private static SvgImage? SourceToImage(SvgSource? source) =>
-        source is null ? null : new SvgImage { Source = source };
-
-    private static string FormatPercent(double value) =>
-        string.Create(CultureInfo.InvariantCulture, $"{value:F1}");
-
-    private static string FormatTravel(double value, double maxTravel) =>
-        maxTravel <= 0
-            ? "-"
-            : string.Create(CultureInfo.InvariantCulture, $"{value / maxTravel * 100.0:0.0}");
-
-    private static string FormatVelocity(double value) =>
-        string.Create(CultureInfo.InvariantCulture, $"{value:0.0}");
-
-    private static string FormatBottomouts(int value) => $"{value}";
-
     private sealed record SessionStats(
         DetailedTravelStatistics Travel,
         VelocityStatistics Velocity,
@@ -242,20 +225,20 @@ public partial class CompareSessionsViewModel : ViewModelBase
                 model => Clicks(type == SuspensionType.Front ? model.FrontLowSpeedRebound : model.RearLowSpeedRebound))).ToList()),
             new("HSR [clicks]", sessions.Select(s => SessionSetupValues.Get(s,
                 model => Clicks(type == SuspensionType.Front ? model.FrontHighSpeedRebound : model.RearHighSpeedRebound))).ToList()),
-            new("Pos [AVG, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.Average, s.MaxTravel)).ToList()),
-            new("Pos [95th, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.P95, s.MaxTravel)).ToList()),
-            new("Pos [MAX, %]", statsList.Select(s => s is null ? "-" : FormatTravel(s.Travel.Max, s.MaxTravel)).ToList()),
-            new("Bottom out [times]", statsList.Select(s => s is null ? "-" : FormatBottomouts(s.Travel.Bottomouts)).ToList()),
-            new("Comp [AVG, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Velocity.AverageCompression)).ToList()),
-            new("Reb [AVG, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Velocity.AverageRebound)).ToList()),
-            new("Comp [95th, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Comp95th)).ToList()),
-            new("Reb [95th, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Reb95th)).ToList()),
-            new("Comp [MAX, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Velocity.MaxCompression)).ToList()),
-            new("Reb [MAX, mm/s]", statsList.Select(s => s is null ? "-" : FormatVelocity(s.Velocity.MaxRebound)).ToList()),
-            new("HSR [%]", statsList.Select(s => s?.Bands is null ? "-" : FormatPercent(s.Bands.HighSpeedRebound)).ToList()),
-            new("LSR [%]", statsList.Select(s => s?.Bands is null ? "-" : FormatPercent(s.Bands.LowSpeedRebound)).ToList()),
-            new("LSC [%]", statsList.Select(s => s?.Bands is null ? "-" : FormatPercent(s.Bands.LowSpeedCompression)).ToList()),
-            new("HSC [%]", statsList.Select(s => s?.Bands is null ? "-" : FormatPercent(s.Bands.HighSpeedCompression)).ToList()),
+            new("Pos [AVG, %]", statsList.Select(s => s is null ? "-" : SessionFormat.TravelPercentOnly(s.Travel.Average, s.MaxTravel)).ToList()),
+            new("Pos [95th, %]", statsList.Select(s => s is null ? "-" : SessionFormat.TravelPercentOnly(s.Travel.P95, s.MaxTravel)).ToList()),
+            new("Pos [MAX, %]", statsList.Select(s => s is null ? "-" : SessionFormat.TravelPercentOnly(s.Travel.Max, s.MaxTravel)).ToList()),
+            new("Bottom out [times]", statsList.Select(s => s is null ? "-" : SessionFormat.BottomoutsPlain(s.Travel.Bottomouts)).ToList()),
+            new("Comp [AVG, mm/s]", statsList.Select(s => s is null ? "-" : SessionFormat.VelocityPlain(s.Velocity.AverageCompression)).ToList()),
+            new("Reb [AVG, mm/s]", statsList.Select(s => s is null ? "-" : SessionFormat.VelocityPlain(s.Velocity.AverageRebound)).ToList()),
+            new("Comp [95th, mm/s]", statsList.Select(s => s is null ? "-" : SessionFormat.VelocityPlain(s.Comp95th)).ToList()),
+            new("Reb [95th, mm/s]", statsList.Select(s => s is null ? "-" : SessionFormat.VelocityPlain(s.Reb95th)).ToList()),
+            new("Comp [MAX, mm/s]", statsList.Select(s => s is null ? "-" : SessionFormat.VelocityPlain(s.Velocity.MaxCompression)).ToList()),
+            new("Reb [MAX, mm/s]", statsList.Select(s => s is null ? "-" : SessionFormat.VelocityPlain(s.Velocity.MaxRebound)).ToList()),
+            new("HSR [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.Percent(s.Bands.HighSpeedRebound)).ToList()),
+            new("LSR [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.Percent(s.Bands.LowSpeedRebound)).ToList()),
+            new("LSC [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.Percent(s.Bands.LowSpeedCompression)).ToList()),
+            new("HSC [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.Percent(s.Bands.HighSpeedCompression)).ToList()),
         };
         return rows;
     }
@@ -284,16 +267,10 @@ public partial class CompareSessionsViewModel : ViewModelBase
                 : [];
             var frontTotalM = front.Length > 0 ? front[^1] / 1000.0 : (double?)null;
             var rearTotalM = rear.Length > 0 ? rear[^1] / 1000.0 : (double?)null;
-            var durationMinutes = data.SampleRate > 0
-                ? Math.Max(front.Length, rear.Length) / (double)data.SampleRate / 60.0
-                : 0.0;
-            var rate = durationMinutes > 0 && (frontTotalM.HasValue || rearTotalM.HasValue)
-                ? (frontTotalM.GetValueOrDefault() + rearTotalM.GetValueOrDefault()) / durationMinutes
-                : (double?)null;
-            return (frontTotalM, rearTotalM, rate);
+            return (frontTotalM, rearTotalM);
         }).ToList();
 
-        List<string> TravelValues(Func<(double? frontTotalM, double? rearTotalM, double? rate), double?> selector,
+        List<string> TravelValues(Func<(double? frontTotalM, double? rearTotalM), double?> selector,
             string format) => travelTotals.Select(t => FormatBalanceValue(selector(t), format)).ToList();
 
         return
@@ -308,22 +285,20 @@ public partial class CompareSessionsViewModel : ViewModelBase
             new("Pitch μ [°]", Values(m => FormatBalanceValue(m.PitchMeanDeg, "0.00"))),
             new("Pitch stability σ [°]", Values(m => FormatBalanceValue(m.PitchStabilityDeg, "0.00"))),
             new("G-out asymmetry [%]", Values(m => m.GoutAsymmetryPct.HasValue
-                ? $"{FormatBalanceValue(m.GoutAsymmetryPct, "0.0")} (N={FormatBalanceCount(m.GoutEventCount)})"
+                ? $"{FormatBalanceValue(m.GoutAsymmetryPct, "0.0")} ({FormatBalanceCount(m.GoutEventCount)})"
                 : "-")),
             new("Comp vel ratio", Values(m => FormatBalanceValue(m.CompressionVelocityRatio, "0.000"))),
             new("Reb vel ratio", Values(m => FormatBalanceValue(m.ReboundVelocityRatio, "0.000"))),
             new("MSD Compression [%]", Values(m => FormatBalanceValue(m.CompressionMsd, "0.0"))),
             new("MSD Rebound [%]", Values(m => FormatBalanceValue(m.ReboundMsd, "0.0"))),
-            new("Velocity shape β F / R", Values(m => $"{FormatBalanceValue(m.FrontVelocityShapeBeta, "0.00")} / {FormatBalanceValue(m.RearVelocityShapeBeta, "0.00")}")),
+            new("Velocity shape β F / R", Values(m => $"{FormatBalanceValue(m.FrontVelocityShapeBeta, "0.00")}/{FormatBalanceValue(m.RearVelocityShapeBeta, "0.00")}")),
             new("Front freq [Hz]", Values(m => FormatBalanceValue(m.FrontPeakFrequencyHz, "0.00"))),
             new("Rear freq [Hz]", Values(m => FormatBalanceValue(m.RearPeakFrequencyHz, "0.00"))),
             new("Freq diff [Hz]", Values(m => FormatBalanceValue(m.FrequencyDifferenceHz, "0.00"))),
             new("Peak amp ratio", Values(m => FormatBalanceValue(m.PeakAmplitudeRatio, "0.000"))),
             new("Head angle static [°]", Values(m => FormatBalanceValue(m.HeadAngleStaticDeg, "0.0"))),
-            new("Head angle shift [°]", Values(m => FormatBalanceValue(m.HeadAngleShiftDeg, "0.0"))),
             new("Cumulative travel F [m]", TravelValues(t => t.frontTotalM, "0")),
             new("Cumulative travel R [m]", TravelValues(t => t.rearTotalM, "0")),
-            new("Travel rate [m/min]", TravelValues(t => t.rate, "0.0")),
         ];
     }
 
@@ -713,22 +688,8 @@ public partial class CompareSessionsViewModel : ViewModelBase
         var tempDir = System.IO.Path.GetTempPath();
         var pdfPath = System.IO.Path.Combine(tempDir, $"{fileName}.pdf");
 
-        var svgObjects = svgXmlList
-            .AsParallel()
-            .AsOrdered()
-            .Select(xml =>
-            {
-                var svg = new Svg.Skia.SKSvg();
-                svg.FromSvg(xml);
-                return svg;
-            })
-            .ToList();
-
-        try
+        return SkiaPdfWriter.WritePdf(pdfPath, svgXmlList, (document, svgObjects) =>
         {
-            using var stream = new System.IO.FileStream(pdfPath, System.IO.FileMode.Create);
-            using var document = SkiaSharp.SKDocument.CreatePdf(stream);
-
             var firstPicture = svgObjects.Select(svg => svg.Picture).FirstOrDefault(picture => picture is not null);
             var pageWidth = firstPicture?.CullRect.Width ?? 400f;
             var plotPageHeight = firstPicture?.CullRect.Height ?? 560f;
@@ -744,16 +705,7 @@ public partial class CompareSessionsViewModel : ViewModelBase
                 canvas.DrawPicture(picture);
                 document.EndPage();
             }
-
-            document.Close();
-        }
-        finally
-        {
-            foreach (var svg in svgObjects)
-                svg.Dispose();
-        }
-
-        return pdfPath;
+        });
     }
 
     private static void DrawOverviewPages(
@@ -765,14 +717,12 @@ public partial class CompareSessionsViewModel : ViewModelBase
         List<CompareTableRow> rearRows)
     {
         const float margin = 24f;
-        const float legendRowHeight = 18f;
         const float tableRowHeight = 24f;
         const float sectionGap = 14f;
         const float labelColumnWidth = 130f;
 
         var naturalHeight = margin * 2f
-            + legend.Count * legendRowHeight
-            + sectionGap * 2f
+            + sectionGap
             + (frontRows.Count + rearRows.Count + 2) * tableRowHeight;
         var pageHeight = Math.Max(plotPageHeight, Math.Min(naturalHeight, pageWidth * 1.4142f));
         var contentWidth = pageWidth - margin * 2f;
@@ -824,17 +774,27 @@ public partial class CompareSessionsViewModel : ViewModelBase
             completedCanvas?.Dispose();
         }
 
-        void DrawCell(float x, float top, float width, string text, bool header, bool rightAlign)
+        void DrawCell(
+            float x,
+            float top,
+            float width,
+            string text,
+            bool header,
+            bool rightAlign,
+            bool lightHeader = false,
+            bool centerAlign = false)
         {
             var rect = new SkiaSharp.SKRect(x, top, x + width, top + tableRowHeight);
             fillPaint.Color = header ? headerBackground : cellBackground;
             canvas!.DrawRect(rect, fillPaint);
             canvas.DrawRect(rect, borderPaint);
 
-            var paint = header ? boldPaint : textPaint;
+            var paint = header || lightHeader ? boldPaint : textPaint;
             paint.Color = header ? darkText : lightText;
             var textWidth = paint.MeasureText(text);
-            var textX = rightAlign ? x + width - 6f - textWidth : x + 6f;
+            var textX = centerAlign
+                ? x + (width - textWidth) / 2f
+                : rightAlign ? x + width - 6f - textWidth : x + 6f;
             var textY = top + tableRowHeight / 2f + paint.TextSize * 0.35f;
             canvas.DrawText(text, textX, textY, paint);
         }
@@ -844,13 +804,22 @@ public partial class CompareSessionsViewModel : ViewModelBase
             DrawCell(margin, y, labelColumnWidth, title, true, false);
             for (var i = 0; i < legend.Count; i++)
             {
+                var x = margin + labelColumnWidth + i * valueColumnWidth;
                 DrawCell(
-                    margin + labelColumnWidth + i * valueColumnWidth,
+                    x,
                     y,
                     valueColumnWidth,
                     legend[i].Name,
-                    true,
-                    true);
+                    false,
+                    false,
+                    lightHeader: true,
+                    centerAlign: true);
+                fillPaint.Color = SkiaSharp.SKColor.Parse(legend[i].Color);
+                canvas!.DrawRect(new SkiaSharp.SKRect(
+                    x,
+                    y + tableRowHeight - 3f,
+                    x + valueColumnWidth,
+                    y + tableRowHeight), fillPaint);
             }
             y += tableRowHeight;
         }
@@ -893,18 +862,6 @@ public partial class CompareSessionsViewModel : ViewModelBase
         }
 
         BeginPage();
-
-        foreach (var entry in legend)
-        {
-            var color = SkiaSharp.SKColor.Parse(entry.Color);
-            fillPaint.Color = color;
-            canvas!.DrawRect(new SkiaSharp.SKRect(margin, y + 7f, margin + 18f, y + 10f), fillPaint);
-            textPaint.Color = color;
-            canvas.DrawText(entry.Name, margin + 25f, y + 12f, textPaint);
-            y += legendRowHeight;
-        }
-
-        y += sectionGap;
         DrawTable("FRONT WHEEL", frontRows);
         y += sectionGap;
         DrawTable("REAR WHEEL", rearRows);
