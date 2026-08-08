@@ -128,5 +128,13 @@ public class CompareCumulativeTravelPlot(Plot plot) : SufniPlot(plot)
             label.LabelBorderWidth = 1;
             label.LabelPadding = 4;
         }
+
+        // Combined front/rear hint line below the session labels
+        var hint = Plot.Add.Text("— Front   - - Rear", maxDuration * 0.02, yTop * 0.96);
+        hint.LabelFontColor = Color.FromHex("#808080");
+        hint.LabelFontSize = 10;
+        hint.LabelAlignment = Alignment.UpperLeft;
+        hint.LabelOffsetX = 4;
+        hint.LabelOffsetY = labels.Count * 18 + 2;
     }
 }
