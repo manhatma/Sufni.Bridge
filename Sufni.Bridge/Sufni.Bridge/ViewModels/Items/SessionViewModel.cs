@@ -28,7 +28,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    internal const int CurrentPlotVersion = 237;
+    internal const int CurrentPlotVersion = 238;
 
     // Approximate rendered height of the VelocityBandView control (margin + title text +
     // 44 px band grid). Used to size the low-speed velocity histograms so the
@@ -157,9 +157,9 @@ public partial class SessionViewModel : ItemViewModelBase
             value => _timeZoomSnapshotTaken = value);
 
     // Staleness decision for a cache row, on scalars only: row exists, current PlotVersion,
-    // crop bounds match the session, and the pitch-band signature still matches the band
-    // implied by the CURRENT per-discipline overrides — the μ row re-colors live from those
-    // overrides, so a stale band would contradict it in the same view.
+    // crop bounds and linkage geometry match the session, and the pitch-band signature still
+    // matches the band implied by the CURRENT per-discipline overrides — the μ row re-colors
+    // live from those overrides, so a stale band would contradict it in the same view.
     private async Task<bool> IsCacheMetaCurrentAsync(SessionCacheMeta? meta)
     {
         if (meta is null || meta.PlotVersion != CurrentPlotVersion)
@@ -169,6 +169,12 @@ public partial class SessionViewModel : ItemViewModelBase
 
         if (meta.CropStartSample != session.CropStartSample ||
             meta.CropEndSample   != session.CropEndSample)
+        {
+            return false;
+        }
+
+        var geometrySignature = await GetSessionGeometrySignatureAsync();
+        if (geometrySignature is not null && meta.GeometrySignature != geometrySignature)
         {
             return false;
         }
@@ -278,6 +284,20 @@ public partial class SessionViewModel : ItemViewModelBase
     }
 
     /// <summary>
+    /// Resolves the current linkage geometry from the database without loading the session blob.
+    /// </summary>
+    internal async Task<string?> GetSessionGeometrySignatureAsync()
+    {
+        var dbSvc = App.Current?.Services?.GetService<IDatabaseService>();
+        if (dbSvc is null) return null;
+        try
+        {
+            return (await dbSvc.GetSessionLinkageAsync(Id))?.GeometrySignature;
+        }
+        catch { return null; }
+    }
+
+    /// <summary>
     /// Loads the user's per-discipline balance-target overrides as a metric-keyed map, or
     /// null when there is no discipline / database. Passed into BalanceMetrics.Apply so the
     /// metric table reflects the user's edited green ranges.
@@ -339,6 +359,7 @@ public partial class SessionViewModel : ItemViewModelBase
         var swCache = Stopwatch.StartNew();
         var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
         Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
+        var geometrySignature = await GetSessionGeometrySignatureAsync();
 
         await SessionCacheBuilder.BuildAsync(
             this,
@@ -347,6 +368,7 @@ public partial class SessionViewModel : ItemViewModelBase
             fullData,
             session,
             databaseService,
+            geometrySignature,
             swCache,
             GetSessionDisciplineAsync,
             GetBalanceOverridesAsync,

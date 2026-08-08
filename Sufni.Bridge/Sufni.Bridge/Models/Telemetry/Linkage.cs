@@ -139,6 +139,26 @@ public class Linkage : Synchronizable
         set => shockWheelCoeffs = value;
     }
 
+    [Ignore]
+    [JsonIgnore]
+    [IgnoreMember]
+    public string GeometrySignature
+    {
+        get
+        {
+            // G9 absorbs last-ulp noise between CSV-parsed and MessagePack-roundtripped fits.
+            var values = new[]
+            {
+                HeadAngle,
+                MaxFrontStroke ?? 0,
+                MaxRearStroke ?? 0,
+                Wheelbase ?? 0
+            }.Concat(ShockWheelCoeffs);
+            return string.Join("|", values.Select(value =>
+                value.ToString("G9", CultureInfo.InvariantCulture)));
+        }
+    }
+
     [Ignore][JsonIgnore][IgnoreMember] public Polynomial Polynomial => new(ShockWheelCoeffs);
 
     [Ignore]
