@@ -23,7 +23,8 @@ internal static class SessionSummaryBuilder
         double Comp95th,
         double AvgRebound,
         double MaxRebound,
-        double Reb95th);
+        double Reb95th,
+        SuspensionSignalMetrics? SignalMetrics = null);
 
     internal sealed record CachedSummaryData(
         string[][] RunDataRows,
@@ -45,16 +46,27 @@ internal static class SessionSummaryBuilder
         return string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{cum[^1] / 1000.0:F1}");
     }
 
+    private static string FormatNormalizedCumulativeTravel(TelemetryData telemetryData, SuspensionType type)
+    {
+        var cum = telemetryData.CalculateCumulativeTravel(type);
+        var maxTravel = type == SuspensionType.Front
+            ? telemetryData.Linkage.MaxFrontTravel
+            : telemetryData.Linkage.MaxRearTravel;
+        if (cum.Length == 0 || maxTravel <= 0) return "-";
+        return (cum[^1] / maxTravel).ToString("F1", System.Globalization.CultureInfo.InvariantCulture);
+    }
+
     private static string FormatAirtime(Airtime[]? airtimes)
     {
-        if (airtimes is null)
+        if (airtimes is not { Length: > 0 })
         {
             return "—";
         }
 
         var total = airtimes.Sum(a => a.End - a.Start);
+        var longest = airtimes.Max(a => a.End - a.Start);
         return string.Create(System.Globalization.CultureInfo.InvariantCulture,
-            $"{total:0.0} s ({airtimes.Length}×)");
+            $"{total:0.0} s ({airtimes.Length}x, max {longest:0.0} s)");
     }
 
     private static string? FormatDataQuality(TelemetryData telemetryData)
@@ -140,12 +152,7 @@ internal static class SessionSummaryBuilder
         var detailedTravel = telemetryData.CalculateDetailedTravelStatistics(type);
         var velocityStats = telemetryData.CalculateVelocityStatistics(type);
 
-        var compressionVels = suspension.Strokes.Compressions
-            .SelectMany(s => suspension.Velocity[s.Start..(s.End + 1)])
-            .ToList();
-        var reboundVels = suspension.Strokes.Rebounds
-            .SelectMany(s => suspension.Velocity[s.Start..(s.End + 1)].Select(Math.Abs))
-            .ToList();
+        var velocityP95 = telemetryData.CalculateVelocityPercentileStatistics(type);
 
         return new SuspensionSummaryStats(
             travelStats.Max,
@@ -154,10 +161,11 @@ internal static class SessionSummaryBuilder
             travelStats.Bottomouts,
             velocityStats.AverageCompression,
             velocityStats.MaxCompression,
-            compressionVels.Count > 0 ? compressionVels.Percentile(95) : 0.0,
+            velocityP95.CompressionP95,
             velocityStats.AverageRebound,
             velocityStats.MaxRebound,
-            reboundVels.Count > 0 ? -reboundVels.Percentile(95) : 0.0);
+            velocityP95.ReboundP95,
+            telemetryData.CalculateSignalMetrics(type));
     }
 
     private static SuspensionSummaryStats? BuildForkStats(TelemetryData telemetryData)
@@ -514,7 +522,28 @@ internal static class SessionSummaryBuilder
                 rearBands is null ? "-" : SessionFormat.Percent(rearBands.HighSpeedCompression)),
             new SummaryComparisonRow("Cum. Travel [m]",
                 telemetryData.Front.Present ? FormatCumulativeTravel(telemetryData, SuspensionType.Front) : "-",
-                telemetryData.Rear.Present ? FormatCumulativeTravel(telemetryData, SuspensionType.Rear) : "-")
+                telemetryData.Rear.Present ? FormatCumulativeTravel(telemetryData, SuspensionType.Rear) : "-"),
+            new SummaryComparisonRow("Cum. Travel [x max]",
+                telemetryData.Front.Present ? FormatNormalizedCumulativeTravel(telemetryData, SuspensionType.Front) : "-",
+                telemetryData.Rear.Present ? FormatNormalizedCumulativeTravel(telemetryData, SuspensionType.Rear) : "-"),
+            new SummaryComparisonRow("Vel RMS [mm/s]",
+                frontWheelStats?.SignalMetrics?.Velocity.Rms.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) ?? "-",
+                rearWheelStats?.SignalMetrics?.Velocity.Rms.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) ?? "-"),
+            new SummaryComparisonRow("Vel crest",
+                frontWheelStats?.SignalMetrics?.Velocity.Crest.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) ?? "-",
+                rearWheelStats?.SignalMetrics?.Velocity.Crest.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) ?? "-"),
+            new SummaryComparisonRow("Acc RMS [g]",
+                frontWheelStats?.SignalMetrics?.Acceleration.Rms.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) ?? "-",
+                rearWheelStats?.SignalMetrics?.Acceleration.Rms.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) ?? "-"),
+            new SummaryComparisonRow("Acc crest",
+                frontWheelStats?.SignalMetrics?.Acceleration.Crest.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) ?? "-",
+                rearWheelStats?.SignalMetrics?.Acceleration.Crest.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) ?? "-"),
+            new SummaryComparisonRow("Travel RMS [mm]",
+                frontWheelStats?.SignalMetrics?.Travel.Rms.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) ?? "-",
+                rearWheelStats?.SignalMetrics?.Travel.Rms.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) ?? "-"),
+            new SummaryComparisonRow("Travel crest",
+                frontWheelStats?.SignalMetrics?.Travel.Crest.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) ?? "-",
+                rearWheelStats?.SignalMetrics?.Travel.Crest.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) ?? "-")
         ]);
 
         var airtime = FormatAirtime(telemetryData.Airtimes);

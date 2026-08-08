@@ -69,20 +69,16 @@ public class CompareCumulativeTravelPlot(Plot plot) : SufniPlot(plot)
             var durationSeconds = durationSamples * period;
             var totalMm = frontTotalMm + rearTotalMm;
             var frontShare = totalMm < MinTotalForShareMm ? double.NaN : frontTotalMm / totalMm * 100.0;
-            var travelRate = durationSeconds <= 0 ? double.NaN : totalMm / 1000.0 / (durationSeconds / 60.0);
             var shareText = double.IsNaN(frontShare)
                 ? "—"
                 : frontShare.ToString("0.0", CultureInfo.InvariantCulture);
-            var rateText = double.IsNaN(travelRate)
-                ? "—"
-                : travelRate.ToString("0.0", CultureInfo.InvariantCulture);
             var frontText = hasFront
                 ? (frontTotalMm / 1000.0).ToString("0", CultureInfo.InvariantCulture)
                 : "—";
             var rearText = hasRear
                 ? (rearTotalMm / 1000.0).ToString("0", CultureInfo.InvariantCulture)
                 : "—";
-            labels.Add((color, $"{name}: F {frontText} m / R {rearText} m · {shareText}% · {rateText} m/min"));
+            labels.Add((color, $"{name}: F {frontText} m / R {rearText} m · {shareText}%"));
             maxDuration = Math.Max(maxDuration, durationSeconds);
         }
 

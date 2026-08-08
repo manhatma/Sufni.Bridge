@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using ScottPlot;
 using ScottPlot.TickGenerators;
+using Sufni.Bridge.Models;
 using Sufni.Bridge.Models.Telemetry;
 
 namespace Sufni.Bridge.Plots;
@@ -24,7 +25,8 @@ public class CompareSpectrumPlot(
     int segmentLength = 8192,
     double topHeadroomDb = 2.0,
     float lineWidth = 1.5f,
-    WheelSpectrumMode mode = WheelSpectrumMode.Travel)
+    WheelSpectrumMode mode = WheelSpectrumMode.Travel,
+    IReadOnlyDictionary<TelemetryData, Discipline?>? disciplines = null)
     : SufniPlot(plot)
 {
     private const double TravelReferenceMm = 0.01;
@@ -75,7 +77,11 @@ public class CompareSpectrumPlot(
         {
             var suspension = type == SuspensionType.Front ? data.Front : data.Rear;
             if (!suspension.Present || suspension.Travel is not { Length: >= 64 }) continue;
-            var (lo, hi) = AddSpectrum(suspension.Travel, data.SampleRate, color);
+            var peakBand = disciplines is not null && disciplines.TryGetValue(data, out var discipline)
+                ? TelemetryData.BodyResonancePeakBandFor(discipline)
+                : (peakMinHz, peakMaxHz);
+            var (lo, hi) = AddSpectrum(suspension.Travel, data.SampleRate, color,
+                peakBand.Item1, peakBand.Item2);
             yMaxDb = Math.Max(yMaxDb, hi); yMinDb = Math.Min(yMinDb, lo);
             drewAny = true;
         }
@@ -103,7 +109,8 @@ public class CompareSpectrumPlot(
         AddPeakLabels(yBottom, yTop);
     }
 
-    private (double, double) AddSpectrum(double[] signal, int sampleRate, Color color)
+    private (double, double) AddSpectrum(double[] signal, int sampleRate, Color color,
+        double sessionPeakMinHz, double sessionPeakMaxHz)
     {
         var spec = TelemetryData.ComputeWelchSpectrum(signal, sampleRate, segmentLength);
         if (spec.Frequencies.Length == 0) return (FloorDb, FloorDb);
@@ -131,7 +138,7 @@ public class CompareSpectrumPlot(
             if (db < yMin) yMin = db;
             // Restrict yMax to the peak-search band on velocity plots so that
             // out-of-band noise doesn't inflate the upper axis bound.
-            if (!scaleToPeakBand || (f >= peakMinHz && f <= peakMaxHz))
+            if (!scaleToPeakBand || (f >= sessionPeakMinHz && f <= sessionPeakMaxHz))
             {
                 if (db > yMax) yMax = db;
             }
@@ -150,7 +157,7 @@ public class CompareSpectrumPlot(
 
         if (!PeakMarkersEnabled) return (yMin, yMax);
 
-        var (peakF, peakA) = TelemetryData.FindDominantPeak(spec, peakMinHz, peakMaxHz);
+        var (peakF, peakA) = TelemetryData.FindDominantPeak(spec, sessionPeakMinHz, sessionPeakMaxHz);
         if (!double.IsNaN(peakF) && peakA > 0)
         {
             var peakX = Math.Log10(peakF);

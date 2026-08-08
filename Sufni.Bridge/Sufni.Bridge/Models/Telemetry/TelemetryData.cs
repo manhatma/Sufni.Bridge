@@ -52,7 +52,13 @@ public record HistogramData(List<double> Bins, List<double> Values);
 public record StackedHistogramData(List<double> Bins, List<double[]> Values);
 
 public record TravelStatistics(double Max, double Average, int Bottomouts);
-public record DetailedTravelStatistics(double Max, double Average, double P95, int Bottomouts);
+public record DetailedTravelStatistics(double Max, double Average, double Median, double P95, int Bottomouts);
+public record VelocityPercentileStatistics(double CompressionP95, double ReboundP95);
+public record SignalMetrics(double Rms, double Crest);
+public record SuspensionSignalMetrics(
+    SignalMetrics Velocity,
+    SignalMetrics Acceleration,
+    SignalMetrics Travel);
 public record DetailedTravelHistogramData(
     List<double> TravelMidsMm,
     List<double> TravelMidsPercentage,
@@ -145,7 +151,11 @@ public record BalanceMetrics(
     double? FrontVelocityShapeBeta,   // generalized-normal shape of the wheel velocity distribution
     double? RearVelocityShapeBeta,
     double? MaxRearStrokeMm = null,   // shock stroke; with ShockWheelCoeffs maps damper sag % to wheel sag %
-    double[]? ShockWheelCoeffs = null); // intercept-free cubic shock-to-wheel fit
+    double[]? ShockWheelCoeffs = null, // intercept-free cubic shock-to-wheel fit
+    double? FrontReboundCompressionP95Ratio = null,
+    double? RearReboundCompressionP95Ratio = null,
+    double? FrontTravelP95MedianRatio = null,
+    double? RearTravelP95MedianRatio = null);
 
 [MessagePackObject(keyAsPropertyName: true)]
 public class TelemetryData
@@ -1980,14 +1990,32 @@ public class TelemetryData
 
         if (travelValues.Count == 0)
         {
-            return new DetailedTravelStatistics(0.0, 0.0, 0.0, 0);
+            return new DetailedTravelStatistics(0.0, 0.0, 0.0, 0.0, 0);
         }
 
         var average = travelValues.Average();
         var max = travelValues.Max();
+        var median = travelValues.Median();
         var p95 = travelValues.Percentile(95);
 
-        return new DetailedTravelStatistics(max, average, p95, bottomouts);
+        return new DetailedTravelStatistics(max, average, median, p95, bottomouts);
+    }
+
+    public VelocityPercentileStatistics CalculateVelocityPercentileStatistics(SuspensionType type) =>
+        Memo($"velocityPercentileStatistics/{type}", () => CalculateVelocityPercentileStatisticsCore(type));
+
+    private VelocityPercentileStatistics CalculateVelocityPercentileStatisticsCore(SuspensionType type)
+    {
+        var suspension = type == SuspensionType.Front ? Front : Rear;
+        var compression = suspension.Strokes.Compressions
+            .SelectMany(s => suspension.Velocity[s.Start..(s.End + 1)])
+            .ToList();
+        var rebound = suspension.Strokes.Rebounds
+            .SelectMany(s => suspension.Velocity[s.Start..(s.End + 1)].Select(Math.Abs))
+            .ToList();
+        return new VelocityPercentileStatistics(
+            compression.Count > 0 ? compression.Percentile(95) : 0.0,
+            rebound.Count > 0 ? -rebound.Percentile(95) : 0.0);
     }
 
     public VelocityStatistics CalculateVelocityStatistics(SuspensionType type) =>
@@ -2614,7 +2642,8 @@ public class TelemetryData
         return n > 0 ? sum / n : (double?)null;
     }
 
-    // Discipline-aware Low/Mid split frequency. High band starts fix at 8 Hz.
+    // Discipline-aware Low/Mid split frequency. Mid extends to 10 Hz, Wheel is 10–25 Hz,
+    // and High is 25–50 Hz.
     public static double FrequencySplitFor(Discipline? d) => d switch
     {
         Discipline.XC       => 2.8,
@@ -2623,14 +2652,21 @@ public class TelemetryData
         _                   => 2.0, // Enduro / default
     };
 
+    // Derived from f = 15.76 / sqrt(sag_mm), using travel and discipline sag targets.
+    public static (double FrontLo, double FrontHi, double RearLo, double RearHi) EigenfrequencyTargetBandFor(
+        Discipline? d) => d switch
+    {
+        Discipline.XC       => (3.2, 4.1, 2.6, 3.2),
+        Discipline.Trail    => (2.9, 3.6, 2.3, 2.7),
+        Discipline.Downhill => (2.4, 2.7, 1.8, 2.1),
+        _                   => (2.7, 3.2, 2.1, 2.4),
+    };
+
     // Peak search deliberately starts at 1.6 Hz to reject most pedaling-cadence content
-    // (typically 1.2-1.6 Hz). Its discipline-aware ceiling follows the existing Low/Mid split
-    // plus 0.7 Hz: XC 3.5, Trail 3.1, Enduro/default 2.7, DH 2.3. This covers the plausible
-    // sprung-mass mode, including stiff XC setups, without allowing >4 Hz transition/frame
-    // content to be reported as body resonance. The wider [1.0, fSplit] energy band below is
-    // intentionally unchanged because integration is not vulnerable to a single cadence peak.
+    // (typically 1.2-1.6 Hz). The ceiling follows the highest target-band edge plus 0.5 Hz.
     public static (double MinHz, double MaxHz) BodyResonancePeakBandFor(Discipline? d) =>
-        (1.6, FrequencySplitFor(d) + 0.7);
+        (1.6, Math.Max(EigenfrequencyTargetBandFor(d).FrontHi,
+            EigenfrequencyTargetBandFor(d).RearHi) + 0.5);
 
     // Body-resonance peak detection in the velocity domain.
     //
@@ -2755,6 +2791,56 @@ public class TelemetryData
     /// </summary>
     internal WhittakerHendersonSmoother GetAccelSmoother() =>
         Memo("smoother/accel", () => new WhittakerHendersonSmoother(Parameters.WhAccelOrder, Parameters.WhAccelLambdaFor(SampleRate)));
+
+    public double[] CalculateAcceleration(SuspensionType side) =>
+        Memo($"acceleration/{side}", () => CalculateAccelerationCore(side));
+
+    private double[] CalculateAccelerationCore(SuspensionType side)
+    {
+        const double gravityMmPerS2 = 9806.65;
+        var velocity = (side == SuspensionType.Front ? Front : Rear).Velocity;
+        var n = velocity.Length;
+        var acceleration = new double[n];
+        if (n < 2) return acceleration;
+
+        // Strong pre-smoothing suppresses high-frequency residue before the central difference;
+        // this is the shared derivation used by every acceleration display and metric.
+        var smoothed = GetAccelSmoother().Smooth(velocity);
+        acceleration[0] = (smoothed[1] - smoothed[0]) * SampleRate / gravityMmPerS2;
+        for (var i = 1; i < n - 1; i++)
+            acceleration[i] = (smoothed[i + 1] - smoothed[i - 1]) * SampleRate / 2.0 / gravityMmPerS2;
+        acceleration[n - 1] = (smoothed[n - 1] - smoothed[n - 2]) * SampleRate / gravityMmPerS2;
+        return acceleration;
+    }
+
+    public SuspensionSignalMetrics CalculateSignalMetrics(SuspensionType side) =>
+        Memo($"signalMetrics/{side}", () => CalculateSignalMetricsCore(side));
+
+    private SuspensionSignalMetrics CalculateSignalMetricsCore(SuspensionType side)
+    {
+        var suspension = side == SuspensionType.Front ? Front : Rear;
+
+        static SignalMetrics Calculate(double[] values, bool removeMean)
+        {
+            if (values.Length == 0) return new SignalMetrics(0, double.NaN);
+            var mean = removeMean ? values.Average() : 0.0;
+            var sumSq = 0.0;
+            var peak = 0.0;
+            foreach (var value in values)
+            {
+                var centered = value - mean;
+                sumSq += centered * centered;
+                peak = Math.Max(peak, Math.Abs(centered));
+            }
+            var rms = Math.Sqrt(sumSq / values.Length);
+            return new SignalMetrics(rms, rms > 0 ? peak / rms : double.NaN);
+        }
+
+        return new SuspensionSignalMetrics(
+            Calculate(suspension.Velocity, removeMean: false),
+            Calculate(CalculateAcceleration(side), removeMean: false),
+            Calculate(suspension.Travel, removeMean: true));
+    }
 
     /// <summary>
     /// WH-smoothed full-length travel of one side (velocity-pipeline parameters), shared by the
@@ -3329,6 +3415,8 @@ public class TelemetryData
         double? lowEnergyDb = null, midEnergyDb = null, wheelEnergyDb = null, highEnergyDb = null;
         double? lowCoh = null, midCoh = null, wheelCoh = null, highCoh = null;
         double? haStaticDeg = null, haShiftDeg = null;
+        double? frontRebCompP95 = null, rearRebCompP95 = null;
+        double? frontTravelP95Median = null, rearTravelP95Median = null;
         double fSplit = FrequencySplitFor(discipline);
         var (peakMinHz, peakMaxHz) = BodyResonancePeakBandFor(discipline);
 
@@ -3344,6 +3432,10 @@ public class TelemetryData
                 fP95Pct = ts.P95 / maxF * 100.0;
             }
             fBO = ts.Bottomouts;
+            if (ts.Median > 1e-6) frontTravelP95Median = ts.P95 / ts.Median;
+            var velocityP95 = CalculateVelocityPercentileStatistics(SuspensionType.Front);
+            if (velocityP95.CompressionP95 > 1e-6)
+                frontRebCompP95 = Math.Abs(velocityP95.ReboundP95) / velocityP95.CompressionP95;
         }
         if (Rear.Present)
         {
@@ -3354,6 +3446,10 @@ public class TelemetryData
                 rP95Pct = ts.P95 / maxR * 100.0;
             }
             rBO = ts.Bottomouts;
+            if (ts.Median > 1e-6) rearTravelP95Median = ts.P95 / ts.Median;
+            var velocityP95 = CalculateVelocityPercentileStatistics(SuspensionType.Rear);
+            if (velocityP95.CompressionP95 > 1e-6)
+                rearRebCompP95 = Math.Abs(velocityP95.ReboundP95) / velocityP95.CompressionP95;
         }
         if (fSag.HasValue && rSag.HasValue)
             sagDiff = Math.Abs(fSag.Value - rSag.Value);
@@ -3543,7 +3639,9 @@ public class TelemetryData
             maxFrontTravelMm, maxRearTravelMm, wheelbaseMm,
             damperSag,
             frontVelocityShapeBeta, rearVelocityShapeBeta,
-            Linkage?.MaxRearStroke, Linkage?.ShockWheelCoeffs);
+            Linkage?.MaxRearStroke, Linkage?.ShockWheelCoeffs,
+            frontRebCompP95, rearRebCompP95,
+            frontTravelP95Median, rearTravelP95Median);
     }
 
     #endregion

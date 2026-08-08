@@ -307,6 +307,50 @@
                         <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.RebVelRatio.Target}" />
                     </Grid>
                     <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel" Text="{Binding Metrics.RebCompRatioFront.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue" Text="{Binding Metrics.RebCompRatioFront.Value}" Foreground="{Binding Metrics.RebCompRatioFront.ValueBrush}" />
+                        <Panel Grid.Column="2">
+                            <TextBlock Classes="metricTarget" Text="{Binding Metrics.RebCompRatioFront.Target}"
+                                       IsVisible="{Binding Metrics.RebCompRatioFront.ShowTargetText}" />
+                            <StackPanel Classes="targetEditor" IsVisible="{Binding Metrics.RebCompRatioFront.ShowEditors}">
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.RebCompRatioFront.GreenMin}" />
+                                <TextBlock Classes="editDash" Text="–" />
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.RebCompRatioFront.GreenMax}" />
+                                <Button Classes="embedded" Margin="2,0,0,0" Command="{Binding Metrics.ResetMetricCommand}"
+                                        CommandParameter="{Binding Metrics.RebCompRatioFront}" ToolTip.Tip="Reset to default">
+                                    <Image Width="10" Source="{SvgImage /Assets/fa-rotate-left.svg}" />
+                                </Button>
+                            </StackPanel>
+                        </Panel>
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel" Text="{Binding Metrics.RebCompRatioRear.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue" Text="{Binding Metrics.RebCompRatioRear.Value}" Foreground="{Binding Metrics.RebCompRatioRear.ValueBrush}" />
+                        <Panel Grid.Column="2">
+                            <TextBlock Classes="metricTarget" Text="{Binding Metrics.RebCompRatioRear.Target}"
+                                       IsVisible="{Binding Metrics.RebCompRatioRear.ShowTargetText}" />
+                            <StackPanel Classes="targetEditor" IsVisible="{Binding Metrics.RebCompRatioRear.ShowEditors}">
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.RebCompRatioRear.GreenMin}" />
+                                <TextBlock Classes="editDash" Text="–" />
+                                <NumericUpDown Classes="balanceEdit" Value="{Binding Metrics.RebCompRatioRear.GreenMax}" />
+                                <Button Classes="embedded" Margin="2,0,0,0" Command="{Binding Metrics.ResetMetricCommand}"
+                                        CommandParameter="{Binding Metrics.RebCompRatioRear}" ToolTip.Tip="Reset to default">
+                                    <Image Width="10" Source="{SvgImage /Assets/fa-rotate-left.svg}" />
+                                </Button>
+                            </StackPanel>
+                        </Panel>
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel" Text="{Binding Metrics.TravelP95MedianFront.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue" Text="{Binding Metrics.TravelP95MedianFront.Value}" Foreground="{Binding Metrics.TravelP95MedianFront.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.TravelP95MedianFront.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
+                        <TextBlock Grid.Column="0" Classes="metricLabel" Text="{Binding Metrics.TravelP95MedianRear.Label}" />
+                        <TextBlock Grid.Column="1" Classes="metricValue" Text="{Binding Metrics.TravelP95MedianRear.Value}" Foreground="{Binding Metrics.TravelP95MedianRear.ValueBrush}" />
+                        <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.TravelP95MedianRear.Target}" />
+                    </Grid>
+                    <Grid Classes="metricRow" ColumnDefinitions="* Auto Auto">
                         <TextBlock Grid.Column="0" Classes="metricLabel"  Text="{Binding Metrics.CompMsd.Label}" />
                         <TextBlock Grid.Column="1" Classes="metricValue"  Text="{Binding Metrics.CompMsd.Value}"  Foreground="{Binding Metrics.CompMsd.ValueBrush}" />
                         <TextBlock Grid.Column="2" Classes="metricTarget" Text="{Binding Metrics.CompMsd.Target}" />
