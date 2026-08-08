@@ -73,15 +73,6 @@ public class CompareVelocityHistogramPlot(Plot plot, SuspensionType type) : Sufn
                 polygon.LineStyle.Pattern = LinePattern.Solid;
             }
 
-            // Reference-distribution overlay matches single-session VelocityHistogramPlot
-            var referenceData = data.CalculateVelocityReferenceDistribution(type);
-            var reference = Plot.Add.Scatter(
-                referenceData.Y.Select(v => v / 1000.0).ToArray(),
-                referenceData.Pdf.ToArray());
-            reference.Color = color;
-            reference.MarkerStyle.IsVisible = false;
-            reference.LineStyle.Width = 2;
-            reference.LineStyle.Pattern = LinePattern.Dotted;
         }
 
         Plot.Add.VerticalLine(0, 1f, Color.FromHex("#dddddd"), LinePattern.Dotted);
@@ -95,8 +86,10 @@ public class CompareVelocityHistogramPlot(Plot plot, SuspensionType type) : Sufn
         var legendStep = yRangeTop * 0.08;
         for (var i = 0; i < sessions.Count; i++)
         {
-            var (_, color, _, name) = sessions[i];
-            var label = Plot.Add.Text(name, VelocityLimitMs, legendY - i * legendStep);
+            var (data, color, _, name) = sessions[i];
+            var skew = data.CalculateVelocityReferenceDistribution(type).SkewRatio;
+            var legendText = skew.HasValue ? $"{name} · skew {skew:0.00}" : name;
+            var label = Plot.Add.Text(legendText, VelocityLimitMs, legendY - i * legendStep);
             label.LabelFontColor = color;
             label.LabelFontSize = 12;
             label.LabelAlignment = Alignment.UpperRight;

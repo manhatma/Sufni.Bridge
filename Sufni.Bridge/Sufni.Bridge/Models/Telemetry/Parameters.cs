@@ -125,6 +125,12 @@ public static class Parameters
     // wheel-domain step because shaft velocities span a much smaller range.
     public const double DamperVelocityHistStep = 25.0;
 
+    // Expected rebound/compression velocity-scale ratios for generalized-normal fits.
+    public const double RebCompRatioFrontMin = 0.30;
+    public const double RebCompRatioFrontMax = 0.55;
+    public const double RebCompRatioRearMin = 0.40;
+    public const double RebCompRatioRearMax = 0.65;
+
     // (mm) bottom-outs are regions where travel > max_travel - this value
     public const double BottomoutThreshold = 2.5;
 

@@ -106,9 +106,13 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
         label.LabelPadding = 5;
     }
 
-    private void AddReferenceDistributionLabel(double? beta, double yRangeTop)
+    private void AddReferenceDistributionLabel(ReferenceDistributionData data, double yRangeTop)
     {
-        var text = beta.HasValue ? $"Gen. normal (β {beta:0.00})" : "Reference distribution";
+        var text = data.SkewRatio.HasValue && data.ExpectedSkewLow.HasValue
+            && data.ExpectedSkewHigh.HasValue
+            ? $"Reb/Comp core {data.SkewRatio:0.00} "
+                + $"(target {data.ExpectedSkewLow:0.00}–{data.ExpectedSkewHigh:0.00})"
+            : "Reb/Comp core —";
         // On the right, 0.78 sits below the stats box at 0.97 and cannot cover the left travel colour-bar caption.
         var label = Plot.Add.Text(text, VelocityLimitMs, yRangeTop * 0.78);
         label.LabelFontColor = ReferenceDistributionColor;
@@ -179,20 +183,29 @@ public class VelocityHistogramPlot(Plot plot, SuspensionType type) : TelemetryPl
 
         Plot.Add.VerticalLine(0, 1f, Color.FromHex("#dddddd"), LinePattern.Dotted);
 
-        // Reference distribution: X=velocity (m/s), Y=pdf (time%)
+        // Expected rebound/compression band: X=velocity (m/s), Y=time%.
         var referenceData = telemetryData.CalculateVelocityReferenceDistribution(type);
-        var reference = Plot.Add.Scatter(
-            referenceData.Y.Select(v => v / 1000.0).ToArray(),
-            referenceData.Pdf.ToArray());
-        reference.Color = ReferenceDistributionColor;
-        reference.MarkerStyle.IsVisible = false;
-        reference.LineStyle.Width = 3;
-        reference.LineStyle.Pattern = LinePattern.Dotted;
+        if (referenceData.PdfExpectedHigh is { } expectedHigh
+            && referenceData.PdfExpectedLow is { } expectedLow
+            && referenceData.ExpectedY is { Count: > 1 } expectedY
+            && expectedHigh.Count == expectedY.Count
+            && expectedLow.Count == expectedY.Count)
+        {
+            var bandX = expectedY.Select(v => v / 1000.0)
+                .Concat(expectedY.AsEnumerable().Reverse().Select(v => v / 1000.0))
+                .ToArray();
+            var bandY = expectedHigh.Concat(expectedLow.AsEnumerable().Reverse()).ToArray();
+            var band = Plot.Add.Polygon(bandX, bandY);
+            band.FillStyle.Color = ReferenceDistributionColor.WithAlpha(60);
+            band.LineStyle.Color = ReferenceDistributionColor.WithAlpha(150);
+            band.LineStyle.Width = 1;
+            band.LineStyle.Pattern = LinePattern.Dashed;
+        }
 
         AddBinColorLegend(palette, -VelocityLimitMs, VelocityLimitMs, yRangeTop);
 
         AddSymmetryLabel(telemetryData, type, deadBand, yRangeTop);
-        AddReferenceDistributionLabel(referenceData.Beta, yRangeTop);
+        AddReferenceDistributionLabel(referenceData, yRangeTop);
         AddStatsBox(telemetryData, yRangeTop);
     }
 }

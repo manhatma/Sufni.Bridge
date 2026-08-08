@@ -71,8 +71,24 @@ public partial class BalanceMetricsViewModel : ObservableObject
     public BalanceMetricRow RearBO        { get; } = new() { Label = "Rear Bottom-out",  Target = "≈ 0" };
     public BalanceMetricRow CompVelRatio  { get; } = new() { Label = "Comp Vel F/R",     Target = "−0.08 … +0.07" };
     public BalanceMetricRow RebVelRatio   { get; } = new() { Label = "Reb Vel F/R",      Target = "0.00 … +0.07" };
-    public BalanceMetricRow RebCompRatioFront { get; } = new() { Label = "Reb/Comp Vel F", Target = "0.30–0.55", Key = "RebCompRatioFront", IsEditable = true, HasRange = true };
-    public BalanceMetricRow RebCompRatioRear  { get; } = new() { Label = "Reb/Comp Vel R", Target = "0.40–0.65", Key = "RebCompRatioRear", IsEditable = true, HasRange = true };
+    public BalanceMetricRow RebCompRatioFront { get; } = new()
+    {
+        Label = "Reb/Comp Vel F",
+        Target = System.FormattableString.Invariant(
+            $"{Models.Telemetry.Parameters.RebCompRatioFrontMin:0.00}–{Models.Telemetry.Parameters.RebCompRatioFrontMax:0.00}"),
+        Key = "RebCompRatioFront",
+        IsEditable = true,
+        HasRange = true,
+    };
+    public BalanceMetricRow RebCompRatioRear { get; } = new()
+    {
+        Label = "Reb/Comp Vel R",
+        Target = System.FormattableString.Invariant(
+            $"{Models.Telemetry.Parameters.RebCompRatioRearMin:0.00}–{Models.Telemetry.Parameters.RebCompRatioRearMax:0.00}"),
+        Key = "RebCompRatioRear",
+        IsEditable = true,
+        HasRange = true,
+    };
     // Reference values are not established yet; set a target band once real session data exists.
     public BalanceMetricRow TravelP95MedianFront { get; } = new() { Label = "Travel p95/p50 F" };
     public BalanceMetricRow TravelP95MedianRear  { get; } = new() { Label = "Travel p95/p50 R" };
