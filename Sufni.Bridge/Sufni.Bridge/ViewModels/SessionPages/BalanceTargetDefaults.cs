@@ -80,10 +80,10 @@ public static class BalanceTargetDefaults
             // 2–2.5:1 for shocks.
             // Higher rebound damping lowers rebound velocity, so this ratio should be well below
             // 1; above about 0.95 indicates under-damped rebound and below about 0.3 indicates packing.
-            new BalanceMetricDef("RebCompRatioFront", MetricShape.Band, 0.30, 0.55, 0.10, 0.10, "{0:0.000}",
-                (lo, hi) => $"{lo.ToString("0.000", CultureInfo.InvariantCulture)}–{hi!.Value.ToString("0.000", CultureInfo.InvariantCulture)}"),
-            new BalanceMetricDef("RebCompRatioRear", MetricShape.Band, 0.40, 0.65, 0.10, 0.10, "{0:0.000}",
-                (lo, hi) => $"{lo.ToString("0.000", CultureInfo.InvariantCulture)}–{hi!.Value.ToString("0.000", CultureInfo.InvariantCulture)}"),
+            new BalanceMetricDef("RebCompRatioFront", MetricShape.Band, 0.30, 0.55, 0.10, 0.10, "{0:0.00}",
+                (lo, hi) => $"{lo.ToString("0.00", CultureInfo.InvariantCulture)}–{hi!.Value.ToString("0.00", CultureInfo.InvariantCulture)}"),
+            new BalanceMetricDef("RebCompRatioRear", MetricShape.Band, 0.40, 0.65, 0.10, 0.10, "{0:0.00}",
+                (lo, hi) => $"{lo.ToString("0.00", CultureInfo.InvariantCulture)}–{hi!.Value.ToString("0.00", CultureInfo.InvariantCulture)}"),
         }.ToDictionary(d => d.Key);
 
     /// <summary>
