@@ -39,11 +39,12 @@ public class Suspension
     public double[] VelocityBins { get; set; }
     public double[] FineVelocityBins { get; set; }
 
-    // Raw shock/damper travel before the leverage polynomial. Only populated for the rear
-    // suspension; null for front (where the head-angle factor is linear). Used to smooth
-    // on the finer-quantised shock signal (~2.84 µm/LSB) instead of the polynomial-mapped
-    // wheel travel (~7 µm/LSB). Older sessions deserialise it as null and Reprocess
-    // reconstructs it via Linkage.WheelToDamperTravel.
+    // Raw suspension travel before linkage geometry is applied, populated for both channels.
+    // For the rear this is damper travel before the leverage polynomial; for the front it is
+    // fork stroke before the head-angle factor. Rear velocity processing uses the
+    // finer-quantised damper signal (~2.84 µm/LSB) instead of polynomial-mapped wheel
+    // travel (~7 µm/LSB). Older sessions deserialise this as null and reconstruct it
+    // from stored wheel travel.
     public double[]? ShockTravel { get; set; }
 };
 
@@ -434,6 +435,33 @@ public class TelemetryData
         return shock;
     }
 
+    private double[]? ReconstructFrontShockTravel(double[] wheelTravel)
+    {
+        var frontCoeff = Math.Sin(Linkage.HeadAngle * Math.PI / 180.0);
+        if (!(frontCoeff > 0)) return null;
+
+        var stroke = new double[wheelTravel.Length];
+        for (var i = 0; i < wheelTravel.Length; i++)
+            stroke[i] = wheelTravel[i] / frontCoeff;
+        return stroke;
+    }
+
+    /// <summary>
+    /// Reconstructs front fork stroke for sessions imported before it was persisted. This must
+    /// be called while <see cref="Linkage"/> is still the linkage that produced the stored
+    /// front wheel travel, before replacing it during setup reassignment.
+    /// </summary>
+    public void EnsureFrontShockTravel()
+    {
+        if (Front.Present &&
+            (Front.ShockTravel is null || Front.ShockTravel.Length != Front.Travel.Length))
+        {
+            var reconstructed = ReconstructFrontShockTravel(Front.Travel);
+            if (reconstructed is not null)
+                Front.ShockTravel = reconstructed;
+        }
+    }
+
     private static double[] ComputeVelocity(double[] travel, int sampleRate)
     {
         var n = travel.Length;
@@ -524,6 +552,7 @@ public class TelemetryData
             using var perfFront = PerfLog.Measure("process/front");
             Front.TravelPerLsb = DeriveTravelPerLsb(front, Front.Calibration!, Parameters.ForkTravelPerLsbFallback);
             Front.Travel = new double[fc];
+            Front.ShockTravel = new double[fc];
             Front.ClampedSamples = 0;
             var frontCoeff = Math.Sin(Linkage.HeadAngle * Math.PI / 180.0);
 
@@ -547,6 +576,7 @@ public class TelemetryData
                     lastValidFront = travel;
                     sawValidFront = true;
                 }
+                Front.ShockTravel[i] = Math.Clamp(travel, 0, Linkage.MaxFrontStroke ?? 0);
                 var x = travel * frontCoeff;
                 if (x < 0) Front.ClampedSamples++;
                 x = Math.Max(0, x);
@@ -689,6 +719,21 @@ public class TelemetryData
 
         if (Front.Present)
         {
+            EnsureFrontShockTravel();
+
+            // A missing or invalid front geometry must not flatten previously stored travel.
+            // Leave it untouched while still refreshing the derived front data below.
+            var frontCoeff = Math.Sin(Linkage.HeadAngle * Math.PI / 180.0);
+            if (Linkage.MaxFrontTravel > 0 && frontCoeff > 0 &&
+                Front.ShockTravel is not null && Front.ShockTravel.Length == Front.Travel.Length)
+            {
+                for (var i = 0; i < Front.ShockTravel.Length; i++)
+                {
+                    Front.Travel[i] = Math.Clamp(
+                        Front.ShockTravel[i] * frontCoeff, 0, Linkage.MaxFrontTravel);
+                }
+            }
+
             var tbins = Linspace(0, Linkage.MaxFrontTravel, Parameters.TravelHistBins + 1);
             var dt = Digitize(Front.Travel, tbins);
             Front.TravelBins = tbins;
@@ -856,6 +901,11 @@ public class TelemetryData
             var e = Math.Max(s + 1, Math.Min(endSample, Front.Travel.Length));
             cropped.Front.Travel = Front.Travel[s..e];
 
+            if (Front.ShockTravel is { Length: > 0 } && Front.ShockTravel.Length == Front.Travel.Length)
+                cropped.Front.ShockTravel = Front.ShockTravel[s..e];
+            else
+                cropped.Front.ShockTravel = ReconstructFrontShockTravel(cropped.Front.Travel);
+
             var tbins = Linspace(0, Linkage.MaxFrontTravel, Parameters.TravelHistBins + 1);
             var dt = Digitize(cropped.Front.Travel, tbins);
             cropped.Front.TravelBins = tbins;
@@ -957,6 +1007,16 @@ public class TelemetryData
             combined.Front.Travel = ConcatenateTravelWithTransitions(
                 sessions.Select(s => s.Front.Travel).ToList(), first.SampleRate, out var frontSegments);
             combined.Front.Calibration = first.Front.Calibration;
+
+            var shockArrays = sessions.Select(s =>
+                s.Front.ShockTravel is { Length: > 0 } && s.Front.ShockTravel.Length == s.Front.Travel.Length
+                    ? s.Front.ShockTravel
+                    : s.ReconstructFrontShockTravel(s.Front.Travel)).ToList();
+            if (shockArrays.All(a => a is not null))
+            {
+                combined.Front.ShockTravel = ConcatenateTravelWithTransitions(
+                    shockArrays.Select(a => a!).ToList(), first.SampleRate, out _);
+            }
 
             var tbins = Linspace(0, first.Linkage.MaxFrontTravel, Parameters.TravelHistBins + 1);
             var dt = Digitize(combined.Front.Travel, tbins);

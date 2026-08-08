@@ -617,10 +617,8 @@ public class SqLiteDatabaseService : IDatabaseService
 
     /// <summary>
     /// The linkage table is the source of truth; the blob's linkage is only an import-time
-    /// snapshot. Refreshing it lets ReprocessVelocity re-bake rear wheel travel from the
-    /// stored shock travel through the corrected leverage polynomial. Front travel is not
-    /// rescaled and keeps the head angle baked in at import, matching the existing
-    /// setup-reassignment path.
+    /// snapshot. Refreshing it lets ReprocessVelocity re-bake wheel travel from the stored
+    /// shock or fork travel through the current linkage geometry.
     /// </summary>
     private async Task RefreshLinkageFromSetupAsync(TelemetryData td, Guid? setupId)
     {
@@ -643,6 +641,7 @@ public class SqLiteDatabaseService : IDatabaseService
         // A cubic fit needs at least 4 points; anything less degrades to the zero polynomial.
         if (refreshed.LeverageRatio is not { Length: >= 4 }) return;
 
+        td.EnsureFrontShockTravel();
         td.Linkage = refreshed;
     }
 
@@ -958,6 +957,7 @@ public class SqLiteDatabaseService : IDatabaseService
             if (rawData == null) continue;
 
             var td = MessagePackSerializer.Deserialize<TelemetryData>(rawData);
+            td.EnsureFrontShockTravel();
             td.Linkage = newLinkage;
             var newBlob = td.ReprocessVelocity();
 
@@ -984,6 +984,7 @@ public class SqLiteDatabaseService : IDatabaseService
         if (rawData == null) return;
 
         var td = MessagePackSerializer.Deserialize<TelemetryData>(rawData);
+        td.EnsureFrontShockTravel();
         td.Linkage = newLinkage;
         var newBlob = td.ReprocessVelocity();
 
