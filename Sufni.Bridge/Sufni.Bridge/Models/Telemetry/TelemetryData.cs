@@ -1965,11 +1965,11 @@ public class TelemetryData
             ? medians.ReboundMedian / medians.CompressionMedian
             : (double?)null;
         var expectedSkewLow = type == SuspensionType.Front
-            ? Parameters.RebCompRatioFrontMin
-            : Parameters.RebCompRatioRearMin;
+            ? Parameters.RebCompCoreRatioFrontMin
+            : Parameters.RebCompCoreRatioRearMin;
         var expectedSkewHigh = type == SuspensionType.Front
-            ? Parameters.RebCompRatioFrontMax
-            : Parameters.RebCompRatioRearMax;
+            ? Parameters.RebCompCoreRatioFrontMax
+            : Parameters.RebCompCoreRatioRearMax;
         return CreateReferenceDistributionData(
             CalculateVelocityHistogram(type), step, skewRatio, expectedSkewLow, expectedSkewHigh);
     }
@@ -2457,8 +2457,8 @@ public class TelemetryData
             CalculateDamperVelocityHistogram(),
             Parameters.DamperVelocityHistStep,
             skewRatio,
-            Parameters.RebCompRatioRearMin,
-            Parameters.RebCompRatioRearMax);
+            Parameters.RebCompCoreRatioRearMin,
+            Parameters.RebCompCoreRatioRearMax);
     }
 
     public PositionVelocityData CalculateForkPositionVelocityData()
