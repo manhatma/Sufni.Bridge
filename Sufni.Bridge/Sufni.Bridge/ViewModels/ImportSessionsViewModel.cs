@@ -24,9 +24,11 @@ public partial class ImportSessionsViewModel : ViewModelBase
 
     public ObservableCollection<ITelemetryDataStore>? TelemetryDataStores { get; set; }
     public ObservableCollection<ITelemetryFile> TelemetryFiles { get; } = [];
+    public ObservableCollection<Setup> AvailableSetups { get; } = [];
     private readonly SourceCache<ItemViewModelBase, Guid> sessions;
 
     [ObservableProperty] private ITelemetryDataStore? selectedDataStore;
+    [ObservableProperty] private Setup? selectedSetupItem;
     [ObservableProperty] private bool newDataStoresAvailable;
     [ObservableProperty] private bool importInProgress;
 
@@ -86,12 +88,14 @@ public partial class ImportSessionsViewModel : ViewModelBase
 
     async partial void OnSelectedDataStoreChanged(ITelemetryDataStore? value)
     {
+        OnPropertyChanged(nameof(SelectedBoardId));
         Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
 
         if (value == null)
         {
             Interlocked.Increment(ref dataStoreFilesGeneration);
             TelemetryFiles.Clear();
+            SelectedSetupItem = null;
             SelectedSetup = null;
             return;
         }
@@ -104,7 +108,8 @@ public partial class ImportSessionsViewModel : ViewModelBase
         {
             var boards = await databaseService.GetBoardsAsync();
             var selectedBoard = boards.FirstOrDefault(b => b?.Id.ToLower().Trim() == value.BoardId?.Trim(), null);
-            SelectedSetup = selectedBoard?.SetupId;
+            await LoadSetupsAsync();
+            SelectSetupById(selectedBoard?.SetupId);
         }
         catch (Exception e)
         {
@@ -114,12 +119,48 @@ public partial class ImportSessionsViewModel : ViewModelBase
         await GetDataStoreFiles(value);
     }
 
+    partial void OnSelectedSetupItemChanged(Setup? value)
+    {
+        SelectedSetup = value?.Id;
+    }
+
     #endregion Property change handlers
 
     #region Private members
 
     private readonly IDatabaseService? databaseService;
     private int dataStoreFilesGeneration;
+
+    private async Task LoadSetupsAsync()
+    {
+        Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
+
+        try
+        {
+            var setups = (await databaseService.GetSetupsAsync())
+                .OrderBy(s => s.Name, StringComparer.CurrentCultureIgnoreCase)
+                .ToList();
+
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                AvailableSetups.Clear();
+                foreach (var setup in setups)
+                {
+                    AvailableSetups.Add(setup);
+                }
+            });
+        }
+        catch (Exception e)
+        {
+            ErrorMessages.Add($"Could not load Setups: {e.Message}");
+        }
+    }
+
+    private void SelectSetupById(Guid? id)
+    {
+        SelectedSetupItem = id is null ? null : AvailableSetups.FirstOrDefault(s => s.Id == id.Value);
+        SelectedSetup = id;
+    }
 
     #endregion Private members
 
@@ -178,13 +219,16 @@ public partial class ImportSessionsViewModel : ViewModelBase
 
     #region Public methods
 
+    public string? SelectedBoardId => SelectedDataStore?.BoardId;
+
     public async Task EvaluateSetupExists()
     {
         Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
 
         var boards = await databaseService.GetBoardsAsync();
         var selectedBoard = boards.FirstOrDefault(b => b?.Id.ToLower().Trim() == SelectedDataStore?.BoardId?.Trim(), null);
-        SelectedSetup = selectedBoard?.SetupId;
+        await LoadSetupsAsync();
+        SelectSetupById(selectedBoard?.SetupId);
     }
 
     public async Task Refresh()

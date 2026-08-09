@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.Linq;
 using Sufni.Bridge.Models;
+using Sufni.Bridge.Models.Telemetry;
 
 namespace Sufni.Bridge.ViewModels.SessionPages;
 
@@ -76,11 +77,21 @@ public static class BalanceTargetDefaults
                 (cut, _) => $"≤ {cut.ToString("0.0", CultureInfo.InvariantCulture)}°"),
             new BalanceMetricDef("GoutSymmetry", MetricShape.CutoffLower, 10, null, 10, 0, "{0:0} %",
                 (cut, _) => $"≤ {I(cut)} %"),
+            // Published rebound/compression damping ratios are about 3–3.5:1 for forks and
+            // 2–2.5:1 for shocks.
+            // Higher rebound damping lowers rebound velocity, so this ratio should be well below
+            // 1; above about 0.95 indicates under-damped rebound and below about 0.3 indicates packing.
+            new BalanceMetricDef("RebCompRatioFront", MetricShape.Band,
+                Parameters.RebCompRatioFrontMin, Parameters.RebCompRatioFrontMax, 0.10, 0.10, "{0:0.00}",
+                (lo, hi) => $"{lo.ToString("0.00", CultureInfo.InvariantCulture)}–{hi!.Value.ToString("0.00", CultureInfo.InvariantCulture)}"),
+            new BalanceMetricDef("RebCompRatioRear", MetricShape.Band,
+                Parameters.RebCompRatioRearMin, Parameters.RebCompRatioRearMax, 0.10, 0.10, "{0:0.00}",
+                (lo, hi) => $"{lo.ToString("0.00", CultureInfo.InvariantCulture)}–{hi!.Value.ToString("0.00", CultureInfo.InvariantCulture)}"),
         }.ToDictionary(d => d.Key);
 
     /// <summary>
     /// Default green bounds for a metric. Discipline is accepted so per-discipline defaults can
-    /// be introduced later; today the six editable metrics share one default per metric.
+    /// be introduced later; today the editable metrics share one default per metric.
     /// </summary>
     public static (double min, double? max) DefaultGreen(string key, Discipline? discipline = null)
     {

@@ -5,13 +5,11 @@ namespace Sufni.Bridge.Plots;
 
 /// <summary>
 /// Full-session front+rear acceleration (g) overview. Used as the Misc page's zoom mini-map, with
-/// optional (prominent) airtime bands for navigation. Acceleration is derived exactly as
-/// AccelerationTimeCroppedPlot does (shared WH pre-smoother + central difference). No legend.
+/// optional (prominent) airtime bands for navigation. Acceleration uses the shared TelemetryData
+/// derivation (stronger WH pre-smoother + central difference). No legend.
 /// </summary>
 public class AccelerationTimeHistoryPlot(Plot plot, bool showAirtimeBands = false) : TelemetryPlot(plot)
 {
-    private const double GravityMmPerS2 = 9806.65;
-
     public override void LoadTelemetryData(TelemetryData telemetryData)
     {
         base.LoadTelemetryData(telemetryData);
@@ -23,26 +21,15 @@ public class AccelerationTimeHistoryPlot(Plot plot, bool showAirtimeBands = fals
 
         var sampleRate = telemetryData.SampleRate;
         var period = 1.0 / sampleRate;
-        var accelSmoother = telemetryData.GetAccelSmoother();
-
-        double[]? ToAcceleration(Suspension side)
+        double[]? ToAcceleration(Suspension side, SuspensionType type)
         {
             if (!side.Present || side.Velocity is not { Length: > 0 })
                 return null;
-            var v = side.Velocity;
-            var n = v.Length;
-            var a = new double[n];
-            if (n < 2) return a;
-            var vs = accelSmoother.Smooth(v);
-            a[0] = (vs[1] - vs[0]) * sampleRate / GravityMmPerS2;
-            for (int i = 1; i < n - 1; i++)
-                a[i] = (vs[i + 1] - vs[i - 1]) * sampleRate / 2.0 / GravityMmPerS2;
-            a[n - 1] = (vs[n - 1] - vs[n - 2]) * sampleRate / GravityMmPerS2;
-            return a;
+            return telemetryData.CalculateAcceleration(type);
         }
 
-        var front = ToAcceleration(telemetryData.Front);
-        var rear = ToAcceleration(telemetryData.Rear);
+        var front = ToAcceleration(telemetryData.Front, SuspensionType.Front);
+        var rear = ToAcceleration(telemetryData.Rear, SuspensionType.Rear);
         var hasFront = front is { Length: > 0 };
         var hasRear = rear is { Length: > 0 };
         if (!hasFront && !hasRear)

@@ -38,6 +38,7 @@ public interface IDatabaseService
     public Task<List<Guid>> GetIncompleteSessionIdsAsync();
     public Task<List<Session>> GetChangedSessionsAsync(int since);
     public Task<TelemetryData?> GetSessionPsstAsync(Guid id);
+    public Task<Linkage?> GetSessionLinkageAsync(Guid sessionId);
     public Task<byte[]?> GetSessionRawPsstAsync(Guid id);
     public Task<Guid> PutSessionAsync(Session session);
     public Task PatchSessionPsstAsync(Guid id, byte[] data);

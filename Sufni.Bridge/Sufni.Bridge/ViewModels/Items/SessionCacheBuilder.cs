@@ -24,6 +24,7 @@ internal static class SessionCacheBuilder
         TelemetryData? fullData,
         Session session,
         IDatabaseService databaseService,
+        string? geometrySignature,
         Stopwatch swCache,
         Func<Task<Discipline?>> getSessionDisciplineAsync,
         Func<Discipline?, Task<Dictionary<string, (double? min, double? max)>?>> getBalanceOverridesAsync,
@@ -59,6 +60,7 @@ internal static class SessionCacheBuilder
         {
             SessionId = viewModel.Id,
             PlotVersion = SessionViewModel.CurrentPlotVersion,
+            GeometrySignature = geometrySignature,
             CropStartSample = session.CropStartSample,
             CropEndSample   = session.CropEndSample,
             // Scalar meta for later opens: rate and FULL (uncropped) sample count let the

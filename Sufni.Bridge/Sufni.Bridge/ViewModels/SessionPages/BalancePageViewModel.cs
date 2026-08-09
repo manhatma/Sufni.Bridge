@@ -71,15 +71,32 @@ public partial class BalanceMetricsViewModel : ObservableObject
     public BalanceMetricRow RearBO        { get; } = new() { Label = "Rear Bottom-out",  Target = "≈ 0" };
     public BalanceMetricRow CompVelRatio  { get; } = new() { Label = "Comp Vel F/R",     Target = "−0.08 … +0.07" };
     public BalanceMetricRow RebVelRatio   { get; } = new() { Label = "Reb Vel F/R",      Target = "0.00 … +0.07" };
+    public BalanceMetricRow RebCompRatioFront { get; } = new()
+    {
+        Label = "Reb/Comp Vel F",
+        Target = System.FormattableString.Invariant(
+            $"{Models.Telemetry.Parameters.RebCompRatioFrontMin:0.00}–{Models.Telemetry.Parameters.RebCompRatioFrontMax:0.00}"),
+        Key = "RebCompRatioFront",
+        IsEditable = true,
+        HasRange = true,
+    };
+    public BalanceMetricRow RebCompRatioRear { get; } = new()
+    {
+        Label = "Reb/Comp Vel R",
+        Target = System.FormattableString.Invariant(
+            $"{Models.Telemetry.Parameters.RebCompRatioRearMin:0.00}–{Models.Telemetry.Parameters.RebCompRatioRearMax:0.00}"),
+        Key = "RebCompRatioRear",
+        IsEditable = true,
+        HasRange = true,
+    };
+    // Reference values are not established yet; set a target band once real session data exists.
+    public BalanceMetricRow TravelP95MedianFront { get; } = new() { Label = "Travel p95/p50 F" };
+    public BalanceMetricRow TravelP95MedianRear  { get; } = new() { Label = "Travel p95/p50 R" };
     public BalanceMetricRow CompMsd       { get; } = new() { Label = "MSD Compression",  Target = "≈ 0" };
     public BalanceMetricRow RebMsd        { get; } = new() { Label = "MSD Rebound",      Target = "−10 to 0 %", Key = "RebMsd", IsEditable = true, HasRange = true };
-    // Discipline-dependent eigenfrequency targets — see GetFreqBands below.
-    // Following Vorsprung's recommendation, the band starts equal front/rear
-    // (lower bound matches Rear); the upper bound runs ~0.3 Hz higher to allow
-    // for the common practice of running the front slightly stiffer.
-    // Defaults are Enduro; updated when Apply runs.
-    public BalanceMetricRow FrontFreq     { get; } = new() { Label = "Front Eigenfreq.", Target = "2.1–3.2 Hz" };
-    public BalanceMetricRow RearFreq      { get; } = new() { Label = "Rear Eigenfreq.",  Target = "2.1–2.9 Hz" };
+    // Defaults are Enduro; updated from TelemetryData's shared discipline table when Apply runs.
+    public BalanceMetricRow FrontFreq     { get; } = new() { Label = "Front Eigenfreq.", Target = "2.7–3.2 Hz" };
+    public BalanceMetricRow RearFreq      { get; } = new() { Label = "Rear Eigenfreq.",  Target = "2.1–2.4 Hz" };
     public BalanceMetricRow FreqDiff      { get; } = new() { Label = "Frequency-Diff |F−R|", Target = "≤ 0.4 Hz" };
     public BalanceMetricRow PeakAmpRatio  { get; } = new() { Label = "Peak Amp F/R",     Target = "−0.05 … +0.05" };
 
@@ -109,7 +126,8 @@ public partial class BalanceMetricsViewModel : ObservableObject
 
     [ObservableProperty] private bool isEditing;
 
-    private BalanceMetricRow[] EditableRows => [FrontSag, RearSag, SagDiff, DamperSag, FrontP95, RearP95, RebMsd, PitchStability, GoutSymmetry];
+    private BalanceMetricRow[] EditableRows => [FrontSag, RearSag, SagDiff, DamperSag, FrontP95, RearP95,
+        RebMsd, PitchStability, GoutSymmetry, RebCompRatioFront, RebCompRatioRear];
 
     // Set by the owning SessionViewModel (same injection style as CropPage.ApplyCropCommand).
     // Invoked after a confirmed edit is persisted, so the session can rebuild plots whose
@@ -250,7 +268,7 @@ public partial class BalanceMetricsViewModel : ObservableObject
             ? (double?)Math.Abs(m.FrontP95Pct.Value - m.RearP95Pct.Value)
             : null;
         SetThreshold(P95Diff, p95Diff, "{0:0.0} pp", 5.0, 10.0, lowerIsBetter: true);
-        SetHeadAngle(EffectiveHeadAngle, m.HeadAngleStaticDeg, m.HeadAngleShiftDeg);
+        SetHeadAngle(EffectiveHeadAngle, m);
         SetPitchAttitude(PitchAttitude, m.PitchMeanDeg,
             BalanceTargetDefaults.ExpectedPitchBand(
                 EffectiveGreen("FrontSag", discipline), rearSagBand,
@@ -277,9 +295,13 @@ public partial class BalanceMetricsViewModel : ObservableObject
         // Asymmetric: front rebound should not be slower than rear (rear-faster rebound = kick).
         // Acceptable band stays at 1.00–1.20 → 0.0–0.0909 in Michelson space.
         SetSignedBand(RebVelRatio,  m.ReboundVelocityRatio,      0.0,    0.0698,  0.0,    0.0909);
+        ApplyEditable(RebCompRatioFront, m.FrontReboundCompressionP95Ratio, discipline);
+        ApplyEditable(RebCompRatioRear, m.RearReboundCompressionP95Ratio, discipline);
+        SetSimple(TravelP95MedianFront, m.FrontTravelP95MedianRatio, "{0:0.00}");
+        SetSimple(TravelP95MedianRear, m.RearTravelP95MedianRatio, "{0:0.00}");
         SetMsd(CompMsd, m.CompressionMsd);
         ApplyEditable(RebMsd, m.ReboundMsd, discipline);
-        var (frontLo, frontHi, rearLo, rearHi) = GetFreqBands(discipline ?? Discipline.Enduro);
+        var (frontLo, frontHi, rearLo, rearHi) = TelemetryData.EigenfrequencyTargetBandFor(discipline);
         FrontFreq.Target = string.Format(CultureInfo.InvariantCulture, "{0:0.0}–{1:0.0} Hz", frontLo, frontHi);
         RearFreq.Target  = string.Format(CultureInfo.InvariantCulture, "{0:0.0}–{1:0.0} Hz", rearLo,  rearHi);
         SetFreqBand(FrontFreq, m.FrontPeakFrequencyHz, frontLo, frontHi);
@@ -380,17 +402,23 @@ public partial class BalanceMetricsViewModel : ObservableObject
             :                           BalanceStatus.Critical;
     }
 
-    private static void SetHeadAngle(BalanceMetricRow row, double? staticDeg, double? shiftDeg)
+    public static double? EffectiveHeadAngleFor(BalanceMetrics metrics) =>
+        metrics.HeadAngleStaticDeg.HasValue && metrics.HeadAngleShiftDeg.HasValue
+            ? metrics.HeadAngleStaticDeg.Value + metrics.HeadAngleShiftDeg.Value
+            : null;
+
+    private static void SetHeadAngle(BalanceMetricRow row, BalanceMetrics metrics)
     {
-        if (!staticDeg.HasValue || !shiftDeg.HasValue)
+        var effective = EffectiveHeadAngleFor(metrics);
+        if (!effective.HasValue || !metrics.HeadAngleStaticDeg.HasValue)
         {
             row.Value = "—";
             row.Target = "";
             row.Status = BalanceStatus.Unknown;
             return;
         }
-        row.Value = string.Format(CultureInfo.InvariantCulture, "{0:0.0}°", staticDeg.Value + shiftDeg.Value);
-        row.Target = string.Format(CultureInfo.InvariantCulture, "{0:0.0}°", staticDeg.Value);
+        row.Value = string.Format(CultureInfo.InvariantCulture, "{0:0.0}°", effective.Value);
+        row.Target = string.Format(CultureInfo.InvariantCulture, "{0:0.0}°", metrics.HeadAngleStaticDeg.Value);
         row.Status = BalanceStatus.Unknown;
     }
 
@@ -437,23 +465,6 @@ public partial class BalanceMetricsViewModel : ObservableObject
             : abs <= 15        ? BalanceStatus.Acceptable
             :                    BalanceStatus.Critical;
     }
-
-    /// <summary>
-    /// Discipline-specific body eigenfrequency target bands. Derived from
-    /// f_n = (1/2π)·√(g/x_static) at sag 20–35 % for typical travel per category:
-    ///   XC        ~80 mm  → 3.0–3.9 Hz
-    ///   Enduro    ~160 mm → 2.1–3.2 Hz
-    ///   Downhill  ~200 mm → 1.7–2.5 Hz
-    /// Front lower bound equals Rear lower bound (Vorsprung); Front upper bound
-    /// runs ~0.3 Hz higher to allow for a slightly stiffer front. See FrontFreq comment.
-    /// </summary>
-    private static (double frontLo, double frontHi, double rearLo, double rearHi) GetFreqBands(Discipline d) => d switch
-    {
-        Discipline.XC       => (3.0, 3.9, 3.0, 3.6),
-        Discipline.Trail    => (2.5, 3.5, 2.5, 3.2), // new
-        Discipline.Downhill => (1.7, 2.5, 1.7, 2.3),
-        _                   => (2.1, 3.2, 2.1, 2.9), // Enduro / default
-    };
 
     private static void SetFreqBand(BalanceMetricRow row, double? value, double goodLo, double goodHi)
     {

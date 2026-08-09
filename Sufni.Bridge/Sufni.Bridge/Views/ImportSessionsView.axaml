@@ -44,7 +44,7 @@
     <Grid
         Margin="20,20,20,10"
         ColumnDefinitions="auto * auto"
-        RowDefinitions="44 * auto auto 39">
+        RowDefinitions="44 44 * auto auto 39">
 
         <!--  Datastore selector  -->
         <ComboBox
@@ -89,9 +89,37 @@
             IsVisible="{Binding NewDataStoresAvailable}"
             Source="{SvgImage /Assets/fa-circle-exclamation.svg}" />
 
+        <ComboBox
+            Grid.Row="1"
+            Grid.Column="0"
+            Grid.ColumnSpan="2"
+            Margin="0,2,2,0"
+            HorizontalAlignment="Stretch"
+            VerticalAlignment="Stretch"
+            ItemsSource="{Binding AvailableSetups}"
+            PlaceholderText="no setup for this DAQ — pick one"
+            SelectedItem="{Binding SelectedSetupItem}">
+            <ComboBox.ItemTemplate>
+                <DataTemplate>
+                    <TextBlock Text="{Binding Name}" />
+                </DataTemplate>
+            </ComboBox.ItemTemplate>
+        </ComboBox>
+
+        <TextBlock
+            Grid.Row="1"
+            Grid.Column="2"
+            Margin="4,0,0,0"
+            VerticalAlignment="Center"
+            FontSize="10"
+            Foreground="#888888"
+            Text="{Binding SelectedBoardId}"
+            TextAlignment="Center"
+            TextWrapping="Wrap" />
+
         <!--  List of SST files in selected datastore  -->
         <ScrollViewer
-            Grid.Row="1"
+            Grid.Row="2"
             Grid.Column="0"
             Grid.ColumnSpan="3"
             Margin="0,5,0,5">
@@ -227,7 +255,7 @@
 
         <!--  Notifications  -->
         <v:NotificationsBar
-            Grid.Row="2"
+            Grid.Row="3"
             Grid.Column="0"
             Grid.ColumnSpan="3"
             Margin="2,4"
@@ -235,14 +263,14 @@
 
         <!--  Error messages  -->
         <v:ErrorMessagesBar
-            Grid.Row="3"
+            Grid.Row="4"
             Grid.Column="0"
             Grid.ColumnSpan="3"
             Margin="2,4"
             ZIndex="10" />
 
         <Grid
-            Grid.Row="4"
+            Grid.Row="5"
             Grid.Column="0"
             Grid.ColumnSpan="3"
             ColumnDefinitions="auto *">
@@ -294,7 +322,7 @@
         <!--  Progress ring  -->
         <Panel
             Grid.Row="0"
-            Grid.RowSpan="5"
+            Grid.RowSpan="6"
             Grid.Column="0"
             Grid.ColumnSpan="3"
             Background="#0d0d0d"
@@ -302,7 +330,7 @@
             Opacity="0.7" />
         <progRing:ProgressRing
             Grid.Row="0"
-            Grid.RowSpan="5"
+            Grid.RowSpan="6"
             Grid.Column="0"
             Grid.ColumnSpan="3"
             Width="40"

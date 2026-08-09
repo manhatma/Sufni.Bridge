@@ -231,6 +231,8 @@ public class SqLiteDatabaseService : IDatabaseService
         await AddColumnIfMissing("position_velocity_comparison");
         await AddColumnIfMissing("summary_json");
         await AddColumnIfMissing("plot_version", "INTEGER");
+        // DEFAULT 0 intentionally invalidates every legacy cache once on first open.
+        await AddColumnIfMissing("geometry_signature");
         await AddColumnIfMissing("combined_balance");
         await AddColumnIfMissing("crop_start_sample", "INTEGER");
         await AddColumnIfMissing("crop_end_sample", "INTEGER");
@@ -585,6 +587,10 @@ public class SqLiteDatabaseService : IDatabaseService
             .ToListAsync();
     }
 
+    /// <summary>
+    /// Loads a session and repairs geometry drift against the linkage table, which is the
+    /// source of truth; the blob only carries the linkage snapshot captured at import time.
+    /// </summary>
     public async Task<TelemetryData?> GetSessionPsstAsync(Guid id)
     {
         await Initialization;
@@ -611,8 +617,50 @@ public class SqLiteDatabaseService : IDatabaseService
             var updatedBlob = td.ReprocessVelocity();
             await connection.ExecuteAsync("UPDATE session SET data=? WHERE id=?", [updatedBlob, id]);
         }
+        else
+        {
+            var fresh = await GetSetupLinkageAsync(sessions[0].Setup);
+            // A degenerate fit would flatten the rear channel instead of repairing it.
+            if (fresh?.LeverageRatio is { Length: >= 4 } &&
+                td.Linkage.GeometrySignature != fresh.GeometrySignature)
+            {
+                // Reconstruct fork stroke while the old head angle is still in effect.
+                td.EnsureFrontShockTravel();
+                td.Linkage = fresh;
+                var updatedBlob = td.ReprocessVelocity();
+                await connection.ExecuteAsync("UPDATE session SET data=? WHERE id=?", [updatedBlob, id]);
+                await connection.ExecuteAsync("DELETE FROM session_cache WHERE session_id=?", id);
+            }
+        }
 
         return td;
+    }
+
+    public async Task<Linkage?> GetSessionLinkageAsync(Guid sessionId)
+    {
+        await Initialization;
+        var sessions = await connection.QueryAsync<Session>(
+            "SELECT setup_id FROM session WHERE deleted IS null AND id = ?", sessionId);
+        return sessions.Count == 1 ? await GetSetupLinkageAsync(sessions[0].Setup) : null;
+    }
+
+    private async Task<Linkage?> GetSetupLinkageAsync(Guid? setupId)
+    {
+        if (setupId is null) return null;
+
+        // Deliberately ignore the deleted flag: a session may still reference a
+        // soft-deleted setup or linkage, and that linkage is still the correct row.
+        var setups = await connection.QueryAsync<Setup>(
+            "SELECT linkage_id FROM setup WHERE id = ?", setupId.Value);
+        if (setups.Count != 1) return null;
+        var linkages = await connection.QueryAsync<Linkage>(
+            "SELECT id, name, head_angle, front_stroke, rear_stroke, wheelbase, raw_lr_data FROM linkage WHERE id = ?",
+            setups[0].LinkageId);
+        if (linkages.Count != 1) return null;
+
+        var row = linkages[0];
+        return new Linkage(row.Id, row.Name, row.HeadAngle,
+            row.MaxFrontStroke, row.MaxRearStroke, row.Wheelbase, row.RawData);
     }
 
     /// <summary>
@@ -622,21 +670,8 @@ public class SqLiteDatabaseService : IDatabaseService
     /// </summary>
     private async Task RefreshLinkageFromSetupAsync(TelemetryData td, Guid? setupId)
     {
-        if (setupId is null) return;
-
-        // Deliberately ignore the deleted flag: a session may still reference a
-        // soft-deleted setup or linkage, and that linkage is still the correct row.
-        var setups = await connection.QueryAsync<Setup>(
-            "SELECT linkage_id FROM setup WHERE id = ?", setupId.Value);
-        if (setups.Count != 1) return;
-        var linkages = await connection.QueryAsync<Linkage>(
-            "SELECT id, name, head_angle, front_stroke, rear_stroke, wheelbase, raw_lr_data FROM linkage WHERE id = ?",
-            setups[0].LinkageId);
-        if (linkages.Count != 1) return;
-
-        var row = linkages[0];
-        var refreshed = new Linkage(row.Id, row.Name, row.HeadAngle,
-            row.MaxFrontStroke, row.MaxRearStroke, row.Wheelbase, row.RawData);
+        var refreshed = await GetSetupLinkageAsync(setupId);
+        if (refreshed is null) return;
 
         // A cubic fit needs at least 4 points; anything less degrades to the zero polynomial.
         if (refreshed.LeverageRatio is not { Length: >= 4 }) return;
@@ -855,7 +890,7 @@ public class SqLiteDatabaseService : IDatabaseService
         // plot_version. Callers check staleness against this first and fetch the wide
         // row only when the cache is actually usable.
         var results = await connection.QueryAsync<SessionCacheMeta>(
-            "SELECT plot_version, crop_start_sample, crop_end_sample, " +
+            "SELECT plot_version, geometry_signature, crop_start_sample, crop_end_sample, " +
             "pitch_expected_min_deg, pitch_expected_max_deg, balance_metrics_json, " +
             "sample_rate, sample_count, " +
             "(pitch_balance IS NOT NULL) AS has_pitch_balance " +

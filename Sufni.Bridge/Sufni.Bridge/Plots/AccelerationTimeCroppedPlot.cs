@@ -7,7 +7,6 @@ namespace Sufni.Bridge.Plots;
 public class AccelerationTimeCroppedPlot(Plot plot, SuspensionType type,
     double? windowStartSeconds = null, double? windowEndSeconds = null) : TelemetryPlot(plot)
 {
-    private const double GravityMmPerS2 = 9806.65;
     private static readonly Color StatColor = Color.FromHex("#FFD700");
 
     public override void LoadTelemetryData(TelemetryData telemetryData)
@@ -27,27 +26,6 @@ public class AccelerationTimeCroppedPlot(Plot plot, SuspensionType type,
         var period = 1.0 / sampleRate;
         var color = type == SuspensionType.Front ? FrontColor : RearColor;
 
-        // Velocity-tuned WH (order 3, λ=11) leaves enough 30–93 Hz residue that a naive
-        // 2nd differentiation produces unphysical g-peaks. Pre-smooth velocity with a
-        // stronger WH (cutoff ≈29 Hz @ 860 SPS, just below mechanical bandwidth) before
-        // the central difference. Acts only on the acceleration display; Velocity, Strokes
-        // and histograms are unaffected. The smoother instance (and its ~50 MB factored
-        // matrix) is shared between the front and rear acceleration plots.
-        var accelSmoother = telemetryData.GetAccelSmoother();
-
-        double[] ToAcceleration(double[] v)
-        {
-            var n = v.Length;
-            var a = new double[n];
-            if (n < 2) return a;
-            var vs = accelSmoother.Smooth(v);
-            a[0] = (vs[1] - vs[0]) * sampleRate / GravityMmPerS2;
-            for (int i = 1; i < n - 1; i++)
-                a[i] = (vs[i + 1] - vs[i - 1]) * sampleRate / 2.0 / GravityMmPerS2;
-            a[n - 1] = (vs[n - 1] - vs[n - 2]) * sampleRate / GravityMmPerS2;
-            return a;
-        }
-
         static (double Max, double Min, double Rms) Stats(double[] a)
         {
             if (a.Length == 0) return (0, 0, 0);
@@ -61,7 +39,7 @@ public class AccelerationTimeCroppedPlot(Plot plot, SuspensionType type,
             return (mx, mn, Math.Sqrt(sumSq / a.Length));
         }
 
-        var acc = ToAcceleration(sus.Velocity);
+        var acc = telemetryData.CalculateAcceleration(type);
         var sig = Plot.Add.Signal(acc, period);
         sig.Color = color;
         sig.LineWidth = 1;

@@ -84,21 +84,6 @@ public class CompareDamperVelocityHistogramPlot(Plot plot) : SufniPlot(plot)
             }
         }
 
-        // Reference-distribution overlay per session (Y is already mm/s — no /1000 conversion).
-        foreach (var (data, color, _, _) in sessions)
-        {
-            if (!data.Rear.Present) continue;
-
-            var referenceData = data.CalculateDamperReferenceDistribution();
-            var reference = Plot.Add.Scatter(
-                referenceData.Y.ToArray(),
-                referenceData.Pdf.ToArray());
-            reference.Color = color;
-            reference.MarkerStyle.IsVisible = false;
-            reference.LineStyle.Width = 2;
-            reference.LineStyle.Pattern = LinePattern.Dotted;
-        }
-
         Plot.Add.VerticalLine(0, 1f, Color.FromHex("#dddddd"), LinePattern.Dotted);
 
         var limit = sharedLimit;
@@ -113,8 +98,10 @@ public class CompareDamperVelocityHistogramPlot(Plot plot) : SufniPlot(plot)
         var legendStep = yRangeTop * 0.08;
         for (var i = 0; i < sessions.Count; i++)
         {
-            var (_, color, _, name) = sessions[i];
-            var label = Plot.Add.Text(name, limit, legendY - i * legendStep);
+            var (data, color, _, name) = sessions[i];
+            var skew = data.CalculateDamperReferenceDistribution().SkewRatio;
+            var legendText = skew.HasValue ? $"{name} · skew {skew:0.00}" : name;
+            var label = Plot.Add.Text(legendText, limit, legendY - i * legendStep);
             label.LabelFontColor = color;
             label.LabelFontSize = 12;
             label.LabelAlignment = Alignment.UpperRight;

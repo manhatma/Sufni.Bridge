@@ -9,6 +9,24 @@ namespace Sufni.Bridge.Plots;
 public class CompareCumulativeTravelPlot(Plot plot) : SufniPlot(plot)
 {
     private const double MinTotalForShareMm = 500.0;
+    private const int DecimatedPointCount = 1200;
+
+    private static (double[] xs, double[] ys) DecimateForPlot(double[] cumulativeMm, double period)
+    {
+        var n = cumulativeMm.Length;
+        var m = Math.Min(DecimatedPointCount, n);
+        var xs = new double[m];
+        var ys = new double[m];
+
+        for (var j = 0; j < m; j++)
+        {
+            var idx = m == 1 ? 0 : (long)j * (n - 1) / (m - 1);
+            xs[j] = idx * period;
+            ys[j] = cumulativeMm[idx] / 1000.0;
+        }
+
+        return (xs, ys);
+    }
 
     public void LoadMultipleSessions(List<(TelemetryData data, Color color, LinePattern pattern, string name)> sessions)
     {
@@ -33,34 +51,35 @@ public class CompareCumulativeTravelPlot(Plot plot) : SufniPlot(plot)
             if (data.Front.Present)
             {
                 var cumulativeMm = data.CalculateCumulativeTravel(SuspensionType.Front);
-                var cumulativeM = Array.ConvertAll(cumulativeMm, value => value / 1000.0);
-                if (cumulativeM.Length > 0)
+                if (cumulativeMm.Length > 0)
                 {
-                    var signal = Plot.Add.Signal(cumulativeM, period);
-                    signal.Color = color;
-                    signal.LineWidth = 1;
-                    signal.LinePattern = LinePattern.Solid;
+                    // Decimate drawing data because Signal's per-pixel-column rendering swallows dash patterns.
+                    var (xs, ys) = DecimateForPlot(cumulativeMm, period);
+                    var scatter = Plot.Add.ScatterLine(xs, ys);
+                    scatter.LineStyle.Color = color;
+                    scatter.LineStyle.Width = 1;
+                    scatter.LineStyle.Pattern = LinePattern.Solid;
                     frontTotalMm = cumulativeMm[^1];
                     hasFront = true;
                     durationSamples = Math.Max(durationSamples, cumulativeMm.Length);
-                    maxTravelM = Math.Max(maxTravelM, cumulativeM[^1]);
+                    maxTravelM = Math.Max(maxTravelM, cumulativeMm[^1] / 1000.0);
                 }
             }
 
             if (data.Rear.Present)
             {
                 var cumulativeMm = data.CalculateCumulativeTravel(SuspensionType.Rear);
-                var cumulativeM = Array.ConvertAll(cumulativeMm, value => value / 1000.0);
-                if (cumulativeM.Length > 0)
+                if (cumulativeMm.Length > 0)
                 {
-                    var signal = Plot.Add.Signal(cumulativeM, period);
-                    signal.Color = color;
-                    signal.LineWidth = 1;
-                    signal.LinePattern = LinePattern.Dashed;
+                    var (xs, ys) = DecimateForPlot(cumulativeMm, period);
+                    var scatter = Plot.Add.ScatterLine(xs, ys);
+                    scatter.LineStyle.Color = color;
+                    scatter.LineStyle.Width = 1;
+                    scatter.LineStyle.Pattern = LinePattern.Dashed;
                     rearTotalMm = cumulativeMm[^1];
                     hasRear = true;
                     durationSamples = Math.Max(durationSamples, cumulativeMm.Length);
-                    maxTravelM = Math.Max(maxTravelM, cumulativeM[^1]);
+                    maxTravelM = Math.Max(maxTravelM, cumulativeMm[^1] / 1000.0);
                 }
             }
 
@@ -69,20 +88,16 @@ public class CompareCumulativeTravelPlot(Plot plot) : SufniPlot(plot)
             var durationSeconds = durationSamples * period;
             var totalMm = frontTotalMm + rearTotalMm;
             var frontShare = totalMm < MinTotalForShareMm ? double.NaN : frontTotalMm / totalMm * 100.0;
-            var travelRate = durationSeconds <= 0 ? double.NaN : totalMm / 1000.0 / (durationSeconds / 60.0);
             var shareText = double.IsNaN(frontShare)
                 ? "—"
                 : frontShare.ToString("0.0", CultureInfo.InvariantCulture);
-            var rateText = double.IsNaN(travelRate)
-                ? "—"
-                : travelRate.ToString("0.0", CultureInfo.InvariantCulture);
             var frontText = hasFront
                 ? (frontTotalMm / 1000.0).ToString("0", CultureInfo.InvariantCulture)
                 : "—";
             var rearText = hasRear
                 ? (rearTotalMm / 1000.0).ToString("0", CultureInfo.InvariantCulture)
                 : "—";
-            labels.Add((color, $"{name}: F {frontText} m / R {rearText} m · {shareText}% · {rateText} m/min"));
+            labels.Add((color, $"{name}: F {frontText} m / R {rearText} m · {shareText}%"));
             maxDuration = Math.Max(maxDuration, durationSeconds);
         }
 
@@ -113,5 +128,13 @@ public class CompareCumulativeTravelPlot(Plot plot) : SufniPlot(plot)
             label.LabelBorderWidth = 1;
             label.LabelPadding = 4;
         }
+
+        // Combined front/rear hint line below the session labels
+        var hint = Plot.Add.Text("— Front   - - Rear", maxDuration * 0.02, yTop * 0.96);
+        hint.LabelFontColor = Color.FromHex("#808080");
+        hint.LabelFontSize = 10;
+        hint.LabelAlignment = Alignment.UpperLeft;
+        hint.LabelOffsetX = 4;
+        hint.LabelOffsetY = labels.Count * 18 + 2;
     }
 }

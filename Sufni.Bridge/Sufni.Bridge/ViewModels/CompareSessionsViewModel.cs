@@ -11,7 +11,6 @@ using Avalonia.Svg.Skia;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using MathNet.Numerics.Statistics;
 using Microsoft.Extensions.DependencyInjection;
 using ScottPlot;
 using Sufni.Bridge.Models;
@@ -20,6 +19,7 @@ using Sufni.Bridge.Plots;
 using Sufni.Bridge.Services;
 using Sufni.Bridge.Extensions;
 using Sufni.Bridge.ViewModels.Items;
+using Sufni.Bridge.ViewModels.SessionPages;
 using static Sufni.Bridge.Extensions.SvgHelpers;
 
 namespace Sufni.Bridge.ViewModels;
@@ -178,7 +178,8 @@ public partial class CompareSessionsViewModel : ViewModelBase
         double Comp95th,
         double Reb95th,
         double MaxTravel,
-        VelocityBands? Bands);
+        VelocityBands? Bands,
+        SuspensionSignalMetrics SignalMetrics);
 
     private static SessionStats? BuildSessionStats(TelemetryData data, SuspensionType type)
     {
@@ -193,18 +194,13 @@ public partial class CompareSessionsViewModel : ViewModelBase
             : data.RearWheelVelocityDeadBand();
         var bands = data.CalculateVelocityBands(type, 200, deadBand);
 
-        var compVels = suspension.Strokes.Compressions
-            .SelectMany(s => suspension.Velocity[s.Start..(s.End + 1)])
-            .ToList();
-        var rebVels = suspension.Strokes.Rebounds
-            .SelectMany(s => suspension.Velocity[s.Start..(s.End + 1)].Select(Math.Abs))
-            .ToList();
+        var velocityP95 = data.CalculateVelocityPercentileStatistics(type);
 
         return new SessionStats(
             travel, velocity,
-            compVels.Count > 0 ? compVels.Percentile(95) : 0.0,
-            rebVels.Count > 0 ? -rebVels.Percentile(95) : 0.0,
-            maxTravel, bands);
+            velocityP95.CompressionP95,
+            velocityP95.ReboundP95,
+            maxTravel, bands, data.CalculateSignalMetrics(type));
     }
 
     private static List<CompareTableRow> BuildSummaryRows(List<SessionStats?> statsList, List<SessionViewModel> sessions, SuspensionType type)
@@ -239,6 +235,12 @@ public partial class CompareSessionsViewModel : ViewModelBase
             new("LSR [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.Percent(s.Bands.LowSpeedRebound)).ToList()),
             new("LSC [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.Percent(s.Bands.LowSpeedCompression)).ToList()),
             new("HSC [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.Percent(s.Bands.HighSpeedCompression)).ToList()),
+            new("Vel RMS [mm/s]", statsList.Select(s => s is null ? "-" : s.SignalMetrics.Velocity.Rms.ToString("F1", CultureInfo.InvariantCulture)).ToList()),
+            new("Vel crest", statsList.Select(s => s is null ? "-" : s.SignalMetrics.Velocity.Crest.ToString("F2", CultureInfo.InvariantCulture)).ToList()),
+            new("Acc RMS [g]", statsList.Select(s => s is null ? "-" : s.SignalMetrics.Acceleration.Rms.ToString("F1", CultureInfo.InvariantCulture)).ToList()),
+            new("Acc crest", statsList.Select(s => s is null ? "-" : s.SignalMetrics.Acceleration.Crest.ToString("F2", CultureInfo.InvariantCulture)).ToList()),
+            new("Travel RMS [mm]", statsList.Select(s => s is null ? "-" : s.SignalMetrics.Travel.Rms.ToString("F1", CultureInfo.InvariantCulture)).ToList()),
+            new("Travel crest", statsList.Select(s => s is null ? "-" : s.SignalMetrics.Travel.Crest.ToString("F2", CultureInfo.InvariantCulture)).ToList()),
         };
         return rows;
     }
@@ -265,12 +267,18 @@ public partial class CompareSessionsViewModel : ViewModelBase
             var rear = data.Rear.Present
                 ? data.CalculateCumulativeTravel(SuspensionType.Rear)
                 : [];
-            var frontTotalM = front.Length > 0 ? front[^1] / 1000.0 : (double?)null;
-            var rearTotalM = rear.Length > 0 ? rear[^1] / 1000.0 : (double?)null;
-            return (frontTotalM, rearTotalM);
+            var frontTotalMm = front.Length > 0 ? front[^1] : (double?)null;
+            var rearTotalMm = rear.Length > 0 ? rear[^1] : (double?)null;
+            var frontMax = data.Linkage.MaxFrontTravel;
+            var rearMax = data.Linkage.MaxRearTravel;
+            return (
+                frontTotalM: frontTotalMm / 1000.0,
+                rearTotalM: rearTotalMm / 1000.0,
+                frontNormalized: frontTotalMm.HasValue && frontMax > 0 ? frontTotalMm / frontMax : null,
+                rearNormalized: rearTotalMm.HasValue && rearMax > 0 ? rearTotalMm / rearMax : null);
         }).ToList();
 
-        List<string> TravelValues(Func<(double? frontTotalM, double? rearTotalM), double?> selector,
+        List<string> TravelValues(Func<(double? frontTotalM, double? rearTotalM, double? frontNormalized, double? rearNormalized), double?> selector,
             string format) => travelTotals.Select(t => FormatBalanceValue(selector(t), format)).ToList();
 
         return
@@ -284,11 +292,17 @@ public partial class CompareSessionsViewModel : ViewModelBase
             new("Bottom outs F / R", Values(m => $"{FormatBalanceCount(m.FrontBottomouts)} / {FormatBalanceCount(m.RearBottomouts)}")),
             new("Pitch μ [°]", Values(m => FormatBalanceValue(m.PitchMeanDeg, "0.00"))),
             new("Pitch stability σ [°]", Values(m => FormatBalanceValue(m.PitchStabilityDeg, "0.00"))),
+            new("Anti-phase energy [%]", Values(m => FormatBalanceValue(
+                m.PitchModeEnergyFraction.HasValue ? m.PitchModeEnergyFraction * 100.0 : null, "0.0"))),
             new("G-out asymmetry [%]", Values(m => m.GoutAsymmetryPct.HasValue
                 ? $"{FormatBalanceValue(m.GoutAsymmetryPct, "0.0")} ({FormatBalanceCount(m.GoutEventCount)})"
                 : "-")),
             new("Comp vel ratio", Values(m => FormatBalanceValue(m.CompressionVelocityRatio, "0.000"))),
             new("Reb vel ratio", Values(m => FormatBalanceValue(m.ReboundVelocityRatio, "0.000"))),
+            new("Reb/Comp Vel F", Values(m => FormatBalanceValue(m.FrontReboundCompressionP95Ratio, "0.00"))),
+            new("Reb/Comp Vel R", Values(m => FormatBalanceValue(m.RearReboundCompressionP95Ratio, "0.00"))),
+            new("Travel p95/p50 F", Values(m => FormatBalanceValue(m.FrontTravelP95MedianRatio, "0.00"))),
+            new("Travel p95/p50 R", Values(m => FormatBalanceValue(m.RearTravelP95MedianRatio, "0.00"))),
             new("MSD Compression [%]", Values(m => FormatBalanceValue(m.CompressionMsd, "0.0"))),
             new("MSD Rebound [%]", Values(m => FormatBalanceValue(m.ReboundMsd, "0.0"))),
             new("Velocity shape β F / R", Values(m => $"{FormatBalanceValue(m.FrontVelocityShapeBeta, "0.00")}/{FormatBalanceValue(m.RearVelocityShapeBeta, "0.00")}")),
@@ -296,9 +310,12 @@ public partial class CompareSessionsViewModel : ViewModelBase
             new("Rear freq [Hz]", Values(m => FormatBalanceValue(m.RearPeakFrequencyHz, "0.00"))),
             new("Freq diff [Hz]", Values(m => FormatBalanceValue(m.FrequencyDifferenceHz, "0.00"))),
             new("Peak amp ratio", Values(m => FormatBalanceValue(m.PeakAmplitudeRatio, "0.000"))),
-            new("Head angle static [°]", Values(m => FormatBalanceValue(m.HeadAngleStaticDeg, "0.0"))),
+            new("Eff. Head Angle [°]", Values(m => FormatBalanceValue(
+                BalanceMetricsViewModel.EffectiveHeadAngleFor(m), "0.0"))),
             new("Cumulative travel F [m]", TravelValues(t => t.frontTotalM, "0")),
             new("Cumulative travel R [m]", TravelValues(t => t.rearTotalM, "0")),
+            new("Cumulative travel F [x max]", TravelValues(t => t.frontNormalized, "0.0")),
+            new("Cumulative travel R [x max]", TravelValues(t => t.rearNormalized, "0.0")),
         ];
     }
 
@@ -312,6 +329,7 @@ public partial class CompareSessionsViewModel : ViewModelBase
 
         // Load TelemetryData for all sessions
         var sessionData = new List<(TelemetryData data, Color color, LinePattern pattern, string name)>();
+        var sessionDisciplines = new List<Discipline?>();
         var cachedBalanceMetrics = new List<BalanceMetrics?>();
         for (var i = 0; i < Sessions.Count; i++)
         {
@@ -323,6 +341,7 @@ public partial class CompareSessionsViewModel : ViewModelBase
             }
 
             sessionData.Add((telemetry, SessionColors[i], SessionPatterns[i], Sessions[i].Name ?? $"Session {i + 1}"));
+            sessionDisciplines.Add(await Sessions[i].GetSessionDisciplineAsync());
 
             BalanceMetrics? metrics = null;
             var cacheMeta = await databaseService.GetSessionCacheMetaAsync(Sessions[i].Id);
@@ -351,6 +370,9 @@ public partial class CompareSessionsViewModel : ViewModelBase
 
         // Generate plots in parallel
         var tasks = new List<Task>();
+        var disciplinesByData = sessionData
+            .Select((session, index) => (Data: session.data, Discipline: sessionDisciplines[index]))
+            .ToDictionary(item => item.Data, item => item.Discipline);
 
         // 1. Front Travel Histogram
         tasks.Add(Task.Run(() =>
@@ -489,9 +511,9 @@ public partial class CompareSessionsViewModel : ViewModelBase
         {
             var p = new CompareSpectrumPlot(new Plot(), SuspensionType.Front,
                 minHz: 1.0, maxHz: 10.0,
-                peakMinHz: 1.3, peakMaxHz: 4.5,
                 topHeadroomDb: 2.0,
-                mode: WheelSpectrumMode.Velocity);
+                mode: WheelSpectrumMode.Velocity,
+                disciplines: disciplinesByData);
             p.LoadMultipleSessions(sessionData);
             var svg = p.Plot.GetSvgXml(width, height);
             _frontVelocitySpectrumXml = svg;
@@ -504,9 +526,9 @@ public partial class CompareSessionsViewModel : ViewModelBase
         {
             var p = new CompareSpectrumPlot(new Plot(), SuspensionType.Rear,
                 minHz: 1.0, maxHz: 10.0,
-                peakMinHz: 1.3, peakMaxHz: 4.5,
                 topHeadroomDb: 2.0,
-                mode: WheelSpectrumMode.Velocity);
+                mode: WheelSpectrumMode.Velocity,
+                disciplines: disciplinesByData);
             p.LoadMultipleSessions(sessionData);
             var svg = p.Plot.GetSvgXml(width, height);
             _rearVelocitySpectrumXml = svg;
@@ -519,8 +541,8 @@ public partial class CompareSessionsViewModel : ViewModelBase
         {
             var p = new CompareSpectrumPlot(new Plot(), SuspensionType.Front,
                 minHz: 1.0, maxHz: 10.0,
-                peakMinHz: 1.3, peakMaxHz: 4.5,
-                topHeadroomDb: 3.0);
+                topHeadroomDb: 3.0,
+                disciplines: disciplinesByData);
             p.LoadMultipleSessions(sessionData);
             var svg = p.Plot.GetSvgXml(width, height);
             _frontTravelSpectrumLowXml = svg;
@@ -533,8 +555,8 @@ public partial class CompareSessionsViewModel : ViewModelBase
         {
             var p = new CompareSpectrumPlot(new Plot(), SuspensionType.Rear,
                 minHz: 1.0, maxHz: 10.0,
-                peakMinHz: 1.3, peakMaxHz: 4.5,
-                topHeadroomDb: 3.0);
+                topHeadroomDb: 3.0,
+                disciplines: disciplinesByData);
             p.LoadMultipleSessions(sessionData);
             var svg = p.Plot.GetSvgXml(width, height);
             _rearTravelSpectrumLowXml = svg;
@@ -602,7 +624,7 @@ public partial class CompareSessionsViewModel : ViewModelBase
             var frontStatsList = sessionData.Select(s => BuildSessionStats(s.data, SuspensionType.Front)).ToList();
             var rearStatsList = sessionData.Select(s => BuildSessionStats(s.data, SuspensionType.Rear)).ToList();
             var balanceMetrics = sessionData.Select((session, index) =>
-                cachedBalanceMetrics[index] ?? session.data.CalculateBalanceMetrics(null)).ToList();
+                cachedBalanceMetrics[index] ?? session.data.CalculateBalanceMetrics(sessionDisciplines[index])).ToList();
 
             var frontRows = BuildSummaryRows(frontStatsList, Sessions, SuspensionType.Front);
             var rearRows = BuildSummaryRows(rearStatsList, Sessions, SuspensionType.Rear);

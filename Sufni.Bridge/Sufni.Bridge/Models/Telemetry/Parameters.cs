@@ -125,6 +125,21 @@ public static class Parameters
     // wheel-domain step because shaft velocities span a much smaller range.
     public const double DamperVelocityHistStep = 25.0;
 
+    // Expected rebound/compression ratio of the 95th velocity percentiles (tail statistic,
+    // used by the balance metric row). Derived from published shaft damping-force ratios.
+    public const double RebCompRatioFrontMin = 0.30;
+    public const double RebCompRatioFrontMax = 0.55;
+    public const double RebCompRatioRearMin = 0.40;
+    public const double RebCompRatioRearMax = 0.65;
+
+    // Expected rebound/compression ratio of the MEDIAN speeds (core statistic, used by the
+    // velocity-histogram overlay band). The core ratio runs higher than the tail ratio, so
+    // these bands are deliberately separate from the percentile ones above.
+    public const double RebCompCoreRatioFrontMin = 0.60;
+    public const double RebCompCoreRatioFrontMax = 0.90;
+    public const double RebCompCoreRatioRearMin = 0.50;
+    public const double RebCompCoreRatioRearMax = 0.80;
+
     // (mm) bottom-outs are regions where travel > max_travel - this value
     public const double BottomoutThreshold = 2.5;
 

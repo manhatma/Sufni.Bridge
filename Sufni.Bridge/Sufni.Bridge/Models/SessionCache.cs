@@ -159,6 +159,7 @@ public class SessionCache
 
     [Column("summary_json")] public string? SummaryJson { get; set; }
     [Column("plot_version")] public int PlotVersion { get; set; }
+    [Column("geometry_signature")] public string? GeometrySignature { get; set; }
     [Column("crop_start_sample")] public int? CropStartSample { get; set; }
     [Column("crop_end_sample")] public int? CropEndSample { get; set; }
 
@@ -291,12 +292,13 @@ public class SessionCache
 /// <summary>
 /// Scalar-only projection of a session_cache row. The full row carries ~30 columns of SVG
 /// text (often tens of MB); this covers everything needed to decide staleness (plot version,
-/// crop bounds, pitch-band signature) and to seed the crop slider, without materializing any
-/// SVG. Fetched via IDatabaseService.GetSessionCacheMetaAsync.
+/// crop bounds, geometry and pitch-band signatures) and to seed the crop slider, without
+/// materializing any SVG. Fetched via IDatabaseService.GetSessionCacheMetaAsync.
 /// </summary>
 public class SessionCacheMeta
 {
     [Column("plot_version")] public int PlotVersion { get; set; }
+    [Column("geometry_signature")] public string? GeometrySignature { get; set; }
     [Column("crop_start_sample")] public int? CropStartSample { get; set; }
     [Column("crop_end_sample")] public int? CropEndSample { get; set; }
     [Column("pitch_expected_min_deg")] public double? PitchExpectedMinDeg { get; set; }
