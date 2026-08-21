@@ -131,7 +131,7 @@ public class TelemetryPlot(Plot plot) : SufniPlot(plot)
         if (xRange <= 0 || yTop <= 0 || palette.Count == 0) return;
 
         var width = xRange * 0.03;
-        var x = xLeft + xRange * 0.06;
+        var x = xLeft + xRange * 0.10;
         var y0 = yTop * 0.30;
         var y1 = yTop * 0.70;
         var dy = (y1 - y0) / palette.Count;
@@ -170,6 +170,7 @@ public class TelemetryPlot(Plot plot) : SufniPlot(plot)
         }
 
         EndLabel("100%", y1);
+        EndLabel("50%", (y0 + y1) / 2.0);
         EndLabel("0%", y0);
     }
 

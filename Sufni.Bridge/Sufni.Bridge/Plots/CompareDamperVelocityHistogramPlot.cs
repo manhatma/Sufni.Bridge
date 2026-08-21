@@ -98,10 +98,8 @@ public class CompareDamperVelocityHistogramPlot(Plot plot) : SufniPlot(plot)
         var legendStep = yRangeTop * 0.08;
         for (var i = 0; i < sessions.Count; i++)
         {
-            var (data, color, _, name) = sessions[i];
-            var skew = data.CalculateDamperReferenceDistribution().SkewRatio;
-            var legendText = skew.HasValue ? $"{name} · skew {skew:0.00}" : name;
-            var label = Plot.Add.Text(legendText, limit, legendY - i * legendStep);
+            var (_, color, _, name) = sessions[i];
+            var label = Plot.Add.Text(name, limit, legendY - i * legendStep);
             label.LabelFontColor = color;
             label.LabelFontSize = 12;
             label.LabelAlignment = Alignment.UpperRight;

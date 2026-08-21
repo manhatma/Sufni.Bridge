@@ -8,8 +8,6 @@ namespace Sufni.Bridge.Plots;
 
 public class DamperVelocityHistogramPlot(Plot plot) : TelemetryPlot(plot)
 {
-    private static readonly Color ReferenceDistributionColor = Color.FromHex("#d53e4f");
-
     private readonly List<Color> palette =
     [
         Color.FromHex("#3288bd"),
@@ -85,23 +83,6 @@ public class DamperVelocityHistogramPlot(Plot plot) : TelemetryPlot(plot)
 
         Plot.Add.VerticalLine(0, 1f, Color.FromHex("#dddddd"), LinePattern.Dotted);
 
-        var referenceData = telemetryData.CalculateDamperReferenceDistribution();
-        if (referenceData.PdfExpectedHigh is { } expectedHigh
-            && referenceData.PdfExpectedLow is { } expectedLow
-            && referenceData.ExpectedY is { Count: > 1 } expectedY
-            && expectedHigh.Count == expectedY.Count
-            && expectedLow.Count == expectedY.Count)
-        {
-            var bandX = expectedY
-                .Concat(expectedY.AsEnumerable().Reverse()).ToArray();
-            var bandY = expectedHigh.Concat(expectedLow.AsEnumerable().Reverse()).ToArray();
-            var band = Plot.Add.Polygon(bandX, bandY);
-            band.FillStyle.Color = ReferenceDistributionColor.WithAlpha(60);
-            band.LineStyle.Color = ReferenceDistributionColor.WithAlpha(150);
-            band.LineStyle.Width = 1;
-            band.LineStyle.Pattern = LinePattern.Dashed;
-        }
-
         AddBinColorLegend(palette, -limit, limit, yRangeTop);
 
         var symmetry = telemetryData.CalculateDamperVelocitySymmetry(step, deadBand);
@@ -119,24 +100,6 @@ public class DamperVelocityHistogramPlot(Plot plot) : TelemetryPlot(plot)
         label.LabelBorderColor = RearColor.WithAlpha(80);
         label.LabelBorderWidth = 1;
         label.LabelPadding = 5;
-
-        var referenceText = referenceData.SkewRatio.HasValue && referenceData.ExpectedSkewLow.HasValue
-            && referenceData.ExpectedSkewHigh.HasValue
-            ? $"Reb/Comp core {referenceData.SkewRatio:0.00} "
-                + $"(target {referenceData.ExpectedSkewLow:0.00}–{referenceData.ExpectedSkewHigh:0.00})"
-            : "Reb/Comp core —";
-
-        var referenceLabel = Plot.Add.Text(referenceText, limit, yRangeTop * 0.78);
-        referenceLabel.LabelFontColor = ReferenceDistributionColor;
-        referenceLabel.LabelFontSize = 10;
-        referenceLabel.LabelFontName = "Menlo";
-        referenceLabel.LabelAlignment = Alignment.UpperRight;
-        referenceLabel.LabelOffsetX = -5;
-        referenceLabel.LabelBold = true;
-        referenceLabel.LabelBackgroundColor = Color.FromHex("#15191C").WithAlpha(220);
-        referenceLabel.LabelBorderColor = ReferenceDistributionColor.WithAlpha(80);
-        referenceLabel.LabelBorderWidth = 1;
-        referenceLabel.LabelPadding = 5;
     }
 
     // Picks a round tick spacing (~4 divisions per side) so mm/s labels stay readable and

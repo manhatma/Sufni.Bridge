@@ -132,14 +132,6 @@ public static class Parameters
     public const double RebCompRatioRearMin = 0.40;
     public const double RebCompRatioRearMax = 0.65;
 
-    // Expected rebound/compression ratio of the MEDIAN speeds (core statistic, used by the
-    // velocity-histogram overlay band). The core ratio runs higher than the tail ratio, so
-    // these bands are deliberately separate from the percentile ones above.
-    public const double RebCompCoreRatioFrontMin = 0.60;
-    public const double RebCompCoreRatioFrontMax = 0.90;
-    public const double RebCompCoreRatioRearMin = 0.50;
-    public const double RebCompCoreRatioRearMax = 0.80;
-
     // (mm) bottom-outs are regions where travel > max_travel - this value
     public const double BottomoutThreshold = 2.5;
 

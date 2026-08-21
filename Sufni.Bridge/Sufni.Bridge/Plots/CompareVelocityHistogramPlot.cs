@@ -86,10 +86,8 @@ public class CompareVelocityHistogramPlot(Plot plot, SuspensionType type) : Sufn
         var legendStep = yRangeTop * 0.08;
         for (var i = 0; i < sessions.Count; i++)
         {
-            var (data, color, _, name) = sessions[i];
-            var skew = data.CalculateVelocityReferenceDistribution(type).SkewRatio;
-            var legendText = skew.HasValue ? $"{name} · skew {skew:0.00}" : name;
-            var label = Plot.Add.Text(legendText, VelocityLimitMs, legendY - i * legendStep);
+            var (_, color, _, name) = sessions[i];
+            var label = Plot.Add.Text(name, VelocityLimitMs, legendY - i * legendStep);
             label.LabelFontColor = color;
             label.LabelFontSize = 12;
             label.LabelAlignment = Alignment.UpperRight;

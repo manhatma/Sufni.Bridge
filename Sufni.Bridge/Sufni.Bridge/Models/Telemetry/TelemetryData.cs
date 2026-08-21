@@ -77,15 +77,7 @@ public record VelocityStatistics(
 public record ReferenceDistributionData(
     List<double> Y,
     List<double> Pdf,
-    double? Beta)
-{
-    public List<double>? PdfExpectedLow { get; init; }
-    public List<double>? PdfExpectedHigh { get; init; }
-    public List<double>? ExpectedY { get; init; }
-    public double? SkewRatio { get; init; }
-    public double? ExpectedSkewLow { get; init; }
-    public double? ExpectedSkewHigh { get; init; }
-}
+    double? Beta);
 
 public record VelocityBands(
     double LowSpeedCompression,
@@ -1723,9 +1715,6 @@ public class TelemetryData
             0.0, alphaCompression, alphaRebound, beta, min, max);
     }
 
-    public ReferenceDistributionData CalculateVelocityReferenceDistribution(SuspensionType type) =>
-        Memo($"velocityReferenceDistribution/{type}", () => CalculateVelocityReferenceDistributionCore(type));
-
     public double? CalculateVelocityShapeBeta(SuspensionType type) =>
         Memo($"velocityShapeBeta/{type}", () => CalculateVelocityReferenceFit(type)?.Beta);
 
@@ -1857,121 +1846,6 @@ public class TelemetryData
             max,
             fallbackMedians.CompressionMedian,
             fallbackMedians.ReboundMedian);
-    }
-
-    private static ReferenceDistributionData CreateReferenceDistributionData(
-        StackedHistogramData histogram,
-        double histogramStep,
-        double? skewRatio,
-        double expectedSkewLow,
-        double expectedSkewHigh)
-    {
-        var binCount = Math.Min(histogram.Values.Count, histogram.Bins.Count);
-        var compressionBins = new List<(double Speed, double Value)>();
-        var reboundBins = new List<(double Speed, double Value)>();
-        var maxReboundSpeed = 0.0;
-        for (var i = 0; i < binCount; i++)
-        {
-            var center = histogram.Bins[i] + histogramStep / 2.0;
-            var value = histogram.Values[i].Sum();
-            if (center > 0)
-            {
-                compressionBins.Add((center, value));
-            }
-            else if (center < 0)
-            {
-                reboundBins.Add((Math.Abs(center), value));
-                if (value > 0)
-                    maxReboundSpeed = Math.Max(maxReboundSpeed, Math.Abs(center));
-            }
-        }
-
-        compressionBins.Sort((left, right) => left.Speed.CompareTo(right.Speed));
-        reboundBins.Sort((left, right) => left.Speed.CompareTo(right.Speed));
-        var expectedY = Enumerable.Range(0, 100)
-            .Select(i => -i * maxReboundSpeed / 99.0)
-            .ToList();
-        var referencePeak = reboundBins.Count > 2
-            ? reboundBins.Skip(2).Max(bin => bin.Value)
-            : 0.0;
-        var peakExclusionSpeed = 2.0 * histogramStep;
-
-        double InterpolateCompression(double speed)
-        {
-            if (compressionBins.Count == 0 || speed > compressionBins[^1].Speed)
-                return 0.0;
-            if (speed <= compressionBins[0].Speed)
-                return compressionBins[0].Value;
-
-            var upper = 1;
-            while (upper < compressionBins.Count && speed > compressionBins[upper].Speed)
-                upper++;
-
-            var lowerBin = compressionBins[upper - 1];
-            var upperBin = compressionBins[upper];
-            var fraction = (speed - lowerBin.Speed) / (upperBin.Speed - lowerBin.Speed);
-            return lowerBin.Value + fraction * (upperBin.Value - lowerBin.Value);
-        }
-
-        List<double>? BuildExpectedRebound(double expectedRatio)
-        {
-            if (!(expectedRatio > 0) || !double.IsFinite(expectedRatio)
-                || !(referencePeak > 0) || !double.IsFinite(referencePeak)
-                || !(maxReboundSpeed > 0) || compressionBins.Count == 0)
-                return null;
-
-            var values = expectedY
-                .Select(value => InterpolateCompression(Math.Abs(value) / expectedRatio))
-                .ToList();
-            var curvePeak = values
-                .Where((_, i) => Math.Abs(expectedY[i]) >= peakExclusionSpeed)
-                .DefaultIfEmpty(0.0)
-                .Max();
-            if (!(curvePeak > 0) || !double.IsFinite(curvePeak))
-                return null;
-
-            var scale = referencePeak / curvePeak;
-            return values.Select(value => value * scale).ToList();
-        }
-
-        // Terrain imposes compression velocity; rebound is the damper-controlled response, so
-        // expectations are derived from compression and checked against measured rebound.
-        // Peak matching compares width at equal height: area matching would inflate a curve
-        // squeezed by r by 1/r, while the compression/rebound time split is a separate question.
-        var pdfExpectedLow = BuildExpectedRebound(expectedSkewLow);
-        var pdfExpectedHigh = BuildExpectedRebound(expectedSkewHigh);
-        var hasExpectedCurves = pdfExpectedLow is not null && pdfExpectedHigh is not null;
-
-        return new ReferenceDistributionData([], [], null)
-        {
-            PdfExpectedLow = hasExpectedCurves ? pdfExpectedLow : null,
-            PdfExpectedHigh = hasExpectedCurves ? pdfExpectedHigh : null,
-            ExpectedY = hasExpectedCurves ? expectedY : null,
-            SkewRatio = skewRatio,
-            ExpectedSkewLow = expectedSkewLow,
-            ExpectedSkewHigh = expectedSkewHigh,
-        };
-    }
-
-    private ReferenceDistributionData CalculateVelocityReferenceDistributionCore(SuspensionType type)
-    {
-        var suspension = type == SuspensionType.Front ? Front : Rear;
-        var step = suspension.VelocityBins[1] - suspension.VelocityBins[0];
-        var medians = CalculateVelocityMedianStatistics(type);
-        var skewRatio = medians.CompressionMedian > 1e-6
-            && medians.ReboundMedian > 1e-6
-            && double.IsFinite(medians.CompressionMedian)
-            && double.IsFinite(medians.ReboundMedian)
-            ? medians.ReboundMedian / medians.CompressionMedian
-            : (double?)null;
-        var expectedSkewLow = type == SuspensionType.Front
-            ? Parameters.RebCompCoreRatioFrontMin
-            : Parameters.RebCompCoreRatioRearMin;
-        var expectedSkewHigh = type == SuspensionType.Front
-            ? Parameters.RebCompCoreRatioFrontMax
-            : Parameters.RebCompCoreRatioRearMax;
-        return CreateReferenceDistributionData(
-            CalculateVelocityHistogram(type), step, skewRatio, expectedSkewLow, expectedSkewHigh);
     }
 
     /// <summary>
@@ -2421,45 +2295,6 @@ public class TelemetryData
                 deadBand,
                 double.PositiveInfinity);
         });
-
-    private VelocityMedianStatistics CalculateDamperVelocityMedianStatistics() =>
-        Memo("damperVelocityMedianStatistics", CalculateDamperVelocityMedianStatisticsCore);
-
-    private VelocityMedianStatistics CalculateDamperVelocityMedianStatisticsCore()
-    {
-        var (_, shockVelocity) = DamperShockSamples();
-        var compression = shockVelocity.Where(value => value >= 0).ToList();
-        var rebound = shockVelocity.Where(value => value < 0).Select(Math.Abs).ToList();
-        return new VelocityMedianStatistics(
-            compression.Count > 0 ? compression.Median() : 0.0,
-            rebound.Count > 0 ? rebound.Median() : 0.0);
-    }
-
-    /// <summary>
-    /// Expected rebound/compression band for the rear shaft (damper-domain) velocity histogram.
-    /// Mirrors CalculateVelocityReferenceDistribution over shaft velocities (wheel velocity /
-    /// local leverage) and the damper bin step. Y values are in mm/s.
-    /// </summary>
-    public ReferenceDistributionData CalculateDamperReferenceDistribution() =>
-        Memo("damperReferenceDistribution", () => CalculateDamperReferenceDistributionCore());
-
-    private ReferenceDistributionData CalculateDamperReferenceDistributionCore()
-    {
-        var medians = CalculateDamperVelocityMedianStatistics();
-        var skewRatio = medians.CompressionMedian > 1e-6
-            && medians.ReboundMedian > 1e-6
-            && double.IsFinite(medians.CompressionMedian)
-            && double.IsFinite(medians.ReboundMedian)
-            ? medians.ReboundMedian / medians.CompressionMedian
-            : (double?)null;
-
-        return CreateReferenceDistributionData(
-            CalculateDamperVelocityHistogram(),
-            Parameters.DamperVelocityHistStep,
-            skewRatio,
-            Parameters.RebCompCoreRatioRearMin,
-            Parameters.RebCompCoreRatioRearMax);
-    }
 
     public PositionVelocityData CalculateForkPositionVelocityData()
     {
