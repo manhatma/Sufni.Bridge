@@ -127,10 +127,10 @@ public static class Parameters
 
     // Expected rebound/compression ratio of the 95th velocity percentiles (tail statistic,
     // used by the balance metric row). Derived from published shaft damping-force ratios.
-    public const double RebCompRatioFrontMin = 0.30;
-    public const double RebCompRatioFrontMax = 0.55;
-    public const double RebCompRatioRearMin = 0.40;
-    public const double RebCompRatioRearMax = 0.65;
+    public const double RebCompRatioFrontMin = 0.70;
+    public const double RebCompRatioFrontMax = 0.95;
+    public const double RebCompRatioRearMin = 0.55;
+    public const double RebCompRatioRearMax = 0.85;
 
     // (mm) bottom-outs are regions where travel > max_travel - this value
     public const double BottomoutThreshold = 2.5;

@@ -523,27 +523,15 @@ internal static class SessionSummaryBuilder
             new SummaryComparisonRow("Cum. Travel [m]",
                 telemetryData.Front.Present ? FormatCumulativeTravel(telemetryData, SuspensionType.Front) : "-",
                 telemetryData.Rear.Present ? FormatCumulativeTravel(telemetryData, SuspensionType.Rear) : "-"),
-            new SummaryComparisonRow("Cum. Travel [x max]",
-                telemetryData.Front.Present ? FormatNormalizedCumulativeTravel(telemetryData, SuspensionType.Front) : "-",
-                telemetryData.Rear.Present ? FormatNormalizedCumulativeTravel(telemetryData, SuspensionType.Rear) : "-"),
             new SummaryComparisonRow("Vel RMS [mm/s]",
                 frontWheelStats?.SignalMetrics?.Velocity.Rms.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) ?? "-",
                 rearWheelStats?.SignalMetrics?.Velocity.Rms.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) ?? "-"),
-            new SummaryComparisonRow("Vel crest",
-                frontWheelStats?.SignalMetrics?.Velocity.Crest.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) ?? "-",
-                rearWheelStats?.SignalMetrics?.Velocity.Crest.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) ?? "-"),
             new SummaryComparisonRow("Acc RMS [g]",
                 frontWheelStats?.SignalMetrics?.Acceleration.Rms.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) ?? "-",
                 rearWheelStats?.SignalMetrics?.Acceleration.Rms.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) ?? "-"),
             new SummaryComparisonRow("Acc crest",
                 frontWheelStats?.SignalMetrics?.Acceleration.Crest.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) ?? "-",
-                rearWheelStats?.SignalMetrics?.Acceleration.Crest.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) ?? "-"),
-            new SummaryComparisonRow("Travel RMS [mm]",
-                frontWheelStats?.SignalMetrics?.Travel.Rms.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) ?? "-",
-                rearWheelStats?.SignalMetrics?.Travel.Rms.ToString("F1", System.Globalization.CultureInfo.InvariantCulture) ?? "-"),
-            new SummaryComparisonRow("Travel crest",
-                frontWheelStats?.SignalMetrics?.Travel.Crest.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) ?? "-",
-                rearWheelStats?.SignalMetrics?.Travel.Crest.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) ?? "-")
+                rearWheelStats?.SignalMetrics?.Acceleration.Crest.ToString("F2", System.Globalization.CultureInfo.InvariantCulture) ?? "-")
         ]);
 
         var airtime = FormatAirtime(telemetryData.Airtimes);

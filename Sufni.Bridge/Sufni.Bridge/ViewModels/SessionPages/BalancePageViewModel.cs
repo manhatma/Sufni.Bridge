@@ -66,14 +66,14 @@ public partial class BalanceMetricsViewModel : ObservableObject
     public BalanceMetricRow PitchAttitude  { get; } = new() { Label = "Pitch attitude μ", Target = "" };
     public BalanceMetricRow PitchStability { get; } = new() { Label = "Pitch stability σ", Target = "≤ 1.0°", Key = "PitchStability", IsEditable = true };
     public BalanceMetricRow GoutSymmetry   { get; } = new() { Label = "G-out asymmetry",    Target = "≤ 10 %",  Key = "GoutSymmetry",   IsEditable = true };
-    public BalanceMetricRow PitchModeEnergy{ get; } = new() { Label = "Anti-phase energy",  Target = "" };
+    public BalanceMetricRow PitchModeEnergy{ get; } = new() { Label = "Anti-phase energy",  Target = "≤ 0.10" };
     public BalanceMetricRow FrontBO       { get; } = new() { Label = "Front Bottom-out", Target = "≈ 0" };
     public BalanceMetricRow RearBO        { get; } = new() { Label = "Rear Bottom-out",  Target = "≈ 0" };
     public BalanceMetricRow CompVelRatio  { get; } = new() { Label = "Comp Vel F/R",     Target = "−0.08 … +0.07" };
     public BalanceMetricRow RebVelRatio   { get; } = new() { Label = "Reb Vel F/R",      Target = "0.00 … +0.07" };
     public BalanceMetricRow RebCompRatioFront { get; } = new()
     {
-        Label = "Reb/Comp Vel F",
+        Label = "Reb/Comp Velocity F",
         Target = System.FormattableString.Invariant(
             $"{Models.Telemetry.Parameters.RebCompRatioFrontMin:0.00}–{Models.Telemetry.Parameters.RebCompRatioFrontMax:0.00}"),
         Key = "RebCompRatioFront",
@@ -82,7 +82,7 @@ public partial class BalanceMetricsViewModel : ObservableObject
     };
     public BalanceMetricRow RebCompRatioRear { get; } = new()
     {
-        Label = "Reb/Comp Vel R",
+        Label = "Reb/Comp Velocity R",
         Target = System.FormattableString.Invariant(
             $"{Models.Telemetry.Parameters.RebCompRatioRearMin:0.00}–{Models.Telemetry.Parameters.RebCompRatioRearMax:0.00}"),
         Key = "RebCompRatioRear",
@@ -93,7 +93,7 @@ public partial class BalanceMetricsViewModel : ObservableObject
     public BalanceMetricRow TravelP95MedianFront { get; } = new() { Label = "Travel p95/p50 F" };
     public BalanceMetricRow TravelP95MedianRear  { get; } = new() { Label = "Travel p95/p50 R" };
     public BalanceMetricRow CompMsd       { get; } = new() { Label = "MSD Compression",  Target = "≈ 0" };
-    public BalanceMetricRow RebMsd        { get; } = new() { Label = "MSD Rebound",      Target = "−10 to 0 %", Key = "RebMsd", IsEditable = true, HasRange = true };
+    public BalanceMetricRow RebMsd        { get; } = new() { Label = "MSD Rebound",      Target = "−10..0 %", Key = "RebMsd", IsEditable = true, HasRange = true };
     // Defaults are Enduro; updated from TelemetryData's shared discipline table when Apply runs.
     public BalanceMetricRow FrontFreq     { get; } = new() { Label = "Front Eigenfreq.", Target = "2.7–3.2 Hz" };
     public BalanceMetricRow RearFreq      { get; } = new() { Label = "Rear Eigenfreq.",  Target = "2.1–2.4 Hz" };
@@ -284,7 +284,7 @@ public partial class BalanceMetricsViewModel : ObservableObject
                 GoutSymmetry.Value = string.Format(CultureInfo.InvariantCulture,
                     "{0:0} % (N={1})", ga, m.GoutEventCount ?? 0);
         }
-        SetSimple(PitchModeEnergy, m.PitchModeEnergyFraction, "{0:0.00}");
+        SetAntiPhaseEnergy(PitchModeEnergy, m.PitchModeEnergyFraction);
         SetCount(FrontBO, m.FrontBottomouts);
         SetCount(RearBO,  m.RearBottomouts);
         // Michelson index (F-R)/(F+R): bands derived from old ratio bands 0.85–1.15 (good)
@@ -485,6 +485,16 @@ public partial class BalanceMetricsViewModel : ObservableObject
         row.Status = v <= 0.4 ? BalanceStatus.Good
             : v <= 0.7        ? BalanceStatus.Acceptable
             :                   BalanceStatus.Critical;
+    }
+
+    private static void SetAntiPhaseEnergy(BalanceMetricRow row, double? value)
+    {
+        if (!value.HasValue) { row.Value = "—"; row.Status = BalanceStatus.Unknown; return; }
+        row.Value = string.Format(CultureInfo.InvariantCulture, "{0:0.00}", value.Value);
+        var v = value.Value;
+        row.Status = v <= 0.10 ? BalanceStatus.Good
+            : v <= 0.15        ? BalanceStatus.Acceptable
+            :                    BalanceStatus.Critical;
     }
 }
 
