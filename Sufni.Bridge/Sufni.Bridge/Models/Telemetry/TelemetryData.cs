@@ -165,7 +165,7 @@ public class TelemetryData
 
     // Increment when velocity processing parameters change (e.g. smoother lambda).
     // Blobs with a lower version are automatically re-processed from Travel arrays on load.
-    public const int CurrentProcessingVersion = 29;
+    public const int CurrentProcessingVersion = 31;
 
     #region Public properties
 

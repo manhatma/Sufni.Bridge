@@ -6,7 +6,7 @@ using Sufni.Bridge.Models.Telemetry;
 
 namespace Sufni.Bridge.Plots;
 
-public class DamperVelocityHistogramPlot(Plot plot) : TelemetryPlot(plot)
+public class DamperVelocityHistogramPlot(Plot plot, bool powerWeighted = false, bool powerLogY = false) : TelemetryPlot(plot)
 {
     private readonly List<Color> palette =
     [
@@ -27,6 +27,12 @@ public class DamperVelocityHistogramPlot(Plot plot) : TelemetryPlot(plot)
         base.LoadTelemetryData(telemetryData);
 
         SetTitle("Damper shaft velocity");
+
+        if (powerWeighted)
+        {
+            LoadPowerWeightedData(telemetryData);
+            return;
+        }
 
         Plot.Layout.Fixed(new PixelPadding(50, 24, 50, 40));
 
@@ -100,6 +106,129 @@ public class DamperVelocityHistogramPlot(Plot plot) : TelemetryPlot(plot)
         label.LabelBorderColor = RearColor.WithAlpha(80);
         label.LabelBorderWidth = 1;
         label.LabelPadding = 5;
+    }
+
+    private void LoadPowerWeightedData(TelemetryData telemetryData)
+    {
+        Plot.Layout.Fixed(new PixelPadding(50, 24, 50, 40));
+
+        Plot.Axes.Bottom.Label.Text = "Shaft velocity (mm/s)";
+        Plot.Axes.Left.Label.Text = powerLogY ? "Rel. damper power (%) — log" : "Rel. damper power (%)";
+
+        var data = telemetryData.CalculateDamperVelocityHistogram();
+        if (data.Bins.Count < 2)
+            return;
+        var step = data.Bins[1] - data.Bins[0];
+        var n = data.Values.Count;
+
+        // Power weight ∝ v²·t per source bin, plus each column's total energy.
+        var mids = new double[n];
+        var colEnergy = new double[n];
+        var totalEnergy = 0.0;
+        for (var i = 0; i < n; i++)
+        {
+            var mid = data.Bins[i] + step / 2.0;
+            mids[i] = mid;
+            var vMs = mid / 1000.0;
+            var factor = vMs * vMs;
+            double sum = 0;
+            for (var j = 0; j < TelemetryData.TravelBinsForVelocityHistogram; j++)
+                sum += data.Values[i][j] * factor;
+            colEnergy[i] = sum;
+            totalEnergy += sum;
+        }
+        if (totalEnergy <= 0)
+            return;
+
+        // Independent left/right limits — full extent per side (asymmetric), so a lopsided
+        // comp/reb spread doesn't leave half the frame empty.
+        var (left, right) = AsymmetricEnergyLimits(mids, colEnergy, 150.0);
+
+        // 50 mm/s display bins (2× the native 25 mm/s) — X limits are made asymmetric.
+        var binWidth = 2 * step;
+        var aggregated = AggregatePower(data, mids, binWidth);
+
+        var scale = 100.0 / totalEnergy;
+        var axisLimit = System.Math.Max(left, right);
+        var maxTotal = 0.0;
+        foreach (var (index, segments) in aggregated)
+        {
+            var center = (index + 0.5) * binWidth;
+            double colTotal = 0;
+            for (var j = 0; j < TelemetryData.TravelBinsForVelocityHistogram; j++)
+                colTotal += segments[j] * scale;
+            if (System.Math.Abs(center) <= axisLimit && colTotal > maxTotal)
+                maxTotal = colTotal;
+
+            double nextBarBase = 0;
+            for (var j = 0; j < TelemetryData.TravelBinsForVelocityHistogram; j++)
+            {
+                var value = segments[j] * scale;
+                if (value == 0) continue;
+
+                Plot.Add.Bar(new Bar
+                {
+                    Position = center,
+                    ValueBase = PowerY(nextBarBase),
+                    Value = PowerY(nextBarBase + value),
+                    FillColor = palette[j].WithOpacity(0.8),
+                    LineColor = Colors.Black,
+                    LineWidth = 0.5f,
+                    Orientation = Orientation.Vertical,
+                    Size = binWidth * 0.95,
+                });
+
+                nextBarBase += value;
+            }
+        }
+
+        var yRangeTop = powerLogY
+            ? PowerLogTransform(maxTotal) * 1.08
+            : System.Math.Max(0.5, maxTotal) * 1.15;
+        Plot.Axes.SetLimits(left: -left, right: right, bottom: 0, top: yRangeTop);
+        Plot.Axes.Bottom.TickGenerator = new NumericFixedInterval(NiceTickInterval(System.Math.Max(right, left)));
+        if (powerLogY)
+            ApplyPowerLogYTicks(maxTotal);
+
+        Plot.Add.VerticalLine(0, 1f, Color.FromHex("#dddddd"), LinePattern.Dotted);
+        AddBinColorLegend(palette, -left, right, yRangeTop, xFraction: 0.90, yLoFraction: 0.30, yHiFraction: 0.70, labelsLeft: true);
+    }
+
+    private double PowerY(double y) => powerLogY ? PowerLogTransform(y) : y;
+
+    // Independent per-side X limits: the full velocity extent of each side (outermost bin
+    // that holds data), clamped to a floor so a near-empty side doesn't collapse. No trimming.
+    private static (double left, double right) AsymmetricEnergyLimits(double[] mids, double[] energy, double floor)
+    {
+        double Side(bool positive)
+        {
+            var limit = 0.0;
+            for (var i = 0; i < mids.Length; i++)
+                if ((mids[i] >= 0) == positive && energy[i] > 0)
+                    limit = System.Math.Max(limit, System.Math.Abs(mids[i]));
+            return System.Math.Max(limit, floor);
+        }
+        return (Side(false), Side(true));
+    }
+
+    // Aggregate power-weighted travel segments into display bins of binWidth; key = floor(mid/binWidth) so 0 is a boundary.
+    private static SortedDictionary<int, double[]> AggregatePower(StackedHistogramData data, double[] mids, double binWidth)
+    {
+        var agg = new SortedDictionary<int, double[]>();
+        for (var i = 0; i < data.Values.Count; i++)
+        {
+            var index = (int)System.Math.Floor(mids[i] / binWidth);
+            if (!agg.TryGetValue(index, out var seg))
+            {
+                seg = new double[TelemetryData.TravelBinsForVelocityHistogram];
+                agg[index] = seg;
+            }
+            var vMs = mids[i] / 1000.0;
+            var factor = vMs * vMs;
+            for (var j = 0; j < TelemetryData.TravelBinsForVelocityHistogram; j++)
+                seg[j] += data.Values[i][j] * factor;
+        }
+        return agg;
     }
 
     // Picks a round tick spacing (~4 divisions per side) so mm/s labels stay readable and

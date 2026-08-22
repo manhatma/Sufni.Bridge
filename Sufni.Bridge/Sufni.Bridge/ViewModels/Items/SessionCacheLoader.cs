@@ -124,10 +124,18 @@ internal static class SessionCacheLoader
             {
                 var swBg = Stopwatch.StartNew();
                 var frontVelHistSlot = SessionPlotCatalog.ByLabel("frontVelHist");
+                var frontVelHistPowerSlot = SessionPlotCatalog.ByLabel("frontVelHistPower");
+                var frontVelHistPowerLogSlot = SessionPlotCatalog.ByLabel("frontVelHistPowerLog");
                 var frontLsVelHistSlot = SessionPlotCatalog.ByLabel("frontLsVelHist");
+                var frontLsVelHistLogSlot = SessionPlotCatalog.ByLabel("frontLsVelHistLog");
                 var rearVelHistSlot = SessionPlotCatalog.ByLabel("rearVelHist");
+                var rearVelHistPowerSlot = SessionPlotCatalog.ByLabel("rearVelHistPower");
+                var rearVelHistPowerLogSlot = SessionPlotCatalog.ByLabel("rearVelHistPowerLog");
                 var rearDamperVelHistSlot = SessionPlotCatalog.ByLabel("rearDamperVelHist");
+                var rearDamperVelHistPowerSlot = SessionPlotCatalog.ByLabel("rearDamperVelHistPower");
+                var rearDamperVelHistPowerLogSlot = SessionPlotCatalog.ByLabel("rearDamperVelHistPowerLog");
                 var rearLsVelHistSlot = SessionPlotCatalog.ByLabel("rearLsVelHist");
+                var rearLsVelHistLogSlot = SessionPlotCatalog.ByLabel("rearLsVelHistLog");
                 var combBalSlot = SessionPlotCatalog.ByLabel("combinedBalance");
                 var compBalSlot = SessionPlotCatalog.ByLabel("compressionBalance");
                 var rebBalSlot = SessionPlotCatalog.ByLabel("reboundBalance");
@@ -148,10 +156,18 @@ internal static class SessionCacheLoader
                 var cumulativeTravelSlot = SessionPlotCatalog.ByLabel("cumulativeTravel");
 
                 var frontVelHistTask   = Task.Run(() => SvgToSource(frontVelHistSlot.ReadSvg(cache)));
+                var frontVelHistPowerTask = Task.Run(() => SvgToSource(frontVelHistPowerSlot.ReadSvg(cache)));
+                var frontVelHistPowerLogTask = Task.Run(() => SvgToSource(frontVelHistPowerLogSlot.ReadSvg(cache)));
                 var frontLsVelHistTask = Task.Run(() => SvgToSource(frontLsVelHistSlot.ReadSvg(cache)));
+                var frontLsVelHistLogTask = Task.Run(() => SvgToSource(frontLsVelHistLogSlot.ReadSvg(cache)));
                 var rearVelHistTask    = Task.Run(() => SvgToSource(rearVelHistSlot.ReadSvg(cache)));
+                var rearVelHistPowerTask = Task.Run(() => SvgToSource(rearVelHistPowerSlot.ReadSvg(cache)));
+                var rearVelHistPowerLogTask = Task.Run(() => SvgToSource(rearVelHistPowerLogSlot.ReadSvg(cache)));
                 var rearDamperVelHistTask = Task.Run(() => SvgToSource(rearDamperVelHistSlot.ReadSvg(cache)));
+                var rearDamperVelHistPowerTask = Task.Run(() => SvgToSource(rearDamperVelHistPowerSlot.ReadSvg(cache)));
+                var rearDamperVelHistPowerLogTask = Task.Run(() => SvgToSource(rearDamperVelHistPowerLogSlot.ReadSvg(cache)));
                 var rearLsVelHistTask  = Task.Run(() => SvgToSource(rearLsVelHistSlot.ReadSvg(cache)));
+                var rearLsVelHistLogTask = Task.Run(() => SvgToSource(rearLsVelHistLogSlot.ReadSvg(cache)));
                 var combBalTask      = Task.Run(() => SvgToSource(combBalSlot.ReadSvg(cache)));
                 var compBalTask      = Task.Run(() => SvgToSource(compBalSlot.ReadSvg(cache)));
                 var rebBalTask       = Task.Run(() => SvgToSource(rebBalSlot.ReadSvg(cache)));
@@ -173,7 +189,9 @@ internal static class SessionCacheLoader
                 var goutScatterTask     = Task.Run(() => SvgToSource(goutScatterSlot.ReadSvg(cache)));
                 var cumulativeTravelTask = Task.Run(() => SvgToSource(cumulativeTravelSlot.ReadSvg(cache)));
 
-                await Task.WhenAll(frontVelHistTask, frontLsVelHistTask, rearVelHistTask, rearDamperVelHistTask, rearLsVelHistTask,
+                await Task.WhenAll(frontVelHistTask, frontVelHistPowerTask, frontVelHistPowerLogTask, frontLsVelHistTask, frontLsVelHistLogTask,
+                    rearVelHistTask, rearVelHistPowerTask, rearVelHistPowerLogTask, rearDamperVelHistTask, rearDamperVelHistPowerTask, rearDamperVelHistPowerLogTask,
+                    rearLsVelHistTask, rearLsVelHistLogTask,
                     combBalTask, compBalTask, rebBalTask,
                     velDistCompTask, posVelCompTask, frontPosVelTask, rearPosVelTask,
                     frontTravelCropTask, rearTravelCropTask, frontVelCropTask, rearVelCropTask,
@@ -184,10 +202,18 @@ internal static class SessionCacheLoader
                 PerfLog.Log("load/bgSvg", swBg.Elapsed.TotalMilliseconds);
 
                 var frontVelHistSrc   = frontVelHistTask.Result;
+                var frontVelHistPowerSrc = frontVelHistPowerTask.Result;
+                var frontVelHistPowerLogSrc = frontVelHistPowerLogTask.Result;
                 var frontLsVelHistSrc = frontLsVelHistTask.Result;
+                var frontLsVelHistLogSrc = frontLsVelHistLogTask.Result;
                 var rearVelHistSrc    = rearVelHistTask.Result;
+                var rearVelHistPowerSrc = rearVelHistPowerTask.Result;
+                var rearVelHistPowerLogSrc = rearVelHistPowerLogTask.Result;
                 var rearDamperVelHistSrc = rearDamperVelHistTask.Result;
+                var rearDamperVelHistPowerSrc = rearDamperVelHistPowerTask.Result;
+                var rearDamperVelHistPowerLogSrc = rearDamperVelHistPowerLogTask.Result;
                 var rearLsVelHistSrc  = rearLsVelHistTask.Result;
+                var rearLsVelHistLogSrc = rearLsVelHistLogTask.Result;
                 var combBalSrc      = combBalTask.Result;
                 var compBalSrc      = compBalTask.Result;
                 var rebBalSrc       = rebBalTask.Result;
@@ -206,10 +232,18 @@ internal static class SessionCacheLoader
                 await Dispatcher.UIThread.InvokeAsync(() =>
                 {
                     frontVelHistSlot.Assign(viewModel, SourceToImage(frontVelHistSrc));
+                    frontVelHistPowerSlot.Assign(viewModel, SourceToImage(frontVelHistPowerSrc));
+                    frontVelHistPowerLogSlot.Assign(viewModel, SourceToImage(frontVelHistPowerLogSrc));
                     frontLsVelHistSlot.Assign(viewModel, SourceToImage(frontLsVelHistSrc));
+                    frontLsVelHistLogSlot.Assign(viewModel, SourceToImage(frontLsVelHistLogSrc));
                     rearVelHistSlot.Assign(viewModel, SourceToImage(rearVelHistSrc));
+                    rearVelHistPowerSlot.Assign(viewModel, SourceToImage(rearVelHistPowerSrc));
+                    rearVelHistPowerLogSlot.Assign(viewModel, SourceToImage(rearVelHistPowerLogSrc));
                     rearDamperVelHistSlot.Assign(viewModel, SourceToImage(rearDamperVelHistSrc));
+                    rearDamperVelHistPowerSlot.Assign(viewModel, SourceToImage(rearDamperVelHistPowerSrc));
+                    rearDamperVelHistPowerLogSlot.Assign(viewModel, SourceToImage(rearDamperVelHistPowerLogSrc));
                     rearLsVelHistSlot.Assign(viewModel, SourceToImage(rearLsVelHistSrc));
+                    rearLsVelHistLogSlot.Assign(viewModel, SourceToImage(rearLsVelHistLogSrc));
                     DamperPage.FrontHscPercentage     = cache.FrontHscPercentage;
                     DamperPage.RearHscPercentage      = cache.RearHscPercentage;
                     DamperPage.FrontLscPercentage     = cache.FrontLscPercentage;

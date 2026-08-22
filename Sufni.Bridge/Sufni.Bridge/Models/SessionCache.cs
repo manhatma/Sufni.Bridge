@@ -60,6 +60,22 @@ public class SessionCache
     }
     private string? _frontVelocityHistogram;
 
+    [Column("front_velocity_histogram_power")] public byte[]? FrontVelocityHistogramPowerStored { get; set; }
+    [Ignore] public string? FrontVelocityHistogramPower
+    {
+        get => _frontVelocityHistogramPower ??= CompressedText.Unpack(FrontVelocityHistogramPowerStored);
+        set { _frontVelocityHistogramPower = value; FrontVelocityHistogramPowerStored = CompressedText.Pack(value); }
+    }
+    private string? _frontVelocityHistogramPower;
+
+    [Column("front_velocity_histogram_power_log")] public byte[]? FrontVelocityHistogramPowerLogStored { get; set; }
+    [Ignore] public string? FrontVelocityHistogramPowerLog
+    {
+        get => _frontVelocityHistogramPowerLog ??= CompressedText.Unpack(FrontVelocityHistogramPowerLogStored);
+        set { _frontVelocityHistogramPowerLog = value; FrontVelocityHistogramPowerLogStored = CompressedText.Pack(value); }
+    }
+    private string? _frontVelocityHistogramPowerLog;
+
     [Column("front_low_speed_velocity_histogram")] public byte[]? FrontLowSpeedVelocityHistogramStored { get; set; }
     [Ignore] public string? FrontLowSpeedVelocityHistogram
     {
@@ -67,6 +83,14 @@ public class SessionCache
         set { _frontLowSpeedVelocityHistogram = value; FrontLowSpeedVelocityHistogramStored = CompressedText.Pack(value); }
     }
     private string? _frontLowSpeedVelocityHistogram;
+
+    [Column("front_low_speed_velocity_histogram_log")] public byte[]? FrontLowSpeedVelocityHistogramLogStored { get; set; }
+    [Ignore] public string? FrontLowSpeedVelocityHistogramLog
+    {
+        get => _frontLowSpeedVelocityHistogramLog ??= CompressedText.Unpack(FrontLowSpeedVelocityHistogramLogStored);
+        set { _frontLowSpeedVelocityHistogramLog = value; FrontLowSpeedVelocityHistogramLogStored = CompressedText.Pack(value); }
+    }
+    private string? _frontLowSpeedVelocityHistogramLog;
 
     [Column("rear_velocity_histogram")] public byte[]? RearVelocityHistogramStored { get; set; }
     [Ignore] public string? RearVelocityHistogram
@@ -76,6 +100,22 @@ public class SessionCache
     }
     private string? _rearVelocityHistogram;
 
+    [Column("rear_velocity_histogram_power")] public byte[]? RearVelocityHistogramPowerStored { get; set; }
+    [Ignore] public string? RearVelocityHistogramPower
+    {
+        get => _rearVelocityHistogramPower ??= CompressedText.Unpack(RearVelocityHistogramPowerStored);
+        set { _rearVelocityHistogramPower = value; RearVelocityHistogramPowerStored = CompressedText.Pack(value); }
+    }
+    private string? _rearVelocityHistogramPower;
+
+    [Column("rear_velocity_histogram_power_log")] public byte[]? RearVelocityHistogramPowerLogStored { get; set; }
+    [Ignore] public string? RearVelocityHistogramPowerLog
+    {
+        get => _rearVelocityHistogramPowerLog ??= CompressedText.Unpack(RearVelocityHistogramPowerLogStored);
+        set { _rearVelocityHistogramPowerLog = value; RearVelocityHistogramPowerLogStored = CompressedText.Pack(value); }
+    }
+    private string? _rearVelocityHistogramPowerLog;
+
     [Column("rear_damper_velocity_histogram")] public byte[]? RearDamperVelocityHistogramStored { get; set; }
     [Ignore] public string? RearDamperVelocityHistogram
     {
@@ -84,6 +124,22 @@ public class SessionCache
     }
     private string? _rearDamperVelocityHistogram;
 
+    [Column("rear_damper_velocity_histogram_power")] public byte[]? RearDamperVelocityHistogramPowerStored { get; set; }
+    [Ignore] public string? RearDamperVelocityHistogramPower
+    {
+        get => _rearDamperVelocityHistogramPower ??= CompressedText.Unpack(RearDamperVelocityHistogramPowerStored);
+        set { _rearDamperVelocityHistogramPower = value; RearDamperVelocityHistogramPowerStored = CompressedText.Pack(value); }
+    }
+    private string? _rearDamperVelocityHistogramPower;
+
+    [Column("rear_damper_velocity_histogram_power_log")] public byte[]? RearDamperVelocityHistogramPowerLogStored { get; set; }
+    [Ignore] public string? RearDamperVelocityHistogramPowerLog
+    {
+        get => _rearDamperVelocityHistogramPowerLog ??= CompressedText.Unpack(RearDamperVelocityHistogramPowerLogStored);
+        set { _rearDamperVelocityHistogramPowerLog = value; RearDamperVelocityHistogramPowerLogStored = CompressedText.Pack(value); }
+    }
+    private string? _rearDamperVelocityHistogramPowerLog;
+
     [Column("rear_low_speed_velocity_histogram")] public byte[]? RearLowSpeedVelocityHistogramStored { get; set; }
     [Ignore] public string? RearLowSpeedVelocityHistogram
     {
@@ -91,6 +147,14 @@ public class SessionCache
         set { _rearLowSpeedVelocityHistogram = value; RearLowSpeedVelocityHistogramStored = CompressedText.Pack(value); }
     }
     private string? _rearLowSpeedVelocityHistogram;
+
+    [Column("rear_low_speed_velocity_histogram_log")] public byte[]? RearLowSpeedVelocityHistogramLogStored { get; set; }
+    [Ignore] public string? RearLowSpeedVelocityHistogramLog
+    {
+        get => _rearLowSpeedVelocityHistogramLog ??= CompressedText.Unpack(RearLowSpeedVelocityHistogramLogStored);
+        set { _rearLowSpeedVelocityHistogramLog = value; RearLowSpeedVelocityHistogramLogStored = CompressedText.Pack(value); }
+    }
+    private string? _rearLowSpeedVelocityHistogramLog;
 
     [Column("combined_balance")] public byte[]? CombinedBalanceStored { get; set; }
     [Ignore] public string? CombinedBalance

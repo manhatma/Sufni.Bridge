@@ -28,7 +28,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 public partial class SessionViewModel : ItemViewModelBase
 {
     // Increment when plot visuals change to force cache regeneration on all sessions.
-    internal const int CurrentPlotVersion = 246;
+    internal const int CurrentPlotVersion = 252;
 
     // Approximate rendered height of the VelocityBandView control (margin + title text +
     // 44 px band grid). Used to size the low-speed velocity histograms so the
@@ -415,6 +415,21 @@ public partial class SessionViewModel : ItemViewModelBase
         SpringPage.TimeZoom = _timeZoom;
         DamperPage.TimeZoom = _timeZoom;
         MiscPage.TimeZoom = _timeZoom;
+        DamperPage.PowerMode = session.DamperPowerMode;
+        DamperPage.LogMode = session.LowSpeedLogMode;
+        DamperPage.PowerLogMode = session.PowerLogMode;
+        DamperPage.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is not (nameof(DamperPageViewModel.PowerMode) or nameof(DamperPageViewModel.LogMode) or nameof(DamperPageViewModel.PowerLogMode)))
+                return;
+            session.DamperPowerMode = DamperPage.PowerMode;
+            session.LowSpeedLogMode = DamperPage.LogMode;
+            session.PowerLogMode = DamperPage.PowerLogMode;
+            if (!IsInDatabase) return;
+            var db = App.Current?.Services?.GetService<IDatabaseService>();
+            if (db is not null)
+                _ = db.UpdateSessionHistogramModesAsync(Id, DamperPage.PowerMode, DamperPage.LogMode, DamperPage.PowerLogMode);
+        };
         _timeZoomRenderer = CreateTimeZoomRenderer();
         _timeZoomRenderer.Subscribe();
 

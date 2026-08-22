@@ -6,7 +6,11 @@ using Sufni.Bridge.Models.Telemetry;
 
 namespace Sufni.Bridge.Plots;
 
-public class LowSpeedVelocityHistogramPlot(Plot plot, SuspensionType type, double highSpeedThreshold = 200)
+public class LowSpeedVelocityHistogramPlot(
+    Plot plot,
+    SuspensionType type,
+    double highSpeedThreshold = 200,
+    bool logScale = false)
     : TelemetryPlot(plot)
 {
     private readonly double velocityLimit = highSpeedThreshold + 50;
@@ -32,6 +36,12 @@ public class LowSpeedVelocityHistogramPlot(Plot plot, SuspensionType type, doubl
         SetTitle(type == SuspensionType.Front
             ? "Front low-speed velocity"
             : "Rear low-speed velocity");
+
+        if (logScale)
+        {
+            LoadLogScaleData(telemetryData);
+            return;
+        }
 
         Plot.Layout.Fixed(new PixelPadding(50, 24, 50, 40));
 
@@ -77,6 +87,88 @@ public class LowSpeedVelocityHistogramPlot(Plot plot, SuspensionType type, doubl
 
         Plot.Axes.SetLimits(left: -velocityLimit, right: velocityLimit, bottom: 0, top: yRangeTop);
         Plot.Axes.Bottom.TickGenerator = new NumericFixedInterval(50);
+
+        Plot.Add.VerticalLine(0, 1f, Color.FromHex("#dddddd"), LinePattern.Dotted);
+
+        AddBinColorLegend(palette, -velocityLimit, velocityLimit, yRangeTop);
+
+        var symmetry = telemetryData.CalculateVelocitySymmetry(
+            type,
+            step,
+            deadBand,
+            highSpeedThreshold + step / 2.0);
+        var color = type == SuspensionType.Front ? FrontColor : RearColor;
+        var label = Plot.Add.Text(
+            $"Sym: {symmetry:0.00}",
+            -velocityLimit,
+            yRangeTop * 0.97);
+        label.LabelFontColor = color;
+        label.LabelFontSize = 10;
+        label.LabelFontName = "Menlo";
+        label.LabelAlignment = Alignment.UpperLeft;
+        label.LabelOffsetX = 5;
+        label.LabelBold = true;
+        label.LabelBackgroundColor = Color.FromHex("#15191C").WithAlpha(220);
+        label.LabelBorderColor = color.WithAlpha(80);
+        label.LabelBorderWidth = 1;
+        label.LabelPadding = 5;
+    }
+
+    private void LoadLogScaleData(TelemetryData telemetryData)
+    {
+        Plot.Layout.Fixed(new PixelPadding(50, 24, 50, 40));
+
+        Plot.Axes.Bottom.Label.Text = "Velocity (mm/s)";
+        Plot.Axes.Left.Label.Text = "Time (%) — log";
+
+        var deadBand = type == SuspensionType.Front
+            ? telemetryData.FrontVelocityDeadBand()
+            : telemetryData.RearWheelVelocityDeadBand();
+        var data = telemetryData.CalculateLowSpeedVelocityHistogram(type, highSpeedThreshold);
+        var step = data.Bins[1] - data.Bins[0];
+        var maxY = 0.0;
+
+        for (var i = 0; i < data.Values.Count; ++i)
+        {
+            double nextBarBase = 0;
+            double colTotal = 0;
+            for (var j = 0; j < TelemetryData.TravelBinsForVelocityHistogram; j++)
+                colTotal += data.Values[i][j];
+            if (colTotal > maxY) maxY = colTotal;
+
+            for (var j = 0; j < TelemetryData.TravelBinsForVelocityHistogram; j++)
+            {
+                if (data.Values[i][j] == 0) continue;
+
+                Plot.Add.Bar(new Bar
+                {
+                    Position = data.Bins[i] + step / 2.0,
+                    ValueBase = System.Math.Log(1.0 + nextBarBase),
+                    Value = System.Math.Log(1.0 + nextBarBase + data.Values[i][j]),
+                    FillColor = palette[j].WithOpacity(0.8),
+                    LineColor = Colors.Black,
+                    LineWidth = 0.5f,
+                    Orientation = Orientation.Vertical,
+                    Size = step * 0.95,
+                });
+
+                nextBarBase += data.Values[i][j];
+            }
+        }
+
+        var yRangeTop = System.Math.Log(1.0 + maxY) * 1.08;
+
+        Plot.Axes.SetLimits(left: -velocityLimit, right: velocityLimit, bottom: 0, top: yRangeTop);
+        Plot.Axes.Bottom.TickGenerator = new NumericFixedInterval(50);
+
+        double[] anchors = [0, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 4, 5, 6, 8, 10];
+        string[] anchorLabels = ["0", "0.25", "0.5", "0.75", "1", "1.5", "2", "3", "4", "5", "6", "8", "10"];
+        var visibleAnchorIndexes = Enumerable.Range(0, anchors.Length)
+            .Where(i => anchors[i] <= maxY * 1.05)
+            .ToArray();
+        Plot.Axes.Left.TickGenerator = new NumericManual(
+            visibleAnchorIndexes.Select(i => System.Math.Log(1.0 + anchors[i])).ToArray(),
+            visibleAnchorIndexes.Select(i => anchorLabels[i]).ToArray());
 
         Plot.Add.VerticalLine(0, 1f, Color.FromHex("#dddddd"), LinePattern.Dotted);
 

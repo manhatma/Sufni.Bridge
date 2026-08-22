@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using ScottPlot;
+using ScottPlot.TickGenerators;
 using Sufni.Bridge.Models.Telemetry;
 
 namespace Sufni.Bridge.Plots;
@@ -125,15 +127,16 @@ public class TelemetryPlot(Plot plot) : SufniPlot(plot)
     /// 0% (bottom = topped out) to 100% (top = bottomed out). Drawn in data coordinates from the
     /// given axis extents so it sits where the histogram bars are short.
     /// </summary>
-    protected void AddBinColorLegend(IReadOnlyList<Color> palette, double xLeft, double xRight, double yTop)
+    protected void AddBinColorLegend(IReadOnlyList<Color> palette, double xLeft, double xRight, double yTop,
+        double xFraction = 0.10, double yLoFraction = 0.30, double yHiFraction = 0.70, bool labelsLeft = false)
     {
         var xRange = xRight - xLeft;
         if (xRange <= 0 || yTop <= 0 || palette.Count == 0) return;
 
         var width = xRange * 0.03;
-        var x = xLeft + xRange * 0.10;
-        var y0 = yTop * 0.30;
-        var y1 = yTop * 0.70;
+        var x = xLeft + xRange * xFraction;
+        var y0 = yTop * yLoFraction;
+        var y1 = yTop * yHiFraction;
         var dy = (y1 - y0) / palette.Count;
 
         for (var k = 0; k < palette.Count; k++)
@@ -160,18 +163,38 @@ public class TelemetryPlot(Plot plot) : SufniPlot(plot)
 
         void EndLabel(string text, double y)
         {
-            var t = Plot.Add.Text(text, x + width / 2.0, y);
+            // Labels sit inward from the strip: to its right normally, to its left when the strip
+            // is placed against the right edge (so they don't spill past the axis).
+            var t = Plot.Add.Text(text, labelsLeft ? x - width / 2.0 : x + width / 2.0, y);
             t.LabelFontColor = Color.FromHex("#dddddd");
             t.LabelFontSize = 8;
             t.LabelFontName = "Menlo";
-            t.LabelAlignment = Alignment.MiddleLeft;
-            t.LabelOffsetX = 2;
+            t.LabelAlignment = labelsLeft ? Alignment.MiddleRight : Alignment.MiddleLeft;
+            t.LabelOffsetX = labelsLeft ? -2 : 2;
             t.LabelBold = true;
         }
 
         EndLabel("100%", y1);
         EndLabel("50%", (y0 + y1) / 2.0);
         EndLabel("0%", y0);
+    }
+
+    // log(1+y) compression for the power histograms' Y axis — lifts the low tail, tames the peak.
+    protected static double PowerLogTransform(double y) => System.Math.Log(1.0 + y);
+
+    // Manual Y ticks labelled with the true % value, placed at their log-compressed positions.
+    protected void ApplyPowerLogYTicks(double maxTotal)
+    {
+        double[] anchors = [0.1, 0.2, 0.3, 0.5, 0.75, 1, 1.5, 2, 3, 5, 8, 12];
+        var pos = new List<double> { 0 };
+        var lab = new List<string> { "0" };
+        foreach (var a in anchors)
+        {
+            if (a > maxTotal * 1.05) break;
+            pos.Add(PowerLogTransform(a));
+            lab.Add(a.ToString("0.##", CultureInfo.InvariantCulture));
+        }
+        Plot.Axes.Left.TickGenerator = new NumericManual(pos.ToArray(), lab.ToArray());
     }
 
     /// <summary>

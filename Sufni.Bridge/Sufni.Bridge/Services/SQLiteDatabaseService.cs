@@ -208,6 +208,12 @@ public class SqLiteDatabaseService : IDatabaseService
         await AddColumnIfMissing("source_id", "TEXT");
         await AddColumnIfMissing("crop_start_sample", "INTEGER");
         await AddColumnIfMissing("crop_end_sample", "INTEGER");
+        if (!columnNames.Contains("damper_power_mode"))
+            await connection.ExecuteAsync("ALTER TABLE session ADD COLUMN damper_power_mode INTEGER DEFAULT 1");
+        if (!columnNames.Contains("low_speed_log_mode"))
+            await connection.ExecuteAsync("ALTER TABLE session ADD COLUMN low_speed_log_mode INTEGER DEFAULT 1");
+        if (!columnNames.Contains("power_log_mode"))
+            await connection.ExecuteAsync("ALTER TABLE session ADD COLUMN power_log_mode INTEGER DEFAULT 0");
         await AddColumnIfMissing("front_tire_pressure", "REAL");
         await AddColumnIfMissing("rear_tire_pressure", "REAL");
         await AddColumnIfMissing("duration_seconds", "INTEGER");
@@ -224,6 +230,14 @@ public class SqLiteDatabaseService : IDatabaseService
         }
         await AddColumnIfMissing("travel_comparison_histogram");
         await AddColumnIfMissing("rear_damper_velocity_histogram");
+        await AddColumnIfMissing("front_velocity_histogram_power", "BLOB");
+        await AddColumnIfMissing("rear_velocity_histogram_power", "BLOB");
+        await AddColumnIfMissing("rear_damper_velocity_histogram_power", "BLOB");
+        await AddColumnIfMissing("front_velocity_histogram_power_log", "BLOB");
+        await AddColumnIfMissing("rear_velocity_histogram_power_log", "BLOB");
+        await AddColumnIfMissing("rear_damper_velocity_histogram_power_log", "BLOB");
+        await AddColumnIfMissing("front_low_speed_velocity_histogram_log", "BLOB");
+        await AddColumnIfMissing("rear_low_speed_velocity_histogram_log", "BLOB");
         await AddColumnIfMissing("front_rear_travel_scatter");
         await AddColumnIfMissing("front_position_velocity");
         await AddColumnIfMissing("rear_position_velocity");
@@ -555,6 +569,7 @@ public class SqLiteDatabaseService : IDatabaseService
                                  rear_springrate, rear_volspc, rear_hsc, rear_lsc, rear_lsr, rear_hsr,
                                  rear_tire_pressure,
                                  crop_start_sample, crop_end_sample,
+                                 damper_power_mode, low_speed_log_mode, power_log_mode,
                                  duration_seconds,
                                  CASE
                                     WHEN data IS NOT NULL THEN 1
@@ -751,6 +766,7 @@ public class SqLiteDatabaseService : IDatabaseService
                                      rear_springrate=?, rear_volspc=?, rear_hsc=?, rear_lsc=?, rear_lsr=?, rear_hsr=?,
                                      rear_tire_pressure=?,
                                      crop_start_sample=?, crop_end_sample=?,
+                                     damper_power_mode=?, low_speed_log_mode=?, power_log_mode=?,
                                      duration_seconds=?
                                  WHERE
                                      id=?
@@ -775,6 +791,9 @@ public class SqLiteDatabaseService : IDatabaseService
                     session.RearTirePressure,
                     session.CropStartSample,
                     session.CropEndSample,
+                    session.DamperPowerMode,
+                    session.LowSpeedLogMode,
+                    session.PowerLogMode,
                     session.DurationSeconds,
                     session.Id]);
         }
@@ -784,6 +803,13 @@ public class SqLiteDatabaseService : IDatabaseService
         }
 
         return session.Id;
+    }
+
+    public async Task UpdateSessionHistogramModesAsync(Guid id, bool power, bool log, bool powerLog)
+    {
+        await Initialization;
+        await connection.ExecuteAsync(
+            "UPDATE session SET damper_power_mode=?, low_speed_log_mode=?, power_log_mode=? WHERE id=?", power, log, powerLog, id);
     }
 
     public async Task PatchSessionPsstAsync(Guid id, byte[] data)

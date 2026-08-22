@@ -132,6 +132,15 @@ public class Session : Synchronizable
     [Column("crop_end_sample")]
     public int? CropEndSample { get; set; }
 
+    [Column("damper_power_mode")]
+    public bool DamperPowerMode { get; set; } = true;
+
+    [Column("low_speed_log_mode")]
+    public bool LowSpeedLogMode { get; set; } = true;
+
+    [Column("power_log_mode")]
+    public bool PowerLogMode { get; set; } = false;
+
     [JsonIgnore]
     [Column("duration_seconds")]
     public int? DurationSeconds { get; set; }

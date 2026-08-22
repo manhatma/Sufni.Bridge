@@ -41,6 +41,7 @@ public interface IDatabaseService
     public Task<Linkage?> GetSessionLinkageAsync(Guid sessionId);
     public Task<byte[]?> GetSessionRawPsstAsync(Guid id);
     public Task<Guid> PutSessionAsync(Session session);
+    public Task UpdateSessionHistogramModesAsync(Guid id, bool power, bool log, bool powerLog);
     public Task PatchSessionPsstAsync(Guid id, byte[] data);
     public Task DeleteSessionAsync(Guid id);
     public Task<bool> SessionExistsForTimestampAsync(int timestamp);
