@@ -2032,6 +2032,17 @@ public class TelemetryData
     public VelocityStatistics CalculateVelocityStatistics(SuspensionType type) =>
         Memo($"velocityStatistics/{type}", () => CalculateVelocityStatisticsCore(type));
 
+    /// <summary>
+    /// Reports multi-sample potentiometer contact-loss bursts for one suspension channel.
+    /// This derived diagnostic reads the raw shock/fork travel and never modifies telemetry.
+    /// </summary>
+    public ChannelIntegrity CalculateSignalIntegrity(SuspensionType type) =>
+        Memo($"signalIntegrity/{type}", () =>
+        {
+            var suspension = type == SuspensionType.Front ? Front : Rear;
+            return SignalIntegrity.Detect(suspension.ShockTravel, suspension.TravelPerLsb, SampleRate);
+        });
+
     private VelocityStatistics CalculateVelocityStatisticsCore(SuspensionType type)
     {
         var suspension = type == SuspensionType.Front ? Front : Rear;

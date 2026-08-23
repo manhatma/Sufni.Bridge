@@ -74,6 +74,23 @@ internal static class SessionSummaryBuilder
         var lines = new List<string>();
         if (telemetryData.FrontDropouts != 0 || telemetryData.RearDropouts != 0)
             lines.Add($"Dropouts: {telemetryData.FrontDropouts} front / {telemetryData.RearDropouts} rear");
+        var frontIntegrity = telemetryData.CalculateSignalIntegrity(SuspensionType.Front);
+        var rearIntegrity = telemetryData.CalculateSignalIntegrity(SuspensionType.Rear);
+        if (frontIntegrity.Bursts.Count != 0 || rearIntegrity.Bursts.Count != 0)
+        {
+            static string FormatContactLoss(ChannelIntegrity integrity, string channel, int sampleRate) =>
+                string.Create(System.Globalization.CultureInfo.InvariantCulture,
+                    $"{integrity.Bursts.Count} {(integrity.Bursts.Count == 1 ? "range" : "ranges")}, {integrity.TotalCorruptDurationSeconds(sampleRate) * 1000.0:0} ms {channel}");
+
+            var affectedChannels = new List<string>();
+            if (rearIntegrity.Bursts.Count != 0)
+                affectedChannels.Add(FormatContactLoss(rearIntegrity, "rear", telemetryData.SampleRate));
+            if (frontIntegrity.Bursts.Count != 0)
+                affectedChannels.Add(FormatContactLoss(frontIntegrity, "front", telemetryData.SampleRate));
+
+            lines.Add($"Contact loss: {string.Join(" / ", affectedChannels)}");
+            lines.Add("Peak velocities in these ranges are not physical — check the pot wiring and connector.");
+        }
         if (telemetryData.Front.ClampedSamples != 0 || telemetryData.Rear.ClampedSamples != 0)
             lines.Add($"Top-out clamps: {telemetryData.Front.ClampedSamples} front / {telemetryData.Rear.ClampedSamples} rear");
         if (telemetryData.Linkage.WheelTravelOffset != 0)
