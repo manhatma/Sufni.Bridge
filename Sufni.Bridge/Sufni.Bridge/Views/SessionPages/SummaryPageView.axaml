@@ -43,6 +43,16 @@
             <Setter Property="HorizontalAlignment" Value="Center" />
             <Setter Property="Foreground" Value="#15191c" />
         </Style>
+        <Style Selector="Border.summary-warning-cell">
+            <Setter Property="Background" Value="#e8a33d" />
+            <Setter Property="BorderBrush" Value="{StaticResource SufniBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Padding" Value="8,6" />
+        </Style>
+        <Style Selector="Border.summary-warning-cell TextBlock">
+            <Setter Property="Foreground" Value="#15191c" />
+            <Setter Property="FontWeight" Value="Bold" />
+        </Style>
         <Style Selector="ComboBox.summary-setup">
             <Setter Property="MinHeight" Value="24" />
             <Setter Property="Padding" Value="6,0" />
@@ -51,7 +61,7 @@
 
     <ScrollViewer Width="{Binding $parent[ScrollViewer].Bounds.Width}" Height="{Binding $parent[ScrollViewer].Bounds.Height}" IsScrollChainingEnabled="False">
         <StackPanel Margin="0,0,0,10" Orientation="Vertical" Spacing="12">
-            <Grid RowDefinitions="auto auto auto auto auto auto" ColumnDefinitions="*">
+            <Grid RowDefinitions="auto auto auto auto auto auto auto" ColumnDefinitions="*">
                 <TextBlock Grid.Row="0" Classes="summary-title" Text="RUN DATA" />
                 <ItemsControl Grid.Row="1" ItemsSource="{Binding RunDataRows}">
                     <ItemsControl.ItemTemplate>
@@ -137,14 +147,15 @@
                                    Text="{Binding Airtime}" />
                     </Border>
                 </Grid>
-            </Grid>
-
-            <Grid RowDefinitions="auto auto"
-                  IsVisible="{Binding DataQuality, Converter={x:Static ObjectConverters.IsNotNull}}">
-                <TextBlock Grid.Row="0" Classes="summary-title" Text="DATA QUALITY" />
-                <Border Grid.Row="1" Classes="summary-cell">
-                    <TextBlock Text="{Binding DataQuality}" TextWrapping="Wrap" />
-                </Border>
+                <Grid Grid.Row="6" ColumnDefinitions="110,*"
+                      IsVisible="{Binding DataQuality, Converter={x:Static ObjectConverters.IsNotNull}}">
+                    <Border Grid.Column="0" Classes="summary-warning-cell">
+                        <TextBlock Text="Data Quality" />
+                    </Border>
+                    <Border Grid.Column="1" Classes="summary-warning-cell">
+                        <TextBlock Text="{Binding DataQuality}" TextWrapping="Wrap" />
+                    </Border>
+                </Grid>
             </Grid>
 
             <Grid RowDefinitions="auto auto" ColumnDefinitions="*">

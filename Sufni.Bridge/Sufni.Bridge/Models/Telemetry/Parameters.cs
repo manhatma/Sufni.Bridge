@@ -169,6 +169,38 @@ public static class Parameters
     // of magnitude higher than physical mechanics).
     public const double SpikeJerkLimit = 5.0e9;     // mm/s³ ≈ 510 000 g/s
 
+    // Multi-sample raw-ADC contact-loss detection. Step size is deliberately not used:
+    // legitimate hard suspension impacts can move hundreds of ADC codes in one sample while
+    // remaining locally smooth. Curvature deviation instead measures departure from the line
+    // through the neighbouring samples, which is small for that physical motion but becomes
+    // very large when a potentiometer wiper loses contact, decays, and snaps back.
+    //
+    // Calibrated against every session in the corpus that stores raw ShockTravel (129 channels).
+    // The curvature deviation of a HEALTHY channel is extremely heavy-tailed: its per-session
+    // maximum has p50 = 205, p90 = 366 and p99 = 501 LSB, driven by genuine square-edge hits.
+    // The one confirmed contact fault (00294.SST) peaks at 2039 LSB — four times the 99th
+    // percentile of everything else. The floor therefore sits at 800 LSB: 1.6x above the highest
+    // clean channel observed, and 2.5x below the fault.
+    //
+    // The MAD term is a safety net, not the primary discriminator. Fault amplitude is set by the
+    // ADC range, not by riding intensity, so it does not scale with channel noise; across the
+    // corpus the MAD scale spans only 0.0 to 10.4 LSB and the floor dominates. The multiple is
+    // sized so the adaptive term binds only for a channel far noisier than anything recorded so
+    // far, where it raises the threshold and suppresses false alarms.
+    public const double GlitchBurstSigma = 100.0;
+    public const double GlitchBurstFloorLsb = 800.0;
+
+    // Minimum number of threshold crossings for a burst to be reported. A loss-of-contact
+    // episode decays over many samples and crosses repeatedly; the corpus shows 485 of 489
+    // candidate bursts consist of exactly two crossings, all of them ordinary signal. Requiring
+    // three removes that entire population without touching the real fault, which spans 64
+    // samples. Isolated single-sample outliers are already handled by RejectSingleSampleSpikes.
+    public const int GlitchBurstMinSeeds = 3;
+
+    // (s) maximum separation used to merge curvature-threshold crossings from the same loss-of-
+    // contact episode. Expressing it in time keeps burst grouping invariant across sample rates.
+    public const double GlitchBurstMergeGapSeconds = 0.01;
+
     // Whittaker-Henderson smoother used as a pre-filter for the acceleration plot.
     // Acceleration is the second derivative of travel; its noise gain ∝ ω². The
     // velocity-tuned WH (order 3, λ=11) leaves enough 30–93 Hz content that, when
