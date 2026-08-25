@@ -26,7 +26,12 @@ internal sealed class SessionMapRenderer
 
     private readonly SessionViewModel viewModel;
     private readonly TimeZoomViewModel timeZoom;
+    // loadCts: ReloadAsync / EnsureLoadedAsync. renderCts: zoom debounce and metric change.
+    // Zoom/metric must not cancel an in-flight load — that dropped SetAvailableMetrics and
+    // left RenderFullMap to paint a monotone track (cold start vs. post-import).
+    private CancellationTokenSource? loadCts;
     private CancellationTokenSource? renderCts;
+    private volatile bool loadInProgress;
     private SessionTrack? sessionTrack;
     private SKBitmap? tiles;
     private Guid? loadedTrackId;
@@ -59,10 +64,12 @@ internal sealed class SessionMapRenderer
 
     internal async Task ReloadAsync()
     {
+        loadCts?.Cancel();
         renderCts?.Cancel();
         var cts = new CancellationTokenSource();
-        renderCts = cts;
+        loadCts = cts;
         var token = cts.Token;
+        loadInProgress = true;
 
         try
         {
@@ -76,11 +83,19 @@ internal sealed class SessionMapRenderer
             Dispatcher.UIThread.Post(() =>
                 viewModel.ErrorMessages.Add($"Could not load track map: {ex.Message}"));
         }
+        finally
+        {
+            if (ReferenceEquals(loadCts, cts))
+                loadInProgress = false;
+        }
     }
 
     private void OnZoomWindowChanged(object? sender, EventArgs e)
     {
         if (sessionTrack is null || sessionTrack.IsEmpty)
+            return;
+        // LoadAndRenderAsync already samples CurrentHighlight() at paint time.
+        if (loadInProgress)
             return;
 
         renderCts?.Cancel();
@@ -180,13 +195,7 @@ internal sealed class SessionMapRenderer
             selected = TrackOverlayMetric.GpsSpeed;
         currentOverlay = TrackOverlaySampler.Build(sessionTrack, telemetry, selected);
 
-        Dispatcher.UIThread.Post(() =>
-        {
-            if (token.IsCancellationRequested) return;
-            viewModel.MiscPage.SetAvailableMetrics(available, selected);
-        });
-
-        RenderPreviewAndFull(CurrentHighlight(), token);
+        RenderPreviewAndFull(CurrentHighlight(), available, selected, token);
     }
 
     private static async Task<IReadOnlyList<WallClockSlice>> BuildSlicesAsync(
@@ -235,7 +244,11 @@ internal sealed class SessionMapRenderer
         };
     }
 
-    private void RenderPreviewAndFull(ZoomWindow? highlight, CancellationToken token)
+    private void RenderPreviewAndFull(
+        ZoomWindow? highlight,
+        IReadOnlyList<TrackOverlayMetric> available,
+        TrackOverlayMetric selected,
+        CancellationToken token)
     {
         if (sessionTrack is null) return;
 
@@ -254,7 +267,7 @@ internal sealed class SessionMapRenderer
             return;
         }
 
-        AssignBitmaps(preview, full, token);
+        AssignBitmaps(preview, full, available, selected, token);
     }
 
     private void RenderFullMap(ZoomWindow? highlight, CancellationToken token)
@@ -282,7 +295,12 @@ internal sealed class SessionMapRenderer
         });
     }
 
-    private void AssignBitmaps(Bitmap preview, Bitmap full, CancellationToken token)
+    private void AssignBitmaps(
+        Bitmap preview,
+        Bitmap full,
+        IReadOnlyList<TrackOverlayMetric> available,
+        TrackOverlayMetric selected,
+        CancellationToken token)
     {
         Dispatcher.UIThread.Post(() =>
         {
@@ -299,6 +317,9 @@ internal sealed class SessionMapRenderer
             viewModel.TrackMap = full;
             viewModel.SummaryPage.TrackMapPreview = preview;
             viewModel.MiscPage.TrackMap = full;
+            // ComboBox IsVisible is bound to TrackMap. Populate after the control is shown
+            // so ItemsSource changes apply on a realized ComboBox (cold-start path).
+            viewModel.MiscPage.SetAvailableMetrics(available, selected);
         });
     }
 
@@ -319,6 +340,8 @@ internal sealed class SessionMapRenderer
     private void OnOverlayMetricChanged(object? sender, EventArgs e)
     {
         if (sessionTrack is null || sessionTrack.IsEmpty)
+            return;
+        if (loadInProgress)
             return;
 
         renderCts?.Cancel();
