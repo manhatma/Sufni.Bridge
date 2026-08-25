@@ -142,7 +142,7 @@
         <Grid
             Grid.Row="4"
             Margin="10,15,10,5"
-            ColumnDefinitions="auto * auto auto auto auto"
+            ColumnDefinitions="auto * auto auto auto auto auto"
             RowDefinitions="39">
             <Button
                 Grid.Row="0"
@@ -185,9 +185,52 @@
                     Source="{SvgImage /Assets/fa-crop.svg}" />
             </Button>
             <Button
-                Name="PdfExportButton"
                 Grid.Row="0"
                 Grid.Column="3"
+                Width="39"
+                Height="39"
+                Margin="0,0,5,0"
+                HorizontalContentAlignment="Center"
+                VerticalContentAlignment="Center"
+                Svg.Css=".default { fill: #a0a0a0; }">
+                <Button.Flyout>
+                    <Flyout FlyoutPresenterClasses="compact" Placement="Top">
+                        <StackPanel Width="220" Margin="6">
+                            <TextBlock Margin="4,2,4,6" FontSize="12" Foreground="#D0D0D0" Text="GPX zuweisen…" />
+                            <ItemsControl ItemsSource="{Binding AvailableTracks}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:TrackListItem">
+                                        <Button HorizontalAlignment="Stretch"
+                                                HorizontalContentAlignment="Left"
+                                                Classes="embedded"
+                                                Command="{Binding $parent[UserControl].((vm:SessionViewModel)DataContext).AssignTrackCommand}"
+                                                CommandParameter="{Binding}">
+                                            <StackPanel>
+                                                <TextBlock FontSize="13" Text="{Binding Name}" />
+                                                <TextBlock FontSize="11" Foreground="#808080" Text="{Binding TimeRange}" />
+                                            </StackPanel>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <Button Margin="0,6,0,0"
+                                    HorizontalAlignment="Stretch"
+                                    Classes="embedded"
+                                    Command="{Binding UnlinkTrackCommand}"
+                                    Content="Track lösen"
+                                    IsVisible="{Binding HasTrack}" />
+                        </StackPanel>
+                    </Flyout>
+                </Button.Flyout>
+                <Image
+                    Width="16"
+                    Height="16"
+                    Source="{SvgImage /Assets/fa-link.svg}" />
+            </Button>
+            <Button
+                Name="PdfExportButton"
+                Grid.Row="0"
+                Grid.Column="4"
                 Width="39"
                 Height="39"
                 Margin="0,0,5,0"
@@ -239,7 +282,7 @@
             </Button>
             <Button
                 Grid.Row="0"
-                Grid.Column="4"
+                Grid.Column="5"
                 Width="39"
                 Height="39"
                 Margin="0,0,5,0"
@@ -254,7 +297,7 @@
             <Button
                 Name="DeleteButton"
                 Grid.Row="0"
-                Grid.Column="5"
+                Grid.Column="6"
                 Width="39"
                 Height="39"
                 Margin="0,0,2,0"

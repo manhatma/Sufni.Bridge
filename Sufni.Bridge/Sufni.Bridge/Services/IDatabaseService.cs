@@ -67,4 +67,9 @@ public interface IDatabaseService
     public Task<List<DayLabel>> GetDayLabelsAsync();
     public Task PutDayLabelAsync(DayLabel label);
     public Task DeleteDayLabelAsync(string date);
+    public Task<List<Track>> GetTracksAsync();
+    public Task<Track?> GetTrackAsync(Guid id);
+    public Task PutTrackAsync(Track track);
+    public Task DeleteTrackAsync(Guid id);
+    public Task<List<Session>> GetSessionsInRangeAsync(long startMs, long endMs);
 }

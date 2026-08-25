@@ -61,6 +61,10 @@
 
     <ScrollViewer Width="{Binding $parent[ScrollViewer].Bounds.Width}" Height="{Binding $parent[ScrollViewer].Bounds.Height}" IsScrollChainingEnabled="False">
         <StackPanel Margin="0,0,0,10" Orientation="Vertical" Spacing="12">
+            <Image Height="120"
+                   Stretch="UniformToFill"
+                   IsVisible="{Binding TrackMapPreview, Converter={x:Static ObjectConverters.IsNotNull}}"
+                   Source="{Binding TrackMapPreview}" />
             <Grid RowDefinitions="auto auto auto auto auto auto auto" ColumnDefinitions="*">
                 <TextBlock Grid.Row="0" Classes="summary-title" Text="RUN DATA" />
                 <ItemsControl Grid.Row="1" ItemsSource="{Binding RunDataRows}">

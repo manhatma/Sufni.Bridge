@@ -126,7 +126,8 @@ public class SqLiteDatabaseService : IDatabaseService
             typeof(CombinedSessionSource),
             typeof(PendingSetupChanges),
             typeof(BalanceTargetOverride),
-            typeof(DayLabel)
+            typeof(DayLabel),
+            typeof(Track)
         });
 
         if (result.Results[typeof(CalibrationMethod)] == CreateTableResult.Created)
@@ -751,7 +752,8 @@ public class SqLiteDatabaseService : IDatabaseService
                                      rear_springrate=?, rear_volspc=?, rear_hsc=?, rear_lsc=?, rear_lsr=?, rear_hsr=?,
                                      rear_tire_pressure=?,
                                      crop_start_sample=?, crop_end_sample=?,
-                                     duration_seconds=?
+                                     duration_seconds=?,
+                                     track_id=?
                                  WHERE
                                      id=?
                                  """;
@@ -776,6 +778,7 @@ public class SqLiteDatabaseService : IDatabaseService
                     session.CropStartSample,
                     session.CropEndSample,
                     session.DurationSeconds,
+                    session.Track,
                     session.Id]);
         }
         else
@@ -1165,5 +1168,101 @@ public class SqLiteDatabaseService : IDatabaseService
     {
         await Initialization;
         await connection.ExecuteAsync("DELETE FROM day_label WHERE date = ?", date);
+    }
+
+    public async Task<List<Track>> GetTracksAsync()
+    {
+        await Initialization;
+        var tracks = await connection.Table<Track>().ToListAsync();
+        return tracks.OrderByDescending(t => t.Imported).ToList();
+    }
+
+    public async Task<Track?> GetTrackAsync(Guid id)
+    {
+        await Initialization;
+        return await connection.Table<Track>().Where(t => t.Id == id).FirstOrDefaultAsync();
+    }
+
+    public async Task PutTrackAsync(Track track)
+    {
+        await Initialization;
+        var existing = await connection.Table<Track>()
+            .Where(t => t.Id == track.Id)
+            .FirstOrDefaultAsync() is not null;
+        if (existing)
+            await connection.UpdateAsync(track);
+        else
+            await connection.InsertAsync(track);
+    }
+
+    public async Task DeleteTrackAsync(Guid id)
+    {
+        await Initialization;
+        await connection.ExecuteAsync("UPDATE session SET track_id = NULL WHERE track_id = ?", id);
+        await connection.ExecuteAsync("DELETE FROM track WHERE id = ?", id);
+    }
+
+    public async Task<List<Session>> GetSessionsInRangeAsync(long startMs, long endMs)
+    {
+        await Initialization;
+
+        const string sessionColumns = """
+                                      id,
+                                      name,
+                                      setup_id,
+                                      description,
+                                      timestamp,
+                                      track_id,
+                                      front_springrate, front_volspc, front_hsc, front_lsc, front_lsr, front_hsr,
+                                      front_tire_pressure,
+                                      rear_springrate, rear_volspc, rear_hsc, rear_lsc, rear_lsr, rear_hsr,
+                                      rear_tire_pressure,
+                                      crop_start_sample, crop_end_sample,
+                                      duration_seconds,
+                                      CASE
+                                         WHEN data IS NOT NULL THEN 1
+                                         ELSE 0
+                                      END AS has_data
+                                      """;
+
+        var sessions = await connection.QueryAsync<Session>($"""
+            SELECT {sessionColumns}
+            FROM session
+            WHERE deleted IS NULL
+              AND timestamp IS NOT NULL
+              AND (timestamp * 1000) >= ?
+              AND (timestamp * 1000) <= ?
+            """, startMs, endMs);
+
+        var byId = sessions.ToDictionary(s => s.Id);
+        var frontier = sessions.Select(s => s.Id).ToList();
+        var combinedIds = await GetAllCombinedIdsAsync();
+
+        while (frontier.Count > 0)
+        {
+            var next = new List<Guid>();
+            foreach (var id in frontier)
+            {
+                var parents = await connection.QueryAsync<CombinedSessionSource>(
+                    "SELECT DISTINCT combined_id FROM combined_session WHERE source_id = ?", id);
+                foreach (var parentId in parents.Select(p => p.CombinedId))
+                {
+                    if (byId.ContainsKey(parentId) || !combinedIds.Contains(parentId))
+                        continue;
+                    var parentRows = await connection.QueryAsync<Session>($"""
+                        SELECT {sessionColumns}
+                        FROM session
+                        WHERE deleted IS NULL AND id = ?
+                        """, parentId);
+                    if (parentRows.Count != 1) continue;
+                    byId[parentId] = parentRows[0];
+                    next.Add(parentId);
+                }
+            }
+
+            frontier = next;
+        }
+
+        return byId.Values.ToList();
     }
 }

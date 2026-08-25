@@ -11,7 +11,9 @@
 
 set -e
 
-UDID="9418F204-D26E-4C72-BF1D-C24EAA601001"  # iPhone 15 Pro, iOS 26.3.1
+UDID="C9A1187A-938F-4603-A9DC-E9BAE8F599DD"  # iPhone 17, iOS 26.5
+# HINWEIS: Tap-Koordinaten unten sind für iPhone 15 Pro (393x852 pt) kalibriert.
+# iPhone 17 ist 402x874 pt — Offsets/Koordinaten ggf. nachkalibrieren.
 BUNDLE="de.nielsbarth.sufnibridge-dev"
 OUT="./screenshots"
 mkdir -p "$OUT"

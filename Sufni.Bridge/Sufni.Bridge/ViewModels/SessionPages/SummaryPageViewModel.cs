@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using Avalonia.Media.Imaging;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Sufni.Bridge.ViewModels.Items;
@@ -16,6 +17,7 @@ public partial class SummaryPageViewModel() : PageViewModelBase("Summary")
     [ObservableProperty] private BalanceMetricRow effectiveHeadAngle = new() { Label = "Eff. Head Angle" };
     [ObservableProperty] private string airtime = "—";
     [ObservableProperty] private string? dataQuality;
+    [ObservableProperty] private Bitmap? trackMapPreview;
     public ObservableCollection<SetupViewModel> AvailableSetups { get; } = [];
 
     [RelayCommand]

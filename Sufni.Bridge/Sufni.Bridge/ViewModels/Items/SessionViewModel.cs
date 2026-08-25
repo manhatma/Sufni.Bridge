@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
+using Avalonia.Media.Imaging;
 using Avalonia.Svg.Skia;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
@@ -63,6 +64,12 @@ public partial class SessionViewModel : ItemViewModelBase
     private SvgImage? _fullFrontTravel, _fullRearTravel, _fullFrontVelocity, _fullRearVelocity, _fullFrontAccel, _fullRearAccel;
     private bool _timeZoomSnapshotTaken;
     private readonly SessionTimeZoomRenderer _timeZoomRenderer;
+    private readonly SessionMapRenderer _mapRenderer;
+
+    [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private Bitmap? trackMap;
+    [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private Bitmap? trackMapPreview;
+    [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private bool hasTrack;
+    public ObservableCollection<TrackListItem> AvailableTracks { get; } = [];
 
     // Read-path state. _pagesPopulated: pages hold a complete render of the current cache row
     // (valid load or rebuild), so a later Loaded() only re-validates the scalar cache meta and
@@ -398,6 +405,8 @@ public partial class SessionViewModel : ItemViewModelBase
         MiscPage.TimeZoom = _timeZoom;
         _timeZoomRenderer = CreateTimeZoomRenderer();
         _timeZoomRenderer.Subscribe();
+        _mapRenderer = new SessionMapRenderer(this, _timeZoom);
+        _mapRenderer.Subscribe();
     }
 
     public SessionViewModel(Session session, bool fromDatabase)
@@ -417,6 +426,9 @@ public partial class SessionViewModel : ItemViewModelBase
         MiscPage.TimeZoom = _timeZoom;
         _timeZoomRenderer = CreateTimeZoomRenderer();
         _timeZoomRenderer.Subscribe();
+        _mapRenderer = new SessionMapRenderer(this, _timeZoom);
+        _mapRenderer.Subscribe();
+        HasTrack = session.Track is not null;
 
         NotesPage.ForkSettings.PropertyChanged += (_, _) => EvaluateDirtiness();
         NotesPage.ShockSettings.PropertyChanged += (_, _) => EvaluateDirtiness();
@@ -498,6 +510,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 HasProcessedData = IsComplete,
                 CropStartSample = session.CropStartSample,
                 CropEndSample   = session.CropEndSample,
+                DurationSeconds = session.DurationSeconds,
             };
 
             await databaseService.PutSessionAsync(newSession);
@@ -955,6 +968,8 @@ public partial class SessionViewModel : ItemViewModelBase
             {
                 EnsureFullDataLoaded(databaseService);
                 _timeZoomRenderer.InitializeTimeZoomIfNeeded();
+                _ = _mapRenderer.EnsureLoadedAsync();
+                _ = LoadAvailableTracksAsync();
                 PerfLog.Log($"load/reopen {Id}", swTotal.Elapsed.TotalMilliseconds);
                 return;
             }
@@ -1049,6 +1064,8 @@ public partial class SessionViewModel : ItemViewModelBase
             // (Re)initialise the shared time-zoom state and context mini-map. No-ops while the
             // deferred full-data load is still pending — it re-triggers this on completion.
             _timeZoomRenderer.InitializeTimeZoomIfNeeded();
+            _ = _mapRenderer.EnsureLoadedAsync();
+            _ = LoadAvailableTracksAsync();
             PerfLog.Log($"load/total {Id}", swTotal.Elapsed.TotalMilliseconds);
         }
         catch (Exception e)
@@ -1071,5 +1088,88 @@ public partial class SessionViewModel : ItemViewModelBase
     [RelayCommand(CanExecute = nameof(CanExportPdfEssential))]
     private Task ExportPdfEssential() => SessionPdfExporter.ExportAsync(this, essential: true);
 
+    internal void ApplyTrackId(Guid? trackId)
+    {
+        session.Track = trackId;
+        HasTrack = trackId is not null;
+        _mapRenderer.Invalidate();
+        _ = _mapRenderer.ReloadAsync();
+    }
+
+    private async Task LoadAvailableTracksAsync()
+    {
+        var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
+        if (databaseService is null) return;
+        try
+        {
+            var tracks = await databaseService.GetTracksAsync();
+            Dispatcher.UIThread.Post(() =>
+            {
+                AvailableTracks.Clear();
+                foreach (var track in tracks)
+                {
+                    var start = DateTimeOffset.FromUnixTimeMilliseconds(track.StartTimeMs).UtcDateTime;
+                    var end = DateTimeOffset.FromUnixTimeMilliseconds(track.EndTimeMs).UtcDateTime;
+                    AvailableTracks.Add(new TrackListItem
+                    {
+                        Id = track.Id,
+                        Name = track.Name,
+                        TimeRange = $"{start:HH:mm}–{end:HH:mm} UTC"
+                    });
+                }
+            });
+        }
+        catch (Exception e)
+        {
+            ErrorMessages.Add($"Could not load tracks: {e.Message}");
+        }
+    }
+
+    [RelayCommand]
+    private async Task AssignTrack(TrackListItem? item)
+    {
+        if (item is null) return;
+        var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
+        Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
+        session.Track = item.Id;
+        HasTrack = true;
+        try
+        {
+            await databaseService.PutSessionAsync(session);
+            _mapRenderer.Invalidate();
+            await _mapRenderer.ReloadAsync();
+        }
+        catch (Exception e)
+        {
+            ErrorMessages.Add($"Could not assign track: {e.Message}");
+        }
+    }
+
+    [RelayCommand]
+    private async Task UnlinkTrack()
+    {
+        var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
+        Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
+        session.Track = null;
+        HasTrack = false;
+        try
+        {
+            await databaseService.PutSessionAsync(session);
+            _mapRenderer.Invalidate();
+            await _mapRenderer.ReloadAsync();
+        }
+        catch (Exception e)
+        {
+            ErrorMessages.Add($"Could not unlink track: {e.Message}");
+        }
+    }
+
     #endregion
+}
+
+public sealed class TrackListItem
+{
+    public Guid Id { get; init; }
+    public string Name { get; set; } = "";
+    public string TimeRange { get; set; } = "";
 }

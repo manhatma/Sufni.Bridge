@@ -57,6 +57,9 @@ public partial class App : Application
     public override void OnFrameworkInitializationCompleted()
     {
         RegisteredServices.Collection.AddSingleton<IFilesService>(_ => new FilesService());
+        RegisteredServices.Collection.AddSingleton<IGpxImportService, GpxImportService>();
+        RegisteredServices.Collection.AddSingleton<IMapTileService, MapTileService>();
+        RegisteredServices.Collection.AddSingleton<IGpxInboxService, GpxInboxService>();
         RegisteredServices.Collection.AddSingleton<MainPagesViewModel>();
         RegisteredServices.Collection.AddSingleton<MainViewModel>();
         Services = RegisteredServices.Collection.BuildServiceProvider();
