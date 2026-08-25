@@ -12,8 +12,9 @@ public static class TrackMapRenderer
     private static readonly SKColor DataBackground = new(0x20, 0x26, 0x2B);
     private static readonly SKColor TrackLine = new(0x80, 0xA8, 0xB8, 0xC0);
     private static readonly SKColor HighlightLine = new(0xFE, 0xFE, 0xFE);
-    private static readonly SKColor StartMarker = new(0x66, 0xC2, 0xA5);
-    private static readonly SKColor EndMarker = new(0xE3, 0x4A, 0x33);
+    private static readonly SKColor StartMarker = new(0x30, 0xC7, 0x4B);
+    private static readonly SKColor FinishCheck = new(0x22, 0x22, 0x22);
+    private static readonly SKColor FinishOutline = new(0x33, 0x33, 0x33);
     private static readonly SKColor AttributionColor = new(0xD0, 0xD0, 0xD0);
     private static readonly SKColor ScaleBackdrop = new(0x15, 0x19, 0x1C, 0xC8);
     private const string Attribution = "Esri, Maxar, Earthstar Geographics";
@@ -251,14 +252,62 @@ public static class TrackMapRenderer
         var last = track.Segments[^1];
         if (first.X.Length == 0 || last.X.Length == 0) return;
 
-        var radius = Math.Max(3.5f, width / 90f);
-        using var startPaint = new SKPaint { IsAntialias = true, Color = StartMarker, Style = SKPaintStyle.Fill };
-        using var endPaint = new SKPaint { IsAntialias = true, Color = EndMarker, Style = SKPaintStyle.Fill };
+        var radius = Math.Max(4f, width / 80f);
+        var ringWidth = Math.Max(1.5f, radius * 0.28f);
 
         ToPixel(first.X[0], first.Y[0], extent, width, height, out var sx, out var sy);
         ToPixel(last.X[^1], last.Y[^1], extent, width, height, out var ex, out var ey);
-        canvas.DrawCircle(sx, sy, radius, startPaint);
-        canvas.DrawCircle(ex, ey, radius, endPaint);
+
+        // Start: green dot with a white ring (Strava-style).
+        using var startFill = new SKPaint { IsAntialias = true, Color = StartMarker, Style = SKPaintStyle.Fill };
+        using var whiteRing = new SKPaint
+        {
+            IsAntialias = true, Color = SKColors.White, Style = SKPaintStyle.Stroke, StrokeWidth = ringWidth
+        };
+        canvas.DrawCircle(sx, sy, radius, startFill);
+        canvas.DrawCircle(sx, sy, radius, whiteRing);
+
+        // Finish: white badge with a checkered-flag pattern.
+        DrawFinishFlag(canvas, ex, ey, radius * 1.3f);
+    }
+
+    private static void DrawFinishFlag(SKCanvas canvas, float cx, float cy, float radius)
+    {
+        using var badge = new SKPaint { IsAntialias = true, Color = SKColors.White, Style = SKPaintStyle.Fill };
+        canvas.DrawCircle(cx, cy, radius, badge);
+
+        // Checkerboard, clipped to an inner circle so it stays inside the badge.
+        var inner = radius * 0.82f;
+        canvas.Save();
+        using (var clip = new SKPath())
+        {
+            clip.AddCircle(cx, cy, inner);
+            canvas.ClipPath(clip, antialias: true);
+        }
+
+        const int n = 4;
+        var cell = inner * 2f / n;
+        var ox = cx - inner;
+        var oy = cy - inner;
+        using var check = new SKPaint { Color = FinishCheck, Style = SKPaintStyle.Fill, IsAntialias = false };
+        for (var row = 0; row < n; row++)
+        {
+            for (var col = 0; col < n; col++)
+            {
+                if (((row + col) & 1) != 0) continue;
+                canvas.DrawRect(ox + col * cell, oy + row * cell, cell, cell, check);
+            }
+        }
+
+        canvas.Restore();
+
+        // Thin outline so the white badge separates from the map.
+        using var outline = new SKPaint
+        {
+            IsAntialias = true, Color = FinishOutline, Style = SKPaintStyle.Stroke,
+            StrokeWidth = Math.Max(1f, radius * 0.12f)
+        };
+        canvas.DrawCircle(cx, cy, radius, outline);
     }
 
     private static void ToPixel(double x, double y, MapBounds extent, int width, int height, out float px, out float py)
