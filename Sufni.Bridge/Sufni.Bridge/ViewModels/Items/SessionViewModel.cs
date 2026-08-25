@@ -698,6 +698,8 @@ public partial class SessionViewModel : ItemViewModelBase
             // New crop → new analysis data: rebuild zoom state + mini-map and reset the window.
             _analysisData = null;
             _timeZoomRenderer.InitializeTimeZoom();
+            _mapRenderer.Invalidate();
+            _ = _mapRenderer.ReloadAsync();
             IsCropVisible = false;
         }
         catch (Exception e)

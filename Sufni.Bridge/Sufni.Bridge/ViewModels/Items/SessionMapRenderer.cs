@@ -132,21 +132,41 @@ internal sealed class SessionMapRenderer
         if (databaseService is null)
             return;
 
-        if (loadedTrackId != session.Track || sessionTrack is null)
+        var needTrack = loadedTrackId != session.Track || sessionTrack is null;
+        if (needTrack || telemetry is null)
         {
-            var track = await databaseService.GetTrackAsync(session.Track.Value);
-            if (track?.Points is null || track.Points.Length == 0)
+            TelemetryData? fullTelemetry = null;
+            try
             {
-                ClearBitmaps();
-                return;
+                fullTelemetry = await Task.Run(() => databaseService.GetSessionPsstAsync(session.Id), token);
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch
+            {
+                fullTelemetry = null;
             }
 
-            var points = MessagePackSerializer.Deserialize<TrackPoints>(track.Points);
-            var slices = await BuildSlicesAsync(session, databaseService);
-            sessionTrack = SessionTrack.Build(points, slices);
-            loadedTrackId = session.Track;
-            tiles?.Dispose();
-            tiles = null;
+            if (needTrack)
+            {
+                var track = await databaseService.GetTrackAsync(session.Track.Value);
+                if (track?.Points is null || track.Points.Length == 0)
+                {
+                    ClearBitmaps();
+                    return;
+                }
+
+                var points = MessagePackSerializer.Deserialize<TrackPoints>(track.Points);
+                var slices = await BuildSlicesAsync(session, databaseService, fullTelemetry);
+                sessionTrack = SessionTrack.Build(points, slices);
+                loadedTrackId = session.Track;
+                tiles?.Dispose();
+                tiles = null;
+            }
+
+            telemetry = ToOverlayTelemetry(session, fullTelemetry);
         }
 
         if (sessionTrack is null || sessionTrack.IsEmpty)
@@ -171,22 +191,6 @@ internal sealed class SessionMapRenderer
             }
         }
 
-        if (telemetry is null)
-        {
-            try
-            {
-                telemetry = await Task.Run(() => databaseService.GetSessionPsstAsync(session.Id), token);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch
-            {
-                telemetry = null;
-            }
-        }
-
         if (token.IsCancellationRequested) return;
 
         var available = TrackOverlaySampler.AvailableMetrics(telemetry);
@@ -198,36 +202,106 @@ internal sealed class SessionMapRenderer
         RenderPreviewAndFull(CurrentHighlight(), available, selected, token);
     }
 
+    private static int FullSampleCount(TelemetryData? data)
+    {
+        if (data is null) return 0;
+        var front = data.Front?.Travel?.Length ?? 0;
+        var rear = data.Rear?.Travel?.Length ?? 0;
+        return Math.Max(front, rear);
+    }
+
+    private static bool ShouldApplyCrop(Session session, TelemetryData? fullTelemetry)
+    {
+        if (fullTelemetry is null) return false;
+        if (fullTelemetry.SampleRate <= 0) return false;
+        if (FullSampleCount(fullTelemetry) <= 0) return false;
+        return session.CropStartSample.HasValue && session.CropEndSample.HasValue;
+    }
+
+    private static TelemetryData? ToOverlayTelemetry(Session session, TelemetryData? fullTelemetry)
+    {
+        if (fullTelemetry is null) return null;
+        if (!ShouldApplyCrop(session, fullTelemetry))
+            return fullTelemetry;
+        return fullTelemetry.CreateCroppedCopy(session.CropStartSample!.Value, session.CropEndSample!.Value);
+    }
+
     private static async Task<IReadOnlyList<WallClockSlice>> BuildSlicesAsync(
         Session session,
-        IDatabaseService databaseService)
+        IDatabaseService databaseService,
+        TelemetryData? fullTelemetry)
     {
         var sourceIds = await databaseService.GetCombinedSourcesAsync(session.Id);
-        if (sourceIds.Count == 0)
+        if (!ShouldApplyCrop(session, fullTelemetry))
         {
-            return
-            [
-                new WallClockSlice(
-                    (long)(session.Timestamp ?? 0) * 1000,
-                    (long)(session.DurationSeconds ?? 0) * 1000,
-                    0)
-            ];
+            if (sourceIds.Count == 0)
+            {
+                return
+                [
+                    new WallClockSlice(
+                        (long)(session.Timestamp ?? 0) * 1000,
+                        (long)(session.DurationSeconds ?? 0) * 1000,
+                        0)
+                ];
+            }
+
+            var allSessionsUncut = await databaseService.GetSessionsAsync();
+            var byIdUncut = allSessionsUncut.ToDictionary(s => s.Id);
+            var uncut = new List<WallClockSlice>(sourceIds.Count);
+            double offsetUncut = 0;
+            foreach (var sourceId in sourceIds)
+            {
+                if (!byIdUncut.TryGetValue(sourceId, out var source))
+                    continue;
+                var durationSeconds = source.DurationSeconds ?? 0;
+                uncut.Add(new WallClockSlice(
+                    (long)(source.Timestamp ?? 0) * 1000,
+                    (long)durationSeconds * 1000,
+                    offsetUncut));
+                offsetUncut += durationSeconds;
+            }
+
+            return uncut;
         }
 
-        var allSessions = await databaseService.GetSessionsAsync();
-        var byId = allSessions.ToDictionary(s => s.Id);
-        var slices = new List<WallClockSlice>(sourceIds.Count);
-        double offset = 0;
-        foreach (var sourceId in sourceIds)
+        var rate = fullTelemetry!.SampleRate;
+        var cropStart = session.CropStartSample ?? 0;
+        var cropEnd = session.CropEndSample ?? FullSampleCount(fullTelemetry);
+        var cropStartSec = cropStart / (double)rate;
+        var cropEndSec = cropEnd / (double)rate;
+
+        var sources = new List<(double wallStart, double offsetSec, double durSec)>();
+        if (sourceIds.Count == 0)
         {
-            if (!byId.TryGetValue(sourceId, out var source))
+            sources.Add((session.Timestamp ?? 0, 0, session.DurationSeconds ?? 0));
+        }
+        else
+        {
+            var allSessions = await databaseService.GetSessionsAsync();
+            var byId = allSessions.ToDictionary(s => s.Id);
+            double offset = 0;
+            foreach (var sourceId in sourceIds)
+            {
+                if (!byId.TryGetValue(sourceId, out var source))
+                    continue;
+                var durationSeconds = source.DurationSeconds ?? 0;
+                sources.Add((source.Timestamp ?? 0, offset, durationSeconds));
+                offset += durationSeconds;
+            }
+        }
+
+        var slices = new List<WallClockSlice>(sources.Count);
+        foreach (var (wallStart, offsetSec, durSec) in sources)
+        {
+            var overlapStart = Math.Max(offsetSec, cropStartSec);
+            var overlapEnd = Math.Min(offsetSec + durSec, cropEndSec);
+            if (overlapEnd <= overlapStart)
                 continue;
-            var durationSeconds = source.DurationSeconds ?? 0;
+
             slices.Add(new WallClockSlice(
-                (long)(source.Timestamp ?? 0) * 1000,
-                (long)durationSeconds * 1000,
-                offset));
-            offset += durationSeconds;
+                (long)((wallStart + (overlapStart - offsetSec)) * 1000),
+                (long)((overlapEnd - overlapStart) * 1000),
+                overlapStart - cropStartSec));
         }
 
         return slices;
