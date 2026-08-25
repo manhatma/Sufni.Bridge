@@ -26,7 +26,9 @@ public static class TrackMapRenderer
         int width,
         int height,
         ZoomWindow? highlight,
-        TrackOverlay? overlay = null)
+        TrackOverlay? overlay = null,
+        bool drawMarkers = true,
+        SKColor? plainTrackColor = null)
     {
         if (width < 1) width = 1;
         if (height < 1) height = 1;
@@ -47,7 +49,7 @@ public static class TrackMapRenderer
                 DrawOverlay(canvas, track, overlay, extent, width, height, strokeWidth);
             else
             {
-                using var muted = Stroke(TrackLine, strokeWidth);
+                using var muted = Stroke(plainTrackColor ?? TrackLine, strokeWidth);
                 foreach (var segment in track.Segments)
                     DrawSegment(canvas, segment, extent, width, height, muted, null);
             }
@@ -59,7 +61,7 @@ public static class TrackMapRenderer
                     DrawSegment(canvas, segment, extent, width, height, bright, highlight);
             }
 
-            DrawEndpoints(canvas, track, extent, width, height);
+            if (drawMarkers) DrawEndpoints(canvas, track, extent, width, height);
         }
 
         if (overlay is not null)

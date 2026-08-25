@@ -11,7 +11,7 @@ public enum TrackOverlayMetric
     RearTravel,
     FrontVelocity,
     RearVelocity,
-    Balance
+    Pitch
 }
 
 public static class TrackOverlayMetricInfo
@@ -23,18 +23,18 @@ public static class TrackOverlayMetricInfo
         TrackOverlayMetric.RearTravel => "Rear Travel",
         TrackOverlayMetric.FrontVelocity => "Front Velocity",
         TrackOverlayMetric.RearVelocity => "Rear Velocity",
-        TrackOverlayMetric.Balance => "Balance",
+        TrackOverlayMetric.Pitch => "Pitch",
         _ => metric.ToString()
     };
 
     public static string Unit(TrackOverlayMetric metric) => metric switch
     {
         TrackOverlayMetric.GpsSpeed => "km/h",
-        TrackOverlayMetric.FrontTravel => "mm",
-        TrackOverlayMetric.RearTravel => "mm",
+        TrackOverlayMetric.FrontTravel => "%",
+        TrackOverlayMetric.RearTravel => "%",
         TrackOverlayMetric.FrontVelocity => "mm/s",
         TrackOverlayMetric.RearVelocity => "mm/s",
-        TrackOverlayMetric.Balance => "mm",
+        TrackOverlayMetric.Pitch => "°",
         _ => ""
     };
 }
@@ -88,9 +88,10 @@ public static class TrackOverlaySampler
             => data?.Front.Present == true && data.Front.Velocity is { Length: > 0 },
         TrackOverlayMetric.RearVelocity
             => data?.Rear.Present == true && data.Rear.Velocity is { Length: > 0 },
-        TrackOverlayMetric.Balance
+        TrackOverlayMetric.Pitch
             => data?.Front.Present == true && data.Rear.Present
-               && data.Front.Travel is { Length: > 0 } && data.Rear.Travel is { Length: > 0 },
+               && data.Front.Travel is { Length: > 0 } && data.Rear.Travel is { Length: > 0 }
+               && data.Linkage?.Wheelbase > 0,
         _ => false
     };
 
@@ -105,6 +106,8 @@ public static class TrackOverlaySampler
         var min = double.PositiveInfinity;
         var max = double.NegativeInfinity;
 
+        double[]? pitch = metric == TrackOverlayMetric.Pitch ? data?.CalculatePitchDegrees() : null;
+
         for (var s = 0; s < track.Segments.Count; s++)
         {
             var segment = track.Segments[s];
@@ -112,7 +115,7 @@ public static class TrackOverlaySampler
             var values = new double[n];
             for (var i = 0; i < n; i++)
             {
-                var v = SamplePair(segment, i, data, metric);
+                var v = SamplePair(segment, i, data, metric, pitch);
                 values[i] = v;
                 if (!double.IsFinite(v)) continue;
                 if (v < min) min = v;
@@ -127,9 +130,7 @@ public static class TrackOverlaySampler
             min = 0;
             max = 0;
         }
-        else if (metric is TrackOverlayMetric.FrontVelocity
-                 or TrackOverlayMetric.RearVelocity
-                 or TrackOverlayMetric.Balance)
+        else if (metric is TrackOverlayMetric.Pitch)
         {
             var mag = Math.Max(Math.Abs(min), Math.Abs(max));
             min = -mag;
@@ -148,7 +149,7 @@ public static class TrackOverlaySampler
     }
 
     private static double SamplePair(
-        TrackSegment segment, int i, TelemetryData? data, TrackOverlayMetric metric)
+        TrackSegment segment, int i, TelemetryData? data, TrackOverlayMetric metric, double[]? pitch)
     {
         if (metric == TrackOverlayMetric.GpsSpeed)
             return GpsSpeedKmh(segment, i);
@@ -164,11 +165,11 @@ public static class TrackOverlaySampler
 
         return metric switch
         {
-            TrackOverlayMetric.FrontTravel => MeanRange(data.Front.Travel, i0, i1, abs: true),
-            TrackOverlayMetric.RearTravel => MeanRange(data.Rear.Travel, i0, i1, abs: true),
-            TrackOverlayMetric.FrontVelocity => MeanRange(data.Front.Velocity, i0, i1, abs: false),
-            TrackOverlayMetric.RearVelocity => MeanRange(data.Rear.Velocity, i0, i1, abs: false),
-            TrackOverlayMetric.Balance => MeanDiff(data.Front.Travel, data.Rear.Travel, i0, i1),
+            TrackOverlayMetric.FrontTravel => TravelPercent(data.Front.Travel, i0, i1, data.Linkage.MaxFrontTravel),
+            TrackOverlayMetric.RearTravel => TravelPercent(data.Rear.Travel, i0, i1, data.Linkage.MaxRearTravel),
+            TrackOverlayMetric.FrontVelocity => MeanRange(data.Front.Velocity, i0, i1, abs: true),
+            TrackOverlayMetric.RearVelocity => MeanRange(data.Rear.Velocity, i0, i1, abs: true),
+            TrackOverlayMetric.Pitch => MeanPitch(pitch, i0, i1),
             _ => double.NaN
         };
     }
@@ -219,24 +220,20 @@ public static class TrackOverlaySampler
         return n == 0 ? double.NaN : sum / n;
     }
 
-    private static double MeanDiff(double[]? front, double[]? rear, int i0, int i1)
+    private static double TravelPercent(double[]? values, int i0, int i1, double maxTravel)
     {
-        if (front is null || rear is null || front.Length == 0 || rear.Length == 0)
-            return double.NaN;
-        var length = Math.Min(front.Length, rear.Length);
-        i0 = Math.Clamp(i0, 0, length - 1);
-        i1 = Math.Clamp(i1, i0 + 1, length);
-        double sum = 0;
-        var n = 0;
-        for (var i = i0; i < i1; i++)
-        {
-            var a = front[i];
-            var b = rear[i];
-            if (!double.IsFinite(a) || !double.IsFinite(b)) continue;
-            sum += a - b;
-            n++;
-        }
+        if (maxTravel <= 0) return double.NaN;
+        var mean = MeanRange(values, i0, i1, abs: true);
+        return double.IsFinite(mean) ? mean / maxTravel * 100.0 : double.NaN;
+    }
 
+    private static double MeanPitch(double[]? pitch, int i0, int i1)
+    {
+        if (pitch is null || pitch.Length == 0) return double.NaN;
+        i0 = Math.Clamp(i0, 0, pitch.Length - 1);
+        i1 = Math.Clamp(i1, i0 + 1, pitch.Length);
+        double sum = 0; var n = 0;
+        for (var i = i0; i < i1; i++) { var v = pitch[i]; if (!double.IsFinite(v)) continue; sum += v; n++; }
         return n == 0 ? double.NaN : sum / n;
     }
 }

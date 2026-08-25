@@ -30,11 +30,24 @@ public class TrackOverlaySamplerTests
         double[]? frontVelocity = null,
         bool rearPresent = false,
         double[]? rearTravel = null,
-        double[]? rearVelocity = null)
+        double[]? rearVelocity = null,
+        double? maxFrontTravel = null,
+        double? maxRearTravel = null,
+        double? wheelbase = null)
     {
+        Linkage? linkage = null;
+        if (maxFrontTravel.HasValue || maxRearTravel.HasValue || wheelbase.HasValue)
+        {
+            linkage = new Linkage();
+            if (maxFrontTravel.HasValue) linkage.MaxFrontTravel = maxFrontTravel.Value;
+            if (maxRearTravel.HasValue) linkage.MaxRearTravel = maxRearTravel.Value;
+            if (wheelbase.HasValue) linkage.Wheelbase = wheelbase.Value;
+        }
+
         return new TelemetryData
         {
             SampleRate = sampleRate,
+            Linkage = linkage!,
             Front = new Suspension
             {
                 Present = frontPresent,
@@ -74,7 +87,7 @@ public class TrackOverlaySamplerTests
         Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.RearTravel, empty));
         Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.FrontVelocity, empty));
         Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.RearVelocity, empty));
-        Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.Balance, empty));
+        Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.Pitch, empty));
 
         var frontOnly = Telemetry(
             sampleRate: 10,
@@ -84,7 +97,7 @@ public class TrackOverlaySamplerTests
         Assert.True(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.FrontTravel, frontOnly));
         Assert.True(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.FrontVelocity, frontOnly));
         Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.RearTravel, frontOnly));
-        Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.Balance, frontOnly));
+        Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.Pitch, frontOnly));
 
         var presentEmptyArray = Telemetry(
             sampleRate: 10,
@@ -93,15 +106,25 @@ public class TrackOverlaySamplerTests
             rearPresent: true,
             rearTravel: [1.0]);
         Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.FrontTravel, presentEmptyArray));
-        Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.Balance, presentEmptyArray));
+        Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.Pitch, presentEmptyArray));
+
+        // Pitch needs front+rear travel AND a wheelbase (chassis geometry).
+        var bothNoWheelbase = Telemetry(
+            sampleRate: 10,
+            frontPresent: true,
+            frontTravel: [1.0],
+            rearPresent: true,
+            rearTravel: [2.0]);
+        Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.Pitch, bothNoWheelbase));
 
         var both = Telemetry(
             sampleRate: 10,
             frontPresent: true,
             frontTravel: [1.0],
             rearPresent: true,
-            rearTravel: [2.0]);
-        Assert.True(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.Balance, both));
+            rearTravel: [2.0],
+            wheelbase: 1200);
+        Assert.True(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.Pitch, both));
     }
 
     [Fact]
@@ -122,13 +145,14 @@ public class TrackOverlaySamplerTests
             frontPresent: true,
             frontTravel: [1.0],
             rearPresent: true,
-            rearTravel: [2.0]);
+            rearTravel: [2.0],
+            wheelbase: 1200);
         Assert.Equal(
             [
                 TrackOverlayMetric.GpsSpeed,
                 TrackOverlayMetric.FrontTravel,
                 TrackOverlayMetric.RearTravel,
-                TrackOverlayMetric.Balance
+                TrackOverlayMetric.Pitch
             ],
             TrackOverlaySampler.AvailableMetrics(bothTravel));
     }
@@ -142,51 +166,65 @@ public class TrackOverlaySamplerTests
     }
 
     [Fact]
-    public void Build_TravelUsesAbsoluteMean_OverSampleInterval()
+    public void Build_Travel_IsAbsoluteMeanAsPercentOfMaxTravel()
     {
         var travel = new double[] { -10, -20, -30, -40, -50, 60, 70, 80, 90, 100 };
-        var expected = travel.Select(Math.Abs).Average();
-        var data = Telemetry(sampleRate: 10, frontPresent: true, frontTravel: travel);
+        var absMean = travel.Select(Math.Abs).Average();      // 55
+        const double maxTravel = 200.0;
+        var expectedPercent = absMean / maxTravel * 100.0;    // 27.5
+        var data = Telemetry(sampleRate: 10, frontPresent: true, frontTravel: travel, maxFrontTravel: maxTravel);
         var track = TwoPointTrack(47.0, 11.0, 47.01, 11.01);
 
         var overlay = TrackOverlaySampler.Build(track, data, TrackOverlayMetric.FrontTravel);
 
         Assert.NotNull(overlay);
         Assert.Equal(TrackOverlayMetric.FrontTravel, overlay.Metric);
-        Assert.Equal("mm", overlay.Unit);
+        Assert.Equal("%", overlay.Unit);
         Assert.Single(overlay.SegmentPairValues);
-        Assert.Equal(expected, overlay.SegmentPairValues[0][0], 6);
-        Assert.Equal(expected, overlay.Min, 6);
-        Assert.Equal(expected, overlay.Max, 6);
+        Assert.Equal(expectedPercent, overlay.SegmentPairValues[0][0], 6);
+        Assert.Equal(expectedPercent, overlay.Min, 6);
+        Assert.Equal(expectedPercent, overlay.Max, 6);
     }
 
     [Fact]
-    public void Build_VelocityAndBalance_AreSymmetricAroundZero()
+    public void Build_Velocity_IsAbsoluteMean_NotSymmetric()
     {
         var velocity = new double[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
-        var frontTravel = new double[] { 20, 20, 20, 20, 20, 20, 20, 20, 20, 20 };
-        var rearTravel = new double[] { 5, 5, 5, 5, 5, 5, 5, 5, 5, 5 };
         var data = Telemetry(
             sampleRate: 10,
             frontPresent: true,
-            frontTravel: frontTravel,
-            frontVelocity: velocity,
-            rearPresent: true,
-            rearTravel: rearTravel,
-            rearVelocity: velocity);
+            frontTravel: velocity,
+            frontVelocity: velocity);
         var track = TwoPointTrack(47.0, 11.0, 47.01, 11.01);
 
         var vel = TrackOverlaySampler.Build(track, data, TrackOverlayMetric.FrontVelocity);
         Assert.NotNull(vel);
-        Assert.Equal(5.5, vel.SegmentPairValues[0][0], 6);
-        Assert.Equal(-5.5, vel.Min, 6);
+        Assert.Equal("mm/s", vel.Unit);
+        Assert.Equal(5.5, vel.SegmentPairValues[0][0], 6);   // mean |v|
+        Assert.Equal(5.5, vel.Min, 6);
         Assert.Equal(5.5, vel.Max, 6);
+    }
 
-        var balance = TrackOverlaySampler.Build(track, data, TrackOverlayMetric.Balance);
-        Assert.NotNull(balance);
-        Assert.Equal(15.0, balance.SegmentPairValues[0][0], 6);
-        Assert.Equal(-15.0, balance.Min, 6);
-        Assert.Equal(15.0, balance.Max, 6);
+    [Fact]
+    public void Build_Pitch_IsDegreesAndSymmetricAroundZero()
+    {
+        var frontTravel = new double[] { 0, 5, 10, 15, 20, 20, 15, 10, 5, 0 };
+        var rearTravel = new double[] { 0, 2, 4, 6, 8, 8, 6, 4, 2, 0 };
+        var data = Telemetry(
+            sampleRate: 10,
+            frontPresent: true,
+            frontTravel: frontTravel,
+            rearPresent: true,
+            rearTravel: rearTravel,
+            wheelbase: 1200);
+        var track = TwoPointTrack(47.0, 11.0, 47.01, 11.01);
+
+        var pitch = TrackOverlaySampler.Build(track, data, TrackOverlayMetric.Pitch);
+        Assert.NotNull(pitch);
+        Assert.Equal(TrackOverlayMetric.Pitch, pitch.Metric);
+        Assert.Equal("°", pitch.Unit);
+        // Signed metric: the colour scale is normalised symmetrically around zero.
+        Assert.Equal(-pitch.Max, pitch.Min, 6);
     }
 
     [Fact]

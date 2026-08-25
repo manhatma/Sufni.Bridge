@@ -19,7 +19,7 @@ namespace Sufni.Bridge.ViewModels.Items;
 internal sealed class SessionMapRenderer
 {
     private const int PreviewWidth = 400;
-    private const int PreviewHeight = 120;
+    private const int PreviewHeight = 180;
     private const int FullWidth = 800;
     private const int FullHeight = 500;
     private const int ZoomDebounceMs = 280;
@@ -37,6 +37,7 @@ internal sealed class SessionMapRenderer
     private Guid? loadedTrackId;
     private TelemetryData? telemetry;
     private TrackOverlay? currentOverlay;
+    private bool isCombined;
 
     internal SessionMapRenderer(SessionViewModel viewModel, TimeZoomViewModel timeZoom)
     {
@@ -159,6 +160,8 @@ internal sealed class SessionMapRenderer
                 }
 
                 var points = MessagePackSerializer.Deserialize<TrackPoints>(track.Points);
+                var combinedSourceIds = await databaseService.GetCombinedSourcesAsync(session.Id);
+                isCombined = combinedSourceIds.Count > 0;
                 var slices = await BuildSlicesAsync(session, databaseService, fullTelemetry);
                 sessionTrack = SessionTrack.Build(points, slices);
                 loadedTrackId = session.Track;
@@ -326,14 +329,14 @@ internal sealed class SessionMapRenderer
     {
         if (sessionTrack is null) return;
 
-        var preview = TrackMapRenderer.Render(sessionTrack, tiles, PreviewWidth, PreviewHeight, highlight: null, overlay: null);
+        var preview = TrackMapRenderer.Render(sessionTrack, tiles, PreviewWidth, PreviewHeight, highlight: null, overlay: null, drawMarkers: false, plainTrackColor: new SKColor(0xF2, 0x6A, 0x21));
         if (token.IsCancellationRequested)
         {
             preview.Dispose();
             return;
         }
 
-        var full = TrackMapRenderer.Render(sessionTrack, tiles, FullWidth, FullHeight, highlight, currentOverlay);
+        var full = TrackMapRenderer.Render(sessionTrack, tiles, FullWidth, FullHeight, highlight, currentOverlay, drawMarkers: !isCombined);
         if (token.IsCancellationRequested)
         {
             preview.Dispose();
@@ -348,7 +351,7 @@ internal sealed class SessionMapRenderer
     {
         if (sessionTrack is null) return;
 
-        var full = TrackMapRenderer.Render(sessionTrack, tiles, FullWidth, FullHeight, highlight, currentOverlay);
+        var full = TrackMapRenderer.Render(sessionTrack, tiles, FullWidth, FullHeight, highlight, currentOverlay, drawMarkers: !isCombined);
         if (token.IsCancellationRequested)
         {
             full.Dispose();
