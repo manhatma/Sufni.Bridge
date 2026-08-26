@@ -31,6 +31,51 @@ public sealed class MapBounds
         };
     }
 
+    public const double DefaultPad = 0.30;
+
+    /// <summary>
+    /// Pads by <paramref name="fraction"/>, then expands the shorter axis symmetrically
+    /// so that Width/Height == <paramref name="aspect"/> (surface width/height).
+    /// Keeps the satellite image undistorted when the extent is stretched to the surface.
+    /// </summary>
+    public MapBounds PadAndFit(double fraction, double aspect)
+    {
+        var padded = Pad(fraction);
+        var w = padded.Width;
+        var h = padded.Height;
+        if (w <= 0 || h <= 0 || aspect <= 0)
+            return padded;
+
+        var cx = (padded.MinX + padded.MaxX) / 2.0;
+        var cy = (padded.MinY + padded.MaxY) / 2.0;
+        var current = w / h;
+        if (current < aspect)
+        {
+            var newW = h * aspect;
+            return new MapBounds
+            {
+                MinX = cx - newW / 2.0, MaxX = cx + newW / 2.0,
+                MinY = padded.MinY, MaxY = padded.MaxY
+            };
+        }
+
+        var newH = w / aspect;
+        return new MapBounds
+        {
+            MinX = padded.MinX, MaxX = padded.MaxX,
+            MinY = cy - newH / 2.0, MaxY = cy + newH / 2.0
+        };
+    }
+
+    /// <summary>Smallest bounds containing both inputs (per-axis min/max).</summary>
+    public static MapBounds Union(MapBounds a, MapBounds b) => new()
+    {
+        MinX = Math.Min(a.MinX, b.MinX),
+        MinY = Math.Min(a.MinY, b.MinY),
+        MaxX = Math.Max(a.MaxX, b.MaxX),
+        MaxY = Math.Max(a.MaxY, b.MaxY)
+    };
+
     public static MapBounds FromPoints(IReadOnlyList<TrackSegment> segments)
     {
         var minX = double.PositiveInfinity;
@@ -96,10 +141,29 @@ public sealed class SessionTrack
         Bounds = MapBounds.FromPoints(segments);
     }
 
-    public static SessionTrack Build(TrackPoints points, IReadOnlyList<WallClockSlice> slices)
+    public static SessionTrack Build(
+        TrackPoints points,
+        IReadOnlyList<WallClockSlice> slices,
+        long trackTimeOffsetMs = 0)
     {
         if (points.TimeMs.Length < 2 || slices.Count == 0)
             return Empty;
+
+        // gpxTimeMs = sstWallClockMs + TimeOffsetMs, so SST slicing sees GPX times
+        // shifted back. Copy TimeMs; the imported arrays stay on the GPX clock.
+        if (trackTimeOffsetMs != 0)
+        {
+            var shifted = new long[points.TimeMs.Length];
+            for (var i = 0; i < points.TimeMs.Length; i++)
+                shifted[i] = points.TimeMs[i] - trackTimeOffsetMs;
+            points = new TrackPoints
+            {
+                TimeMs = shifted,
+                Lat = points.Lat,
+                Lon = points.Lon,
+                Ele = points.Ele
+            };
+        }
 
         var segments = new List<TrackSegment>();
         foreach (var slice in slices)
@@ -113,11 +177,80 @@ public sealed class SessionTrack
         return segments.Count == 0 ? Empty : new SessionTrack(segments);
     }
 
-    public static SessionTrack FromSession(TrackPoints points, int startUnixSeconds, int durationSeconds)
+    /// <summary>
+    /// Smallest span a focus box may have, in Web Mercator metres. Without it a rider standing
+    /// still inside the zoom window collapses the box to a few metres and the map zooms to a
+    /// meaningless patch of upscaled pixels.
+    /// </summary>
+    public const double MinFocusSpanMeters = 60.0;
+
+    /// <summary>
+    /// Bounds of the part of the track that falls inside [startSeconds, endSeconds]. Edges are
+    /// clipped in the time domain and their endpoints interpolated exactly like
+    /// <see cref="Plots.TrackMapRenderer"/> does when it draws the zoomed sub-range, so the box
+    /// matches the line the map actually paints. Returns null when no edge overlaps the range.
+    /// </summary>
+    public MapBounds? BoundsForWindow(double startSeconds, double endSeconds)
+    {
+        var minX = double.PositiveInfinity;
+        var minY = double.PositiveInfinity;
+        var maxX = double.NegativeInfinity;
+        var maxY = double.NegativeInfinity;
+
+        void Include(double x, double y)
+        {
+            if (double.IsNaN(x) || double.IsNaN(y)) return;
+            if (x < minX) minX = x;
+            if (y < minY) minY = y;
+            if (x > maxX) maxX = x;
+            if (y > maxY) maxY = y;
+        }
+
+        foreach (var segment in Segments)
+        {
+            var edges = Math.Max(0, segment.X.Length - 1);
+            for (var i = 0; i < edges; i++)
+            {
+                var t0 = segment.TimeSeconds[i];
+                var t1 = segment.TimeSeconds[i + 1];
+                if (t1 <= t0) continue;
+                var a = Math.Max(t0, startSeconds);
+                var b = Math.Min(t1, endSeconds);
+                if (b <= a) continue;
+
+                var dx = segment.X[i + 1] - segment.X[i];
+                var dy = segment.Y[i + 1] - segment.Y[i];
+                var f0 = (a - t0) / (t1 - t0);
+                var f1 = (b - t0) / (t1 - t0);
+                Include(segment.X[i] + dx * f0, segment.Y[i] + dy * f0);
+                Include(segment.X[i] + dx * f1, segment.Y[i] + dy * f1);
+            }
+        }
+
+        if (double.IsPositiveInfinity(minX))
+            return null;
+
+        var (x0, x1) = AtLeast(minX, maxX, MinFocusSpanMeters);
+        var (y0, y1) = AtLeast(minY, maxY, MinFocusSpanMeters);
+        return new MapBounds { MinX = x0, MinY = y0, MaxX = x1, MaxY = y1 };
+
+        static (double Lo, double Hi) AtLeast(double lo, double hi, double span)
+        {
+            if (hi - lo >= span) return (lo, hi);
+            var centre = (lo + hi) / 2.0;
+            return (centre - span / 2.0, centre + span / 2.0);
+        }
+    }
+
+    public static SessionTrack FromSession(
+        TrackPoints points,
+        int startUnixSeconds,
+        int durationSeconds,
+        long trackTimeOffsetMs = 0)
     {
         return Build(points, [
             new WallClockSlice((long)startUnixSeconds * 1000, (long)durationSeconds * 1000, 0)
-        ]);
+        ], trackTimeOffsetMs);
     }
 
     /// <summary>

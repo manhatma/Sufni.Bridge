@@ -16,6 +16,20 @@
         <vm:MiscPageViewModel />
     </Design.DataContext>
 
+    <UserControl.Styles>
+        <Style Selector="Button.pan-nudge">
+            <Setter Property="MinWidth" Value="30" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="Padding" Value="4,2" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{StaticResource SufniForeground}" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+    </UserControl.Styles>
+
     <ScrollViewer Width="{Binding $parent[ScrollViewer].Bounds.Width}" Height="{Binding $parent[ScrollViewer].Bounds.Height}" IsScrollChainingEnabled="False">
         <StackPanel Orientation="Vertical">
             <ComboBox Margin="0,0,0,8"
@@ -34,6 +48,42 @@
                    Stretch="Uniform"
                    IsVisible="{Binding TrackMap, Converter={x:Static ObjectConverters.IsNotNull}}"
                    Source="{Binding TrackMap}" />
+            <Grid Margin="0,0,0,8"
+                  ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto"
+                  IsVisible="{Binding TrackOffsetAvailable}">
+                <Button Grid.Column="0"
+                        Classes="pan-nudge"
+                        Command="{Binding NudgeTrackOffsetCommand}"
+                        CommandParameter="{x:Static vm:MiscPageViewModel.NudgeMinus5000}"
+                        Content="-5 s" />
+                <Button Grid.Column="1"
+                        Classes="pan-nudge"
+                        Command="{Binding NudgeTrackOffsetCommand}"
+                        CommandParameter="{x:Static vm:MiscPageViewModel.NudgeMinus1000}"
+                        Content="-1 s" />
+                <TextBlock Grid.Column="2"
+                           HorizontalAlignment="Center"
+                           VerticalAlignment="Center"
+                           Text="{Binding TrackTimeOffsetLabel}" />
+                <Button Grid.Column="3"
+                        Classes="pan-nudge"
+                        Command="{Binding NudgeTrackOffsetCommand}"
+                        CommandParameter="{x:Static vm:MiscPageViewModel.NudgePlus1000}"
+                        Content="+1 s" />
+                <Button Grid.Column="4"
+                        Classes="pan-nudge"
+                        Command="{Binding NudgeTrackOffsetCommand}"
+                        CommandParameter="{x:Static vm:MiscPageViewModel.NudgePlus5000}"
+                        Content="+5 s" />
+                <Button Grid.Column="5"
+                        Classes="pan-nudge"
+                        Command="{Binding AutoTrackOffsetCommand}"
+                        Content="Auto" />
+                <Button Grid.Column="6"
+                        Classes="pan-nudge"
+                        Command="{Binding ResetTrackOffsetCommand}"
+                        Content="Reset" />
+            </Grid>
             <Image IsVisible="{Binding PositionVelocityComparison, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding PositionVelocityComparison}" />
             <Image IsVisible="{Binding FrontPositionVelocity, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontPositionVelocity}" />
             <Image IsVisible="{Binding RearPositionVelocity, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearPositionVelocity}" />

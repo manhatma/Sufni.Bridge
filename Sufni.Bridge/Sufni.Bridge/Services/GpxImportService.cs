@@ -71,6 +71,20 @@ public class GpxImportService : IGpxImportService
             assignedIds.Add(session.Id);
         }
 
+        var intervals = new List<WallClockSlice>();
+        foreach (var sessionId in assignedIds)
+        {
+            var slices = await TrackTimeline.FlattenAsync(sessionId, databaseService, byId, combinedIds);
+            intervals.AddRange(slices);
+        }
+
+        var estimated = TrackTimeOffsetEstimator.Estimate(points, intervals);
+        if (estimated is not null)
+        {
+            track.TimeOffsetMs = estimated.Value;
+            await databaseService.PutTrackAsync(track);
+        }
+
         return new GpxImportResult
         {
             Success = true,
@@ -79,7 +93,9 @@ public class GpxImportService : IGpxImportService
             StartTimeMs = track.StartTimeMs,
             EndTimeMs = track.EndTimeMs,
             AssignedSessionNames = assignedNames,
-            AssignedSessionIds = assignedIds
+            AssignedSessionIds = assignedIds,
+            TimeOffsetMs = track.TimeOffsetMs,
+            TimeOffsetEstimated = estimated is not null
         };
     }
 

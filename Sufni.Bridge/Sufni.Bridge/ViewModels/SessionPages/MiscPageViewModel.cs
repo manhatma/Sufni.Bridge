@@ -4,12 +4,23 @@ using System.Collections.ObjectModel;
 using Avalonia.Media.Imaging;
 using Avalonia.Svg.Skia;
 using CommunityToolkit.Mvvm.ComponentModel;
+using CommunityToolkit.Mvvm.Input;
 using Sufni.Bridge.Models;
 
 namespace Sufni.Bridge.ViewModels.SessionPages;
 
 public partial class MiscPageViewModel() : PageViewModelBase("Misc")
 {
+    // Typed CommandParameter literals for NudgeTrackOffsetCommand. Avalonia parses a bare
+    // CommandParameter="1000" as the *string* "1000" (there is no numeric-literal markup
+    // extension), and CommunityToolkit's RelayCommand<int> matches its parameter via "is int"
+    // pattern matching with no string conversion — so a literal string parameter throws at
+    // runtime. Bind via {x:Static vm:MiscPageViewModel.NudgeMinus5000} etc. instead.
+    public const int NudgeMinus5000 = -5000;
+    public const int NudgeMinus1000 = -1000;
+    public const int NudgePlus1000 = 1000;
+    public const int NudgePlus5000 = 5000;
+
     [ObservableProperty] private SvgImage? positionVelocityComparison;
     [ObservableProperty] private SvgImage? frontPositionVelocity;
     [ObservableProperty] private SvgImage? rearPositionVelocity;
@@ -30,9 +41,33 @@ public partial class MiscPageViewModel() : PageViewModelBase("Misc")
 
     [ObservableProperty] private TrackOverlayMetricOption? selectedOverlayMetric;
 
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(TrackTimeOffsetLabel))]
+    private long trackTimeOffsetMs;
+
+    [ObservableProperty] private bool trackOffsetAvailable;
+
+    public string TrackTimeOffsetLabel
+    {
+        get
+        {
+            var seconds = TrackTimeOffsetMs / 1000.0;
+            return $"GPS offset {seconds:+0.0;-0.0;0.0} s";
+        }
+    }
+
     public event EventHandler? OverlayMetricChanged;
+    public event EventHandler? TrackTimeOffsetChanged;
+
+    /// <summary>
+    /// Raised by the "Auto" button. Re-runs <see cref="Sufni.Bridge.Models.TrackTimeOffsetEstimator"/>
+    /// against every session assigned to this track — the import-time estimate only ever ran for
+    /// tracks imported after the feature landed, so already-imported tracks need this entry point.
+    /// </summary>
+    public event EventHandler? TrackAutoOffsetRequested;
 
     private bool updatingMetrics;
+    private bool updatingOffset;
 
     internal void SetAvailableMetrics(IReadOnlyList<TrackOverlayMetric> metrics, TrackOverlayMetric selected)
     {
@@ -75,5 +110,43 @@ public partial class MiscPageViewModel() : PageViewModelBase("Misc")
     {
         if (updatingMetrics) return;
         OverlayMetricChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    partial void OnTrackTimeOffsetMsChanged(long value)
+    {
+        if (updatingOffset) return;
+        TrackTimeOffsetChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    [RelayCommand]
+    private void NudgeTrackOffset(int deltaMs)
+    {
+        TrackTimeOffsetMs += deltaMs;
+    }
+
+    [RelayCommand]
+    private void ResetTrackOffset()
+    {
+        TrackTimeOffsetMs = 0;
+    }
+
+    [RelayCommand]
+    private void AutoTrackOffset()
+    {
+        TrackAutoOffsetRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    internal void SetTrackOffset(long offsetMs, bool available)
+    {
+        updatingOffset = true;
+        try
+        {
+            TrackTimeOffsetMs = offsetMs;
+            TrackOffsetAvailable = available;
+        }
+        finally
+        {
+            updatingOffset = false;
+        }
     }
 }

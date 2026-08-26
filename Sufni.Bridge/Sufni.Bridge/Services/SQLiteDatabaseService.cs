@@ -148,7 +148,19 @@ public class SqLiteDatabaseService : IDatabaseService
         await EnsureSessionCacheColumns();
         await EnsureSetupColumns();
         await EnsureLinkageColumns();
+        await EnsureTrackColumns();
         await EnsureDefaultCalibrationMethods();
+    }
+
+    private async Task EnsureTrackColumns()
+    {
+        var tableInfo = await connection.QueryAsync<TableInfoRecord>("PRAGMA table_info(track)");
+        var columnNames = tableInfo.Select(column => column.Name).ToHashSet();
+        if (!columnNames.Contains("time_offset_ms"))
+            await connection.ExecuteAsync("ALTER TABLE track ADD COLUMN time_offset_ms INTEGER DEFAULT 0");
+        // sqlite-net's own table migration adds the column without a DEFAULT when it gets there
+        // first, leaving legacy rows NULL. Normalize so the column is always a real number.
+        await connection.ExecuteAsync("UPDATE track SET time_offset_ms = 0 WHERE time_offset_ms IS NULL");
     }
 
     private async Task EnsureLinkageColumns()

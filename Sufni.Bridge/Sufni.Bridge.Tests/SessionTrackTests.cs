@@ -147,6 +147,36 @@ public class SessionTrackTests
     }
 
     [Fact]
+    public void Build_NonZeroOffset_ShiftsTimeWindow_DoesNotMutateInputTimeMs()
+    {
+        var points = LinearPoints(
+            count: 21,
+            startUnixMs: (long)StartUnix * 1000,
+            stepMs: 1_000,
+            lat0: 47.0,
+            lon0: 11.0,
+            dLat: 0.001,
+            dLon: 0.001);
+        var originalTimeMs = (long[])points.TimeMs.Clone();
+        var slices = new WallClockSlice[]
+        {
+            new((long)StartUnix * 1000, 5_000, 0)
+        };
+
+        const long offsetMs = 1_000;
+        var track = SessionTrack.Build(points, slices, offsetMs);
+
+        Assert.Equal(originalTimeMs, points.TimeMs);
+        Assert.False(track.IsEmpty);
+        var segment = Assert.Single(track.Segments);
+        Assert.Equal(0.0, segment.TimeSeconds[0], 6);
+        Assert.Equal(5.0, segment.TimeSeconds[^1], 6);
+        // gpxTimeMs = sstWallClockMs + offset, so SST [0, 5] s maps to GPX [1, 6] s.
+        Assert.Equal(47.001, segment.Lat[0], 5);
+        Assert.Equal(47.006, segment.Lat[^1], 5);
+    }
+
+    [Fact]
     public void TryToWebMercator_KnownReferenceValues()
     {
         Assert.True(SessionTrack.TryToWebMercator(0, 0, out var x0, out var y0));
@@ -165,5 +195,50 @@ public class SessionTrackTests
         Assert.False(SessionTrack.TryToWebMercator(-90, 0, out _, out _));
         Assert.False(SessionTrack.TryToWebMercator(0, 180.1, out _, out _));
         Assert.False(SessionTrack.TryToWebMercator(0, -180.1, out _, out _));
+    }
+
+    // --- BoundsForWindow -----------------------------------------------------
+
+    // ~0.001 deg of longitude at 47N is roughly 75 m in Web Mercator easting, so a 60 s track at
+    // one point per second spans far more than MinFocusSpanMeters and the guard never kicks in.
+    private static SessionTrack LongTrack() =>
+        SessionTrack.FromSession(
+            LinearPoints(61, (long)StartUnix * 1000, 1000, 47.0, 11.0, 0.0, 0.001),
+            StartUnix,
+            60);
+
+    [Fact]
+    public void BoundsForWindow_SubRange_IsSmallerThanWholeTrack()
+    {
+        var track = LongTrack();
+        var all = track.Bounds;
+
+        var part = track.BoundsForWindow(20, 30);
+
+        Assert.NotNull(part);
+        Assert.True(part!.Width < all.Width);
+        Assert.True(part.MinX > all.MinX);
+        Assert.True(part.MaxX < all.MaxX);
+    }
+
+    [Fact]
+    public void BoundsForWindow_OutsideTrack_ReturnsNull()
+    {
+        var track = LongTrack();
+
+        Assert.Null(track.BoundsForWindow(500, 510));
+    }
+
+    [Fact]
+    public void BoundsForWindow_TinyRange_IsExpandedToMinimumSpan()
+    {
+        var track = LongTrack();
+
+        // A hundredth of a second covers well under a metre of track.
+        var box = track.BoundsForWindow(30.00, 30.01);
+
+        Assert.NotNull(box);
+        Assert.Equal(SessionTrack.MinFocusSpanMeters, box!.Width, 6);
+        Assert.Equal(SessionTrack.MinFocusSpanMeters, box.Height, 6);
     }
 }

@@ -15,6 +15,8 @@ public sealed class GpxImportResult
     public long EndTimeMs { get; init; }
     public IReadOnlyList<string> AssignedSessionNames { get; init; } = [];
     public IReadOnlyList<Guid> AssignedSessionIds { get; init; } = [];
+    public long TimeOffsetMs { get; init; }
+    public bool TimeOffsetEstimated { get; init; }
 }
 
 public interface IGpxImportService

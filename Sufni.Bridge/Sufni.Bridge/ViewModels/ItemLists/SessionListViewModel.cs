@@ -531,14 +531,17 @@ public partial class SessionListViewModel : ItemListViewModelBase
             var start = DateTimeOffset.FromUnixTimeMilliseconds(result.StartTimeMs).UtcDateTime;
             var end = DateTimeOffset.FromUnixTimeMilliseconds(result.EndTimeMs).UtcDateTime;
             var range = $"{start:HH:mm}–{end:HH:mm} UTC";
+            var offsetNote = result.TimeOffsetEstimated
+                ? $" GPS offset: {result.TimeOffsetMs / 1000.0:+0.0;-0.0;0.0} s"
+                : "";
             if (result.AssignedSessionNames.Count == 0)
             {
-                Notifications.Add($"Imported \"{result.TrackName}\" ({range}). No matching sessions.");
+                Notifications.Add($"Imported \"{result.TrackName}\" ({range}). No matching sessions.{offsetNote}");
                 return;
             }
 
             Notifications.Add(
-                $"Imported \"{result.TrackName}\" ({range}). Assigned to: {string.Join(", ", result.AssignedSessionNames)}.");
+                $"Imported \"{result.TrackName}\" ({range}). Assigned to: {string.Join(", ", result.AssignedSessionNames)}.{offsetNote}");
         });
     }
 

@@ -15,7 +15,7 @@ public sealed class MapTileService : IMapTileService, IDisposable
 
     private const int TileSize = 256;
     private const int MaxZoom = 19;
-    private const int MaxTilesPerSide = 4;
+    private const int MaxTilesPerSide = 6;
     private const double OriginShift = 20037508.342789244;
     private const string TileUrl =
         "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{0}/{1}/{2}";
@@ -49,12 +49,12 @@ public sealed class MapTileService : IMapTileService, IDisposable
         diskAvailable = canUseDisk;
     }
 
-    public async Task<SKBitmap?> GetMosaicAsync(MapBounds bounds, CancellationToken cancellationToken)
+    public async Task<MapMosaic?> GetMosaicAsync(MapBounds extent, CancellationToken cancellationToken)
     {
-        if (bounds.Width <= 0 || bounds.Height <= 0)
+        if (extent.Width <= 0 || extent.Height <= 0)
             return null;
 
-        var padded = bounds.Pad(0.10);
+        var padded = extent;
         var z = ChooseZoom(padded);
         var n = 1 << z;
         var (x0, y0) = MercatorToTile(padded.MinX, padded.MaxY, z);
@@ -113,7 +113,7 @@ public sealed class MapTileService : IMapTileService, IDisposable
 
         var crop = CropToBounds(mosaic, mosaicMinX, mosaicMinY, mosaicMaxX, mosaicMaxY, padded);
         mosaic.Dispose();
-        return crop;
+        return new MapMosaic(crop, padded);
     }
 
     private static int ChooseZoom(MapBounds padded)

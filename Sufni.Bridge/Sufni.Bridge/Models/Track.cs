@@ -23,4 +23,7 @@ public class Track
 
     [Column("points")]
     public byte[] Points { get; set; } = [];
+
+    [Column("time_offset_ms")]
+    public long TimeOffsetMs { get; set; }
 }

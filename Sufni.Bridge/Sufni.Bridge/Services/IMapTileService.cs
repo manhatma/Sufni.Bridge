@@ -7,5 +7,7 @@ namespace Sufni.Bridge.Services;
 
 public interface IMapTileService
 {
-    Task<SKBitmap?> GetMosaicAsync(MapBounds bounds, CancellationToken cancellationToken);
+    Task<MapMosaic?> GetMosaicAsync(MapBounds extent, CancellationToken cancellationToken);
 }
+
+public sealed record MapMosaic(SKBitmap Bitmap, MapBounds Bounds);

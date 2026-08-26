@@ -23,24 +23,43 @@ public static class TrackMapRenderer
     public static Bitmap Render(
         SessionTrack track,
         SKBitmap? tiles,
+        MapBounds? tilesBounds,
         int width,
         int height,
         ZoomWindow? highlight,
         TrackOverlay? overlay = null,
         bool drawMarkers = true,
-        SKColor? plainTrackColor = null)
+        SKColor? plainTrackColor = null,
+        MapBounds? focusBounds = null)
     {
         if (width < 1) width = 1;
         if (height < 1) height = 1;
 
-        var extent = track.Bounds.Pad(0.10);
+        // focusBounds lets the caller zoom the map with the time window: it passes the bounds of
+        // the zoomed sub-range instead of the whole track, and supplies a tile mosaic fetched for
+        // the same extent. Without it the map always frames the complete track.
+        var extent = (focusBounds ?? track.Bounds).PadAndFit(MapBounds.DefaultPad, width / (double)height);
 
         using var surface = SKSurface.Create(new SKImageInfo(width, height, SKColorType.Bgra8888, SKAlphaType.Premul));
         var canvas = surface.Canvas;
         canvas.Clear(DataBackground);
 
-        if (tiles is not null)
+        if (tiles is not null && tilesBounds is not null && tilesBounds.Width > 0 && tilesBounds.Height > 0)
+        {
+            // Draw the sub-window of the mosaic that matches this surface's extent.
+            // extent shares the mosaic's centre and is a subset of tilesBounds, so the
+            // whole surface is covered by imagery and the aspect ratio is preserved.
+            var sx0 = (extent.MinX - tilesBounds.MinX) / tilesBounds.Width * tiles.Width;
+            var sx1 = (extent.MaxX - tilesBounds.MinX) / tilesBounds.Width * tiles.Width;
+            var sy0 = (tilesBounds.MaxY - extent.MaxY) / tilesBounds.Height * tiles.Height;
+            var sy1 = (tilesBounds.MaxY - extent.MinY) / tilesBounds.Height * tiles.Height;
+            var src = new SKRect((float)sx0, (float)sy0, (float)sx1, (float)sy1);
+            canvas.DrawBitmap(tiles, src, SKRect.Create(0, 0, width, height));
+        }
+        else if (tiles is not null)
+        {
             canvas.DrawBitmap(tiles, SKRect.Create(0, 0, width, height));
+        }
 
         if (!track.IsEmpty && extent.Width > 0 && extent.Height > 0)
         {
@@ -56,9 +75,22 @@ public static class TrackMapRenderer
 
             if (highlight is not null && highlight.EndSeconds > highlight.StartSeconds)
             {
-                using var bright = Stroke(HighlightLine, Math.Max(2.8f, width / 140f));
-                foreach (var segment in track.Segments)
-                    DrawSegment(canvas, segment, extent, width, height, bright, highlight);
+                // White casing under the zoomed sub-range: the line keeps its metric colour
+                // but gains an outline that marks the zoomed region. Edge-overlap selection
+                // (draw an edge when it overlaps the window) mirrors DrawOverlay/DrawOverlayWindow,
+                // so the halo follows the coloured line exactly — including across sparse GPS gaps,
+                // where a per-point window test can leave a single in-window point and no halo.
+                var haloWidth = strokeWidth + Math.Max(3f, width / 120f);
+                using var halo = Stroke(HighlightLine, haloWidth);
+                DrawWindowedEdges(canvas, track, extent, width, height, halo, highlight);
+
+                if (overlay is not null)
+                    DrawOverlayWindow(canvas, track, overlay, extent, width, height, strokeWidth, highlight);
+                else
+                {
+                    using var color = Stroke(plainTrackColor ?? TrackLine, strokeWidth);
+                    DrawWindowedEdges(canvas, track, extent, width, height, color, highlight);
+                }
             }
 
             if (drawMarkers) DrawEndpoints(canvas, track, extent, width, height);
@@ -120,6 +152,94 @@ public static class TrackMapRenderer
                 canvas.DrawLine(x0, y0, x1, y1, paint);
             }
         }
+    }
+
+    private static void DrawOverlayWindow(
+        SKCanvas canvas,
+        SessionTrack track,
+        TrackOverlay overlay,
+        MapBounds extent,
+        int width,
+        int height,
+        float strokeWidth,
+        ZoomWindow window)
+    {
+        using var paint = Stroke(TrackLine, strokeWidth);
+        var turbo = new ScottPlot.Colormaps.Turbo();
+        var segmentCount = Math.Min(track.Segments.Count, overlay.SegmentPairValues.Count);
+        for (var s = 0; s < segmentCount; s++)
+        {
+            var segment = track.Segments[s];
+            var values = overlay.SegmentPairValues[s];
+            var edges = Math.Min(values.Length, Math.Max(0, segment.X.Length - 1));
+            for (var i = 0; i < edges; i++)
+            {
+                if (!ClipEdgeToWindow(segment, i, extent, width, height, window,
+                        out var x0, out var y0, out var x1, out var y1))
+                    continue;
+                paint.Color = ColorFor(values[i], overlay.Min, overlay.Max, turbo);
+                canvas.DrawLine(x0, y0, x1, y1, paint);
+            }
+        }
+    }
+
+    // Draws the part of the track that falls inside [window.Start, window.End] with a single paint.
+    // Each edge is clipped to the window in the time domain (ClipEdgeToWindow), so the outline covers
+    // exactly the zoomed time sub-range and pans smoothly with the window — even inside a single long
+    // edge that spans a sparse GPS gap, where drawing whole edges would pin the halo to the gap line.
+    private static void DrawWindowedEdges(
+        SKCanvas canvas,
+        SessionTrack track,
+        MapBounds extent,
+        int width,
+        int height,
+        SKPaint paint,
+        ZoomWindow window)
+    {
+        foreach (var segment in track.Segments)
+        {
+            var edges = Math.Max(0, segment.X.Length - 1);
+            for (var i = 0; i < edges; i++)
+            {
+                if (ClipEdgeToWindow(segment, i, extent, width, height, window,
+                        out var x0, out var y0, out var x1, out var y1))
+                    canvas.DrawLine(x0, y0, x1, y1, paint);
+            }
+        }
+    }
+
+    // Clips edge i of a segment to [window.Start, window.End] in time and returns the pixel endpoints
+    // of the in-window part. Positions at the window boundaries are linearly interpolated (constant
+    // speed within an edge). Returns false when the edge does not overlap the window.
+    private static bool ClipEdgeToWindow(
+        TrackSegment segment,
+        int i,
+        MapBounds extent,
+        int width,
+        int height,
+        ZoomWindow window,
+        out float x0,
+        out float y0,
+        out float x1,
+        out float y1)
+    {
+        x0 = y0 = x1 = y1 = 0f;
+        var t0 = segment.TimeSeconds[i];
+        var t1 = segment.TimeSeconds[i + 1];
+        if (t1 <= t0)
+            return false;
+        var a = Math.Max(t0, window.StartSeconds);
+        var b = Math.Min(t1, window.EndSeconds);
+        if (b <= a)
+            return false;
+
+        var f0 = (a - t0) / (t1 - t0);
+        var f1 = (b - t0) / (t1 - t0);
+        var dx = segment.X[i + 1] - segment.X[i];
+        var dy = segment.Y[i + 1] - segment.Y[i];
+        ToPixel(segment.X[i] + dx * f0, segment.Y[i] + dy * f0, extent, width, height, out x0, out y0);
+        ToPixel(segment.X[i] + dx * f1, segment.Y[i] + dy * f1, extent, width, height, out x1, out y1);
+        return true;
     }
 
     private static SKColor ColorFor(double value, double min, double max, ScottPlot.Colormaps.Turbo turbo)

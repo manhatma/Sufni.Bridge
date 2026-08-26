@@ -33,11 +33,22 @@ internal sealed class SessionMapRenderer
     private CancellationTokenSource? renderCts;
     private volatile bool loadInProgress;
     private SessionTrack? sessionTrack;
-    private SKBitmap? tiles;
+    // Two mosaics. overview* covers the whole track and feeds the Summary-page preview and the
+    // unzoomed full map. focus* covers just the zoomed sub-range, fetched at whatever tile zoom
+    // that extent warrants, so the zoomed map shows sharp imagery instead of upscaled overview
+    // tiles. Both must be dropped whenever the track geometry changes.
+    private SKBitmap? overviewTiles;
+    private MapBounds? overviewBounds;
+    private SKBitmap? focusTiles;
+    private MapBounds? focusMosaicBounds;
     private Guid? loadedTrackId;
     private TelemetryData? telemetry;
     private TrackOverlay? currentOverlay;
     private bool isCombined;
+    // Cached so a manual offset nudge can rebuild the session track without re-reading the DB.
+    private TrackPoints? cachedPoints;
+    private IReadOnlyList<WallClockSlice>? cachedSlices;
+    private Track? loadedTrack;
 
     internal SessionMapRenderer(SessionViewModel viewModel, TimeZoomViewModel timeZoom)
     {
@@ -49,6 +60,8 @@ internal sealed class SessionMapRenderer
     {
         timeZoom.WindowChanged += OnZoomWindowChanged;
         viewModel.MiscPage.OverlayMetricChanged += OnOverlayMetricChanged;
+        viewModel.MiscPage.TrackTimeOffsetChanged += OnTrackTimeOffsetChanged;
+        viewModel.MiscPage.TrackAutoOffsetRequested += OnTrackAutoOffsetRequested;
     }
 
     internal void Invalidate()
@@ -57,8 +70,25 @@ internal sealed class SessionMapRenderer
         sessionTrack = null;
         telemetry = null;
         currentOverlay = null;
-        tiles?.Dispose();
-        tiles = null;
+        cachedPoints = null;
+        cachedSlices = null;
+        loadedTrack = null;
+        DropTiles();
+    }
+
+    private void DropTiles()
+    {
+        overviewTiles?.Dispose();
+        overviewTiles = null;
+        overviewBounds = null;
+        DropFocusTiles();
+    }
+
+    private void DropFocusTiles()
+    {
+        focusTiles?.Dispose();
+        focusTiles = null;
+        focusMosaicBounds = null;
     }
 
     internal Task EnsureLoadedAsync() => ReloadAsync();
@@ -104,6 +134,7 @@ internal sealed class SessionMapRenderer
         renderCts = cts;
         var token = cts.Token;
         var highlight = CurrentHighlight();
+        var focusWindow = CurrentFocusWindow();
 
         Task.Run(async () =>
         {
@@ -111,7 +142,12 @@ internal sealed class SessionMapRenderer
             {
                 await Task.Delay(ZoomDebounceMs, token);
                 if (token.IsCancellationRequested) return;
-                RenderFullMap(highlight, token);
+                // The window moved, so the map's extent moved with it — the focus mosaic has to
+                // follow before the map is repainted.
+                var focus = FocusBoundsFor(sessionTrack, focusWindow);
+                await EnsureFocusTilesAsync(focus, token);
+                if (token.IsCancellationRequested) return;
+                RenderFullMap(highlight, focus, token);
             }
             catch (OperationCanceledException)
             {
@@ -163,10 +199,12 @@ internal sealed class SessionMapRenderer
                 var combinedSourceIds = await databaseService.GetCombinedSourcesAsync(session.Id);
                 isCombined = combinedSourceIds.Count > 0;
                 var slices = await BuildSlicesAsync(session, databaseService, fullTelemetry);
-                sessionTrack = SessionTrack.Build(points, slices);
+                cachedPoints = points;
+                cachedSlices = slices;
+                loadedTrack = track;
+                sessionTrack = SessionTrack.Build(points, slices, track.TimeOffsetMs);
                 loadedTrackId = session.Track;
-                tiles?.Dispose();
-                tiles = null;
+                DropTiles();
             }
 
             telemetry = ToOverlayTelemetry(session, fullTelemetry);
@@ -178,21 +216,7 @@ internal sealed class SessionMapRenderer
             return;
         }
 
-        if (tiles is null && tileService is not null)
-        {
-            try
-            {
-                tiles = await tileService.GetMosaicAsync(sessionTrack.Bounds, token);
-            }
-            catch (OperationCanceledException)
-            {
-                throw;
-            }
-            catch
-            {
-                tiles = null;
-            }
-        }
+        await EnsureOverviewTilesAsync(token);
 
         if (token.IsCancellationRequested) return;
 
@@ -202,7 +226,10 @@ internal sealed class SessionMapRenderer
             selected = TrackOverlayMetric.GpsSpeed;
         currentOverlay = TrackOverlaySampler.Build(sessionTrack, telemetry, selected);
 
-        RenderPreviewAndFull(CurrentHighlight(), available, selected, token);
+        var focus = FocusBoundsFor(sessionTrack, CurrentFocusWindow());
+        await EnsureFocusTilesAsync(focus, token);
+
+        RenderPreviewAndFull(CurrentHighlight(), focus, available, selected, token);
     }
 
     private static int FullSampleCount(TelemetryData? data)
@@ -321,22 +348,141 @@ internal sealed class SessionMapRenderer
         };
     }
 
+    // The map frames the zoom window plus TimeZoomViewModel.MapContextSeconds of lead-in and
+    // run-out, so the approach into the zoomed stretch and the run-out stay visible. Sampled on
+    // the UI thread as plain seconds; the geographic box is derived later, against whichever
+    // track version is current.
+    private (double Start, double End)? CurrentFocusWindow()
+    {
+        if (!timeZoom.IsZoomActive)
+            return null;
+        var start = timeZoom.StartSeconds;
+        var end = timeZoom.WindowEndSeconds;
+        if (end <= start)
+            return null;
+        var context = timeZoom.MapContextSeconds;
+        if (context <= 0)
+            return null;
+        return (start - context, end + context);
+    }
+
+    // Null means "frame the whole track": no zoom, or the window falls inside a GPS gap and there
+    // is no track geometry to zoom to.
+    private static MapBounds? FocusBoundsFor(SessionTrack? track, (double Start, double End)? window)
+    {
+        if (track is null || track.IsEmpty || window is null)
+            return null;
+        return track.BoundsForWindow(window.Value.Start, window.Value.End);
+    }
+
+    private async Task EnsureOverviewTilesAsync(CancellationToken token)
+    {
+        if (overviewTiles is not null || sessionTrack is null || sessionTrack.IsEmpty)
+            return;
+        var tileService = App.Current?.Services?.GetService<IMapTileService>();
+        if (tileService is null)
+            return;
+
+        try
+        {
+            var previewExtent = sessionTrack.Bounds.PadAndFit(
+                MapBounds.DefaultPad, PreviewWidth / (double)PreviewHeight);
+            var fullExtent = sessionTrack.Bounds.PadAndFit(
+                MapBounds.DefaultPad, FullWidth / (double)FullHeight);
+            var mosaic = await tileService.GetMosaicAsync(
+                MapBounds.Union(previewExtent, fullExtent), token);
+            overviewTiles = mosaic?.Bitmap;
+            overviewBounds = mosaic?.Bounds;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            overviewTiles = null;
+            overviewBounds = null;
+        }
+    }
+
+    // Refetches when the cached focus mosaic no longer covers the needed extent, or when it is
+    // more than twice as wide — otherwise panning would keep upscaling a mosaic fetched at a
+    // coarser tile zoom. MapTileService caches tiles in memory and on disk, so panning back over
+    // an area already visited costs no network.
+    private async Task EnsureFocusTilesAsync(MapBounds? focus, CancellationToken token)
+    {
+        if (focus is null)
+        {
+            DropFocusTiles();
+            return;
+        }
+
+        var needed = focus.PadAndFit(MapBounds.DefaultPad, FullWidth / (double)FullHeight);
+        if (focusTiles is not null && focusMosaicBounds is not null &&
+            Covers(focusMosaicBounds, needed) &&
+            focusMosaicBounds.Width <= needed.Width * 2.0)
+            return;
+
+        var tileService = App.Current?.Services?.GetService<IMapTileService>();
+        if (tileService is null)
+        {
+            DropFocusTiles();
+            return;
+        }
+
+        try
+        {
+            var mosaic = await tileService.GetMosaicAsync(needed, token);
+            DropFocusTiles();
+            focusTiles = mosaic?.Bitmap;
+            focusMosaicBounds = mosaic?.Bounds;
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch
+        {
+            DropFocusTiles();
+        }
+    }
+
+    private static bool Covers(MapBounds outer, MapBounds inner) =>
+        outer.MinX <= inner.MinX && outer.MaxX >= inner.MaxX &&
+        outer.MinY <= inner.MinY && outer.MaxY >= inner.MaxY;
+
+    // A failed focus fetch is not fatal: the geometry still zooms, the overview mosaic just gets
+    // upscaled into it.
+    private Bitmap RenderFull(ZoomWindow? highlight, MapBounds? focus)
+    {
+        var useFocus = focus is not null && focusTiles is not null;
+        return TrackMapRenderer.Render(
+            sessionTrack!,
+            useFocus ? focusTiles : overviewTiles,
+            useFocus ? focusMosaicBounds : overviewBounds,
+            FullWidth, FullHeight,
+            highlight, currentOverlay, drawMarkers: !isCombined,
+            focusBounds: focus);
+    }
+
     private void RenderPreviewAndFull(
         ZoomWindow? highlight,
+        MapBounds? focus,
         IReadOnlyList<TrackOverlayMetric> available,
         TrackOverlayMetric selected,
         CancellationToken token)
     {
         if (sessionTrack is null) return;
 
-        var preview = TrackMapRenderer.Render(sessionTrack, tiles, PreviewWidth, PreviewHeight, highlight: null, overlay: null, drawMarkers: false, plainTrackColor: new SKColor(0xF2, 0x6A, 0x21));
+        // The preview always shows the whole track — it is the session overview on another page.
+        var preview = TrackMapRenderer.Render(sessionTrack, overviewTiles, overviewBounds, PreviewWidth, PreviewHeight, highlight: null, overlay: null, drawMarkers: false, plainTrackColor: new SKColor(0xF2, 0x6A, 0x21));
         if (token.IsCancellationRequested)
         {
             preview.Dispose();
             return;
         }
 
-        var full = TrackMapRenderer.Render(sessionTrack, tiles, FullWidth, FullHeight, highlight, currentOverlay, drawMarkers: !isCombined);
+        var full = RenderFull(highlight, focus);
         if (token.IsCancellationRequested)
         {
             preview.Dispose();
@@ -347,11 +493,11 @@ internal sealed class SessionMapRenderer
         AssignBitmaps(preview, full, available, selected, token);
     }
 
-    private void RenderFullMap(ZoomWindow? highlight, CancellationToken token)
+    private void RenderFullMap(ZoomWindow? highlight, MapBounds? focus, CancellationToken token)
     {
         if (sessionTrack is null) return;
 
-        var full = TrackMapRenderer.Render(sessionTrack, tiles, FullWidth, FullHeight, highlight, currentOverlay, drawMarkers: !isCombined);
+        var full = RenderFull(highlight, focus);
         if (token.IsCancellationRequested)
         {
             full.Dispose();
@@ -394,6 +540,7 @@ internal sealed class SessionMapRenderer
             viewModel.TrackMap = full;
             viewModel.SummaryPage.TrackMapPreview = preview;
             viewModel.MiscPage.TrackMap = full;
+            viewModel.MiscPage.SetTrackOffset(loadedTrack?.TimeOffsetMs ?? 0, true);
             // ComboBox IsVisible is bound to TrackMap. Populate after the control is shown
             // so ItemsSource changes apply on a realized ComboBox (cold-start path).
             viewModel.MiscPage.SetAvailableMetrics(available, selected);
@@ -402,6 +549,8 @@ internal sealed class SessionMapRenderer
 
     private void ClearBitmaps()
     {
+        // No track to show — the mosaics fetched for the previous one are worthless.
+        DropTiles();
         Dispatcher.UIThread.Post(() =>
         {
             viewModel.TrackMapPreview?.Dispose();
@@ -411,7 +560,125 @@ internal sealed class SessionMapRenderer
             viewModel.SummaryPage.TrackMapPreview = null;
             viewModel.MiscPage.TrackMap = null;
             viewModel.MiscPage.ClearOverlayMetrics();
+            viewModel.MiscPage.SetTrackOffset(0, false);
         });
+    }
+
+    // Estimates the GPX/SST clock offset from every session assigned to this track and writes the
+    // result into the view model, which then takes the normal OnTrackTimeOffsetChanged path
+    // (rebuild + re-render + persist). Leaves the current value untouched when the day's data is
+    // too thin for an estimate — see TrackTimeOffsetEstimator.
+    private void OnTrackAutoOffsetRequested(object? sender, EventArgs e)
+    {
+        var points = cachedPoints;
+        var track = loadedTrack;
+        if (points is null || track is null || loadInProgress)
+            return;
+
+        Task.Run(async () =>
+        {
+            try
+            {
+                var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
+                if (databaseService is null)
+                    return;
+
+                var allSessions = await databaseService.GetSessionsAsync();
+                var byId = allSessions.ToDictionary(s => s.Id);
+                var combinedIds = await databaseService.GetAllCombinedIdsAsync();
+                var intervals = new List<WallClockSlice>();
+                foreach (var candidate in allSessions)
+                {
+                    if (candidate.Track != track.Id) continue;
+                    intervals.AddRange(
+                        await TrackTimeline.FlattenAsync(candidate.Id, databaseService, byId, combinedIds));
+                }
+
+                var estimated = TrackTimeOffsetEstimator.Estimate(points, intervals);
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (estimated is null)
+                    {
+                        viewModel.ErrorMessages.Add(
+                            "Could not estimate the GPS offset: not enough descending sessions on this track.");
+                        return;
+                    }
+
+                    viewModel.MiscPage.TrackTimeOffsetMs = estimated.Value;
+                });
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.UIThread.Post(() =>
+                    viewModel.ErrorMessages.Add($"Could not estimate the GPS offset: {ex.Message}"));
+            }
+        });
+    }
+
+    private void OnTrackTimeOffsetChanged(object? sender, EventArgs e)
+    {
+        if (sessionTrack is null || sessionTrack.IsEmpty)
+            return;
+        if (loadInProgress)
+            return;
+
+        renderCts?.Cancel();
+        var cts = new CancellationTokenSource();
+        renderCts = cts;
+        var token = cts.Token;
+        var newOffsetMs = viewModel.MiscPage.TrackTimeOffsetMs;
+        var highlight = CurrentHighlight();
+        var focusWindow = CurrentFocusWindow();
+        var selected = viewModel.MiscPage.SelectedOverlayMetric?.Metric ?? TrackOverlayMetric.GpsSpeed;
+        var points = cachedPoints;
+        var slices = cachedSlices;
+        var track = loadedTrack;
+        var data = telemetry;
+        if (points is null || slices is null || track is null)
+            return;
+
+        Task.Run(async () =>
+        {
+            try
+            {
+                await Task.Delay(ZoomDebounceMs, token);
+                if (token.IsCancellationRequested) return;
+
+                // Publish the new offset on the cached Track *before* rendering: RenderPreviewAndFull
+                // posts AssignBitmaps to the UI thread, and that pushes loadedTrack.TimeOffsetMs back
+                // into the view model. With the old value still on the Track it would undo the nudge.
+                track.TimeOffsetMs = newOffsetMs;
+                sessionTrack = SessionTrack.Build(points, slices, newOffsetMs);
+                if (!TrackOverlaySampler.IsAvailable(selected, data))
+                    selected = TrackOverlayMetric.GpsSpeed;
+                // Per-edge overlay values depend on track geometry — rebuild, do not reuse.
+                currentOverlay = TrackOverlaySampler.Build(sessionTrack, data, selected);
+                var available = TrackOverlaySampler.AvailableMetrics(data);
+
+                // Shifting the track in time moves it geographically. The mosaic fetched for the
+                // old bounds no longer covers it, and the uncovered part painted as flat
+                // background — so both mosaics are dropped and refetched here.
+                DropTiles();
+                await EnsureOverviewTilesAsync(token);
+                if (token.IsCancellationRequested) return;
+                var focus = FocusBoundsFor(sessionTrack, focusWindow);
+                await EnsureFocusTilesAsync(focus, token);
+                if (token.IsCancellationRequested) return;
+                RenderPreviewAndFull(highlight, focus, available, selected, token);
+
+                var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
+                if (databaseService is not null)
+                    await databaseService.PutTrackAsync(track);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+            catch (Exception ex)
+            {
+                Dispatcher.UIThread.Post(() =>
+                    viewModel.ErrorMessages.Add($"Could not update track offset: {ex.Message}"));
+            }
+        }, token);
     }
 
     private void OnOverlayMetricChanged(object? sender, EventArgs e)
@@ -426,17 +693,22 @@ internal sealed class SessionMapRenderer
         renderCts = cts;
         var token = cts.Token;
         var highlight = CurrentHighlight();
+        var focusWindow = CurrentFocusWindow();
         var metric = viewModel.MiscPage.SelectedOverlayMetric?.Metric ?? TrackOverlayMetric.GpsSpeed;
         var track = sessionTrack;
         var data = telemetry;
 
-        Task.Run(() =>
+        Task.Run(async () =>
         {
             try
             {
+                // Colours only — the geometry and therefore both mosaics stay valid.
                 currentOverlay = TrackOverlaySampler.Build(track, data, metric);
                 if (token.IsCancellationRequested) return;
-                RenderFullMap(highlight, token);
+                var focus = FocusBoundsFor(track, focusWindow);
+                await EnsureFocusTilesAsync(focus, token);
+                if (token.IsCancellationRequested) return;
+                RenderFullMap(highlight, focus, token);
             }
             catch (OperationCanceledException)
             {
