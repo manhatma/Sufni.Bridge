@@ -9,8 +9,9 @@ public enum TrackOverlayMetric
     GpsSpeed,
     FrontTravel,
     RearTravel,
-    FrontVelocity,
-    RearVelocity,
+    FrontCompression,
+    RearCompression,
+    Impact,
     Pitch
 }
 
@@ -21,8 +22,9 @@ public static class TrackOverlayMetricInfo
         TrackOverlayMetric.GpsSpeed => "GPS Speed",
         TrackOverlayMetric.FrontTravel => "Front Travel",
         TrackOverlayMetric.RearTravel => "Rear Travel",
-        TrackOverlayMetric.FrontVelocity => "Front Velocity",
-        TrackOverlayMetric.RearVelocity => "Rear Velocity",
+        TrackOverlayMetric.FrontCompression => "Front Compression",
+        TrackOverlayMetric.RearCompression => "Rear Compression",
+        TrackOverlayMetric.Impact => "Impact",
         TrackOverlayMetric.Pitch => "Pitch",
         _ => metric.ToString()
     };
@@ -32,8 +34,9 @@ public static class TrackOverlayMetricInfo
         TrackOverlayMetric.GpsSpeed => "km/h",
         TrackOverlayMetric.FrontTravel => "%",
         TrackOverlayMetric.RearTravel => "%",
-        TrackOverlayMetric.FrontVelocity => "mm/s",
-        TrackOverlayMetric.RearVelocity => "mm/s",
+        TrackOverlayMetric.FrontCompression => "mm/s",
+        TrackOverlayMetric.RearCompression => "mm/s",
+        TrackOverlayMetric.Impact => "mm/s",
         TrackOverlayMetric.Pitch => "°",
         _ => ""
     };
@@ -67,7 +70,7 @@ public static class TrackOverlaySampler
 
     public static IReadOnlyList<TrackOverlayMetric> AvailableMetrics(TelemetryData? data)
     {
-        var list = new List<TrackOverlayMetric>(6);
+        var list = new List<TrackOverlayMetric>(7);
         foreach (var metric in Enum.GetValues<TrackOverlayMetric>())
         {
             if (IsAvailable(metric, data))
@@ -84,10 +87,15 @@ public static class TrackOverlaySampler
             => data?.Front.Present == true && data.Front.Travel is { Length: > 0 },
         TrackOverlayMetric.RearTravel
             => data?.Rear.Present == true && data.Rear.Travel is { Length: > 0 },
-        TrackOverlayMetric.FrontVelocity
+        TrackOverlayMetric.FrontCompression
             => data?.Front.Present == true && data.Front.Velocity is { Length: > 0 },
-        TrackOverlayMetric.RearVelocity
+        TrackOverlayMetric.RearCompression
             => data?.Rear.Present == true && data.Rear.Velocity is { Length: > 0 },
+        // Impact is the harder of the two wheels, so it only means something when both recorded.
+        // A single-wheel session already has that wheel's own compression overlay.
+        TrackOverlayMetric.Impact
+            => data?.Front.Present == true && data.Rear.Present
+               && data.Front.Velocity is { Length: > 0 } && data.Rear.Velocity is { Length: > 0 },
         TrackOverlayMetric.Pitch
             => data?.Front.Present == true && data.Rear.Present
                && data.Front.Travel is { Length: > 0 } && data.Rear.Travel is { Length: > 0 }
@@ -136,6 +144,13 @@ public static class TrackOverlaySampler
             min = -mag;
             max = mag;
         }
+        else if (IsCompression(metric))
+        {
+            // Anchor the scale at 0 so a smooth section always reads as the cold end of the
+            // colormap; the top stays the session's hardest hit.
+            min = 0;
+            if (max < 0) max = 0;
+        }
 
         return new TrackOverlay
         {
@@ -167,8 +182,9 @@ public static class TrackOverlaySampler
         {
             TrackOverlayMetric.FrontTravel => TravelPercent(data.Front.Travel, i0, i1, data.Linkage.MaxFrontTravel),
             TrackOverlayMetric.RearTravel => TravelPercent(data.Rear.Travel, i0, i1, data.Linkage.MaxRearTravel),
-            TrackOverlayMetric.FrontVelocity => MeanRange(data.Front.Velocity, i0, i1, abs: true),
-            TrackOverlayMetric.RearVelocity => MeanRange(data.Rear.Velocity, i0, i1, abs: true),
+            TrackOverlayMetric.FrontCompression => MaxCompression(data.Front.Velocity, i0, i1),
+            TrackOverlayMetric.RearCompression => MaxCompression(data.Rear.Velocity, i0, i1),
+            TrackOverlayMetric.Impact => MaxImpact(data, i0, i1),
             TrackOverlayMetric.Pitch => MeanPitch(pitch, i0, i1),
             _ => double.NaN
         };
@@ -199,6 +215,45 @@ public static class TrackOverlaySampler
         var sinDLam = Math.Sin(dLam / 2.0);
         var a = sinDPhi * sinDPhi + Math.Cos(phi1) * Math.Cos(phi2) * sinDLam * sinDLam;
         return 2.0 * EarthRadiusMeters * Math.Atan2(Math.Sqrt(a), Math.Sqrt(Math.Max(0.0, 1.0 - a)));
+    }
+
+    private static bool IsCompression(TrackOverlayMetric metric) =>
+        metric is TrackOverlayMetric.FrontCompression
+            or TrackOverlayMetric.RearCompression
+            or TrackOverlayMetric.Impact;
+
+    // Peak compression velocity over the edge's sample range. Rebound (negative velocity) is
+    // ignored on purpose: a hard trail event is a fast compression, and averaging in the rebound
+    // that follows blurs exactly the peak we want to see. The peak rather than a mean, because a
+    // single big hit inside a one-second edge is the event — a mean would wash it out.
+    // A range that only rebounds is a real 0, not missing data; NaN is reserved for a range with
+    // no usable samples at all.
+    private static double MaxCompression(double[]? values, int i0, int i1)
+    {
+        if (values is null || values.Length == 0)
+            return double.NaN;
+        i0 = Math.Clamp(i0, 0, values.Length - 1);
+        i1 = Math.Clamp(i1, i0 + 1, values.Length);
+        var peak = 0.0;
+        var seen = false;
+        for (var i = i0; i < i1; i++)
+        {
+            var v = values[i];
+            if (!double.IsFinite(v)) continue;
+            seen = true;
+            if (v > peak) peak = v;
+        }
+
+        return seen ? peak : double.NaN;
+    }
+
+    private static double MaxImpact(TelemetryData data, int i0, int i1)
+    {
+        var front = MaxCompression(data.Front.Velocity, i0, i1);
+        var rear = MaxCompression(data.Rear.Velocity, i0, i1);
+        if (!double.IsFinite(front)) return rear;
+        if (!double.IsFinite(rear)) return front;
+        return Math.Max(front, rear);
     }
 
     private static double MeanRange(double[]? values, int i0, int i1, bool abs)

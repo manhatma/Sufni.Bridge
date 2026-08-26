@@ -85,8 +85,9 @@ public class TrackOverlaySamplerTests
         Assert.True(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.GpsSpeed, empty));
         Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.FrontTravel, empty));
         Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.RearTravel, empty));
-        Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.FrontVelocity, empty));
-        Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.RearVelocity, empty));
+        Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.FrontCompression, empty));
+        Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.RearCompression, empty));
+        Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.Impact, empty));
         Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.Pitch, empty));
 
         var frontOnly = Telemetry(
@@ -95,7 +96,9 @@ public class TrackOverlaySamplerTests
             frontTravel: [1.0, 2.0],
             frontVelocity: [3.0]);
         Assert.True(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.FrontTravel, frontOnly));
-        Assert.True(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.FrontVelocity, frontOnly));
+        Assert.True(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.FrontCompression, frontOnly));
+        // Impact needs both wheels — the fork's own overlay already covers a single-wheel session.
+        Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.Impact, frontOnly));
         Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.RearTravel, frontOnly));
         Assert.False(TrackOverlaySampler.IsAvailable(TrackOverlayMetric.Pitch, frontOnly));
 
@@ -187,9 +190,10 @@ public class TrackOverlaySamplerTests
     }
 
     [Fact]
-    public void Build_Velocity_IsAbsoluteMean_NotSymmetric()
+    public void Build_Compression_IsPeakOfPositiveVelocity_ScaleAnchoredAtZero()
     {
-        var velocity = new double[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+        // Rebound peaks harder than compression here, so an abs-mean would report the rebound.
+        var velocity = new double[] { 1, -20, 3, -30, 5, 7, -40, 9, 6, 4 };
         var data = Telemetry(
             sampleRate: 10,
             frontPresent: true,
@@ -197,12 +201,52 @@ public class TrackOverlaySamplerTests
             frontVelocity: velocity);
         var track = TwoPointTrack(47.0, 11.0, 47.01, 11.01);
 
-        var vel = TrackOverlaySampler.Build(track, data, TrackOverlayMetric.FrontVelocity);
-        Assert.NotNull(vel);
-        Assert.Equal("mm/s", vel.Unit);
-        Assert.Equal(5.5, vel.SegmentPairValues[0][0], 6);   // mean |v|
-        Assert.Equal(5.5, vel.Min, 6);
-        Assert.Equal(5.5, vel.Max, 6);
+        var comp = TrackOverlaySampler.Build(track, data, TrackOverlayMetric.FrontCompression);
+        Assert.NotNull(comp);
+        Assert.Equal("mm/s", comp.Unit);
+        Assert.Equal("Front Compression", comp.Label);
+        Assert.Equal(9.0, comp.SegmentPairValues[0][0], 6);  // peak compression, rebound ignored
+        Assert.Equal(0.0, comp.Min, 6);                      // scale anchored at 0
+        Assert.Equal(9.0, comp.Max, 6);
+    }
+
+    [Fact]
+    public void Build_Compression_ReboundOnlyRange_IsZeroNotNaN()
+    {
+        var velocity = new double[] { -1, -2, -3, -4, -5, -6, -7, -8, -9, -10 };
+        var data = Telemetry(
+            sampleRate: 10,
+            frontPresent: true,
+            frontTravel: velocity,
+            frontVelocity: velocity);
+        var track = TwoPointTrack(47.0, 11.0, 47.01, 11.01);
+
+        var comp = TrackOverlaySampler.Build(track, data, TrackOverlayMetric.FrontCompression);
+        Assert.NotNull(comp);
+        Assert.Equal(0.0, comp.SegmentPairValues[0][0], 6);
+    }
+
+    [Fact]
+    public void Build_Impact_TakesTheHarderWheel()
+    {
+        var front = new double[] { 1, 2, 3, 4, 5, 6, 7, 8, 9, 10 };
+        var rear = new double[] { 1, 2, 3, 40, 5, 6, 7, 8, 9, 10 };
+        var data = Telemetry(
+            sampleRate: 10,
+            frontPresent: true,
+            frontTravel: front,
+            frontVelocity: front,
+            rearPresent: true,
+            rearTravel: rear,
+            rearVelocity: rear);
+        var track = TwoPointTrack(47.0, 11.0, 47.01, 11.01);
+
+        var impact = TrackOverlaySampler.Build(track, data, TrackOverlayMetric.Impact);
+        Assert.NotNull(impact);
+        Assert.Equal("Impact", impact.Label);
+        Assert.Equal(40.0, impact.SegmentPairValues[0][0], 6);
+        Assert.Equal(0.0, impact.Min, 6);
+        Assert.Equal(40.0, impact.Max, 6);
     }
 
     [Fact]
