@@ -15,6 +15,13 @@ public enum TrackOverlayMetric
     Pitch
 }
 
+public enum TrackOverlayAggregate
+{
+    Avg,
+    P95,
+    Max
+}
+
 public static class TrackOverlayMetricInfo
 {
     public static string DisplayName(TrackOverlayMetric metric) => metric switch
@@ -56,10 +63,13 @@ public sealed class TrackOverlayMetricOption(TrackOverlayMetric metric)
 public sealed class TrackOverlay
 {
     public required TrackOverlayMetric Metric { get; init; }
+    public required TrackOverlayAggregate Aggregate { get; init; }
     public required string Label { get; init; }
     public required string Unit { get; init; }
     public required double Min { get; init; }
     public required double Max { get; init; }
+    // true, wenn Max unter dem echten Höchstwert liegt, weil die Skala gekappt wurde.
+    public bool MaxIsClamped { get; init; }
     public required IReadOnlyList<double[]> SegmentPairValues { get; init; }
 }
 
@@ -103,7 +113,16 @@ public static class TrackOverlaySampler
         _ => false
     };
 
-    public static TrackOverlay? Build(SessionTrack track, TelemetryData? data, TrackOverlayMetric metric)
+    // GpsSpeed has one value per edge already, so aggregating samples is meaningless.
+    // Pitch is signed: a Max would only show the steepest direction and drop the opposite lean.
+    public static bool SupportsAggregate(TrackOverlayMetric metric) =>
+        metric is not (TrackOverlayMetric.GpsSpeed or TrackOverlayMetric.Pitch);
+
+    public static TrackOverlay? Build(
+        SessionTrack track,
+        TelemetryData? data,
+        TrackOverlayMetric metric,
+        TrackOverlayAggregate aggregate = TrackOverlayAggregate.Max)
     {
         if (track.IsEmpty)
             return null;
@@ -123,7 +142,7 @@ public static class TrackOverlaySampler
             var values = new double[n];
             for (var i = 0; i < n; i++)
             {
-                var v = SamplePair(segment, i, data, metric, pitch);
+                var v = SamplePair(segment, i, data, metric, pitch, aggregate);
                 values[i] = v;
                 if (!double.IsFinite(v)) continue;
                 if (v < min) min = v;
@@ -133,6 +152,7 @@ public static class TrackOverlaySampler
             pairValues[s] = values;
         }
 
+        var clamped = false;
         if (double.IsPositiveInfinity(min))
         {
             min = 0;
@@ -151,20 +171,63 @@ public static class TrackOverlaySampler
             min = 0;
             if (max < 0) max = 0;
         }
+        else if (metric is TrackOverlayMetric.GpsSpeed)
+        {
+            // Einzelne GPS-Ausreißer erreichen ein Vielfaches der real gefahrenen Geschwindigkeit und
+            // stauchen die Farbskala so weit, dass die ganze Strecke einfarbig wird. Die Skala endet
+            // deshalb am 99. Perzentil. Die Werte selbst bleiben unverändert, damit der Max-Marker
+            // den echten Höchstwert weiter meldet; ColorFor klemmt alles darüber auf die oberste Stufe.
+            var count = 0;
+            foreach (var values in pairValues)
+            {
+                foreach (var v in values)
+                {
+                    if (double.IsFinite(v)) count++;
+                }
+            }
+
+            if (count > 0)
+            {
+                var buffer = new double[count];
+                var n = 0;
+                foreach (var values in pairValues)
+                {
+                    foreach (var v in values)
+                    {
+                        if (double.IsFinite(v))
+                            buffer[n++] = v;
+                    }
+                }
+
+                var p99 = Percentile(buffer, count, 0.99);
+                if (double.IsFinite(p99) && p99 < max && p99 > min)
+                {
+                    max = p99;
+                    clamped = true;
+                }
+            }
+        }
 
         return new TrackOverlay
         {
             Metric = metric,
+            Aggregate = aggregate,
             Label = TrackOverlayMetricInfo.DisplayName(metric),
             Unit = TrackOverlayMetricInfo.Unit(metric),
             Min = min,
             Max = max,
+            MaxIsClamped = clamped,
             SegmentPairValues = pairValues
         };
     }
 
     private static double SamplePair(
-        TrackSegment segment, int i, TelemetryData? data, TrackOverlayMetric metric, double[]? pitch)
+        TrackSegment segment,
+        int i,
+        TelemetryData? data,
+        TrackOverlayMetric metric,
+        double[]? pitch,
+        TrackOverlayAggregate aggregate)
     {
         if (metric == TrackOverlayMetric.GpsSpeed)
             return GpsSpeedKmh(segment, i);
@@ -180,11 +243,11 @@ public static class TrackOverlaySampler
 
         return metric switch
         {
-            TrackOverlayMetric.FrontTravel => TravelPercent(data.Front.Travel, i0, i1, data.Linkage.MaxFrontTravel),
-            TrackOverlayMetric.RearTravel => TravelPercent(data.Rear.Travel, i0, i1, data.Linkage.MaxRearTravel),
-            TrackOverlayMetric.FrontCompression => MaxCompression(data.Front.Velocity, i0, i1),
-            TrackOverlayMetric.RearCompression => MaxCompression(data.Rear.Velocity, i0, i1),
-            TrackOverlayMetric.Impact => MaxImpact(data, i0, i1),
+            TrackOverlayMetric.FrontTravel => TravelPercent(data.Front.Travel, i0, i1, data.Linkage.MaxFrontTravel, aggregate),
+            TrackOverlayMetric.RearTravel => TravelPercent(data.Rear.Travel, i0, i1, data.Linkage.MaxRearTravel, aggregate),
+            TrackOverlayMetric.FrontCompression => CompressionValue(data.Front.Velocity, i0, i1, aggregate),
+            TrackOverlayMetric.RearCompression => CompressionValue(data.Rear.Velocity, i0, i1, aggregate),
+            TrackOverlayMetric.Impact => MaxImpact(data, i0, i1, aggregate),
             TrackOverlayMetric.Pitch => MeanPitch(pitch, i0, i1),
             _ => double.NaN
         };
@@ -222,64 +285,108 @@ public static class TrackOverlaySampler
             or TrackOverlayMetric.RearCompression
             or TrackOverlayMetric.Impact;
 
-    // Peak compression velocity over the edge's sample range. Rebound (negative velocity) is
-    // ignored on purpose: a hard trail event is a fast compression, and averaging in the rebound
-    // that follows blurs exactly the peak we want to see. The peak rather than a mean, because a
-    // single big hit inside a one-second edge is the event — a mean would wash it out.
+    // Compression velocity over the edge's sample range. Rebound (negative velocity) is ignored
+    // on purpose: a hard trail event is a fast compression, and averaging in the rebound that
+    // follows blurs exactly the peak we want to see. Max keeps the single hardest hit inside a
+    // one-second edge; Avg and P95 summarise the positive samples when a peak alone is too noisy.
     // A range that only rebounds is a real 0, not missing data; NaN is reserved for a range with
     // no usable samples at all.
-    private static double MaxCompression(double[]? values, int i0, int i1)
+    private static double CompressionValue(double[]? values, int i0, int i1, TrackOverlayAggregate aggregate)
     {
         if (values is null || values.Length == 0)
             return double.NaN;
         i0 = Math.Clamp(i0, 0, values.Length - 1);
         i1 = Math.Clamp(i1, i0 + 1, values.Length);
-        var peak = 0.0;
+
+        var buffer = new double[i1 - i0];
+        var count = 0;
         var seen = false;
         for (var i = i0; i < i1; i++)
         {
             var v = values[i];
             if (!double.IsFinite(v)) continue;
             seen = true;
-            if (v > peak) peak = v;
+            if (v > 0)
+                buffer[count++] = v;
         }
 
-        return seen ? peak : double.NaN;
+        if (!seen) return double.NaN;
+        if (count == 0) return 0.0;
+
+        return aggregate switch
+        {
+            TrackOverlayAggregate.Avg => Mean(buffer, count),
+            TrackOverlayAggregate.P95 => Percentile(buffer, count, 0.95),
+            _ => MaxOf(buffer, count)
+        };
     }
 
-    private static double MaxImpact(TelemetryData data, int i0, int i1)
+    private static double MaxImpact(TelemetryData data, int i0, int i1, TrackOverlayAggregate aggregate)
     {
-        var front = MaxCompression(data.Front.Velocity, i0, i1);
-        var rear = MaxCompression(data.Rear.Velocity, i0, i1);
+        var front = CompressionValue(data.Front.Velocity, i0, i1, aggregate);
+        var rear = CompressionValue(data.Rear.Velocity, i0, i1, aggregate);
         if (!double.IsFinite(front)) return rear;
         if (!double.IsFinite(rear)) return front;
         return Math.Max(front, rear);
     }
 
-    private static double MeanRange(double[]? values, int i0, int i1, bool abs)
+    private static double TravelPercent(
+        double[]? values, int i0, int i1, double maxTravel, TrackOverlayAggregate aggregate)
     {
+        if (maxTravel <= 0) return double.NaN;
         if (values is null || values.Length == 0)
             return double.NaN;
         i0 = Math.Clamp(i0, 0, values.Length - 1);
         i1 = Math.Clamp(i1, i0 + 1, values.Length);
-        double sum = 0;
-        var n = 0;
+
+        var buffer = new double[i1 - i0];
+        var count = 0;
         for (var i = i0; i < i1; i++)
         {
             var v = values[i];
             if (!double.IsFinite(v)) continue;
-            sum += abs ? Math.Abs(v) : v;
-            n++;
+            buffer[count++] = Math.Abs(v);
         }
 
-        return n == 0 ? double.NaN : sum / n;
+        if (count == 0) return double.NaN;
+
+        var magnitude = aggregate switch
+        {
+            TrackOverlayAggregate.Avg => Mean(buffer, count),
+            TrackOverlayAggregate.P95 => Percentile(buffer, count, 0.95),
+            _ => MaxOf(buffer, count)
+        };
+        return magnitude / maxTravel * 100.0;
     }
 
-    private static double TravelPercent(double[]? values, int i0, int i1, double maxTravel)
+    private static double Mean(double[] buffer, int count)
     {
-        if (maxTravel <= 0) return double.NaN;
-        var mean = MeanRange(values, i0, i1, abs: true);
-        return double.IsFinite(mean) ? mean / maxTravel * 100.0 : double.NaN;
+        double sum = 0;
+        for (var i = 0; i < count; i++)
+            sum += buffer[i];
+        return sum / count;
+    }
+
+    private static double MaxOf(double[] buffer, int count)
+    {
+        var peak = buffer[0];
+        for (var i = 1; i < count; i++)
+        {
+            if (buffer[i] > peak) peak = buffer[i];
+        }
+
+        return peak;
+    }
+
+    // Linear interpolation between the two surrounding ranks after an in-place sort of buffer[0..count).
+    private static double Percentile(double[] buffer, int count, double p)
+    {
+        if (count == 1) return buffer[0];
+        Array.Sort(buffer, 0, count);
+        var pos = (count - 1) * p;
+        var lo = (int)Math.Floor(pos);
+        var hi = Math.Min(count - 1, lo + 1);
+        return buffer[lo] + (buffer[hi] - buffer[lo]) * (pos - lo);
     }
 
     private static double MeanPitch(double[]? pitch, int i0, int i1)

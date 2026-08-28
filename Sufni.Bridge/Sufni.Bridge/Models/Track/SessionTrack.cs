@@ -171,7 +171,7 @@ public sealed class SessionTrack
             if (slice.DurationMs <= 0) continue;
             var segment = Slice(points, slice);
             if (segment is not null)
-                segments.Add(Decimate(segment));
+                segments.Add(SubdivideLongEdges(Decimate(segment)));
         }
 
         return segments.Count == 0 ? Empty : new SessionTrack(segments);
@@ -388,5 +388,70 @@ public sealed class SessionTrack
         var (xs, ys, ts, lat, lon) = PathDecimation.DecimatePolyline(
             segment.X, segment.Y, segment.TimeSeconds, segment.Lat, segment.Lon);
         return new TrackSegment(xs, ys, ts, lat, lon);
+    }
+
+    // The overlay aggregates telemetry per polyline edge, so an edge is also the width of one
+    // colour sample. Decimation merges collinear points and can stretch a single edge over
+    // several seconds, which then shows the peak of that whole span next to one-second
+    // neighbours. Splitting long edges back down to one second restores a uniform window.
+    // Position, time and coordinates are interpolated linearly, which is accurate enough over
+    // a few seconds. The cap keeps a long GPS dropout from exploding into hundreds of points.
+    private static TrackSegment SubdivideLongEdges(TrackSegment segment, double maxSeconds = 1.0)
+    {
+        var n = segment.TimeSeconds.Length;
+        if (n < 2)
+            return segment;
+
+        var split = false;
+        for (var i = 0; i < n - 1; i++)
+        {
+            var probe = segment.TimeSeconds[i + 1] - segment.TimeSeconds[i];
+            if (double.IsFinite(probe) && probe > maxSeconds && probe > 0)
+            {
+                split = true;
+                break;
+            }
+        }
+
+        if (!split)
+            return segment;
+
+        var xs = new List<double>();
+        var ys = new List<double>();
+        var ts = new List<double>();
+        var lats = new List<double>();
+        var lons = new List<double>();
+
+        for (var i = 0; i < n - 1; i++)
+        {
+            xs.Add(segment.X[i]);
+            ys.Add(segment.Y[i]);
+            ts.Add(segment.TimeSeconds[i]);
+            lats.Add(segment.Lat[i]);
+            lons.Add(segment.Lon[i]);
+
+            var dt = segment.TimeSeconds[i + 1] - segment.TimeSeconds[i];
+            if (!double.IsFinite(dt) || dt <= maxSeconds || dt <= 0)
+                continue;
+
+            var parts = Math.Min(60, (int)Math.Ceiling(dt / maxSeconds));
+            for (var p = 1; p < parts; p++)
+            {
+                var f = p / (double)parts;
+                xs.Add(segment.X[i] + f * (segment.X[i + 1] - segment.X[i]));
+                ys.Add(segment.Y[i] + f * (segment.Y[i + 1] - segment.Y[i]));
+                ts.Add(segment.TimeSeconds[i] + f * dt);
+                lats.Add(segment.Lat[i] + f * (segment.Lat[i + 1] - segment.Lat[i]));
+                lons.Add(segment.Lon[i] + f * (segment.Lon[i + 1] - segment.Lon[i]));
+            }
+        }
+
+        xs.Add(segment.X[n - 1]);
+        ys.Add(segment.Y[n - 1]);
+        ts.Add(segment.TimeSeconds[n - 1]);
+        lats.Add(segment.Lat[n - 1]);
+        lons.Add(segment.Lon[n - 1]);
+
+        return new TrackSegment(xs.ToArray(), ys.ToArray(), ts.ToArray(), lats.ToArray(), lons.ToArray());
     }
 }

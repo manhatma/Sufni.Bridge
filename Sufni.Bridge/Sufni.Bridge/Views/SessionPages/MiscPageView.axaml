@@ -24,6 +24,54 @@
             <Setter Property="FontSize" Value="12" />
             <Setter Property="Padding" Value="6,0" />
         </Style>
+
+        <!--  Horizontal segmented pill (Avg/P95/Max and 2s/5s/10s). Same idea as TimeZoomControl's
+             vertical Button.seg, laid out left-to-right.  -->
+        <Style Selector="Button.agg">
+            <Setter Property="MinHeight" Value="24" />
+            <Setter Property="MinWidth" Value="40" />
+            <Setter Property="Padding" Value="8,0" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="CornerRadius" Value="0" />
+            <Setter Property="Foreground" Value="{StaticResource SufniForeground}" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+        <Style Selector="Button.agg.aggFirst">
+            <Setter Property="CornerRadius" Value="12,0,0,12" />
+        </Style>
+        <Style Selector="Button.agg.aggLast">
+            <Setter Property="CornerRadius" Value="0,12,12,0" />
+        </Style>
+        <Style Selector="Button.agg.active">
+            <Setter Property="Background" Value="{StaticResource SufniAccentColor}" />
+            <Setter Property="Foreground" Value="White" />
+        </Style>
+        <Style Selector="Button.agg:disabled">
+            <Setter Property="Foreground" Value="{StaticResource SufniForegroundDisabled}" />
+        </Style>
+
+        <Style Selector="Button.map-nudge">
+            <Setter Property="MinWidth" Value="22" />
+            <Setter Property="MinHeight" Value="22" />
+            <Setter Property="Padding" Value="4,2" />
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{StaticResource SufniForeground}" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
+        <Style Selector="TextBlock.zoom-value">
+            <Setter Property="FontSize" Value="11" />
+            <Setter Property="Foreground" Value="#66c2a5" />
+            <Setter Property="FontFamily" Value="Courier New, Courier, monospace" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
     </UserControl.Styles>
 
     <ScrollViewer Width="{Binding $parent[ScrollViewer].Bounds.Width}" Height="{Binding $parent[ScrollViewer].Bounds.Height}" IsScrollChainingEnabled="False">
@@ -31,13 +79,16 @@
             <!--  Dropdown plus map fill the initial screen; the plots below start after one swipe.
                   MinHeight collapses to 0 without a map, so a session without a GPX track keeps
                   its plots at the top.  -->
-            <Grid RowDefinitions="auto *" ColumnDefinitions="*" Margin="0,0,0,8">
-                <Grid.MinHeight>
+            <Grid RowDefinitions="auto *" ColumnDefinitions="*">
+                <!--  Height, not MinHeight: the map image sizes itself from the bitmap's aspect
+                     ratio, so a mere floor let it grow past the visible page and cut off the
+                     bottom of the map, imagery credit included. A fixed height caps the row.  -->
+                <Grid.Height>
                     <MultiBinding Converter="{x:Static conv:MapFillHeightConverter.Instance}">
                         <Binding Path="$parent[ScrollViewer].Bounds.Height" />
                         <Binding Path="TrackMap" />
                     </MultiBinding>
-                </Grid.MinHeight>
+                </Grid.Height>
                 <ComboBox Grid.Row="0"
                           Margin="0,0,0,8"
                           Classes="overlay-metric"
@@ -51,13 +102,234 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-                <Image Grid.Row="1"
-                       MinHeight="220"
-                       Stretch="Uniform"
-                       IsVisible="{Binding TrackMap, Converter={x:Static ObjectConverters.IsNotNull}}"
-                       Source="{Binding TrackMap}" />
+                <Grid Grid.Row="1">
+                    <Image x:Name="MapImage"
+                           MinHeight="220"
+                           HorizontalAlignment="Center"
+                           Stretch="Uniform"
+                           IsVisible="{Binding TrackMap, Converter={x:Static ObjectConverters.IsNotNull}}"
+                           Source="{Binding TrackMap}" />
+                    <Canvas x:Name="MarkerLayer" IsHitTestVisible="False">
+                        <Line x:Name="MarkerLeader"
+                              Stroke="White"
+                              StrokeThickness="1.5"
+                              IsVisible="{Binding MarkerShown}" />
+                        <Border x:Name="MarkerFlag"
+                                Background="#C815191C"
+                                CornerRadius="4"
+                                Padding="5,2"
+                                IsVisible="{Binding MarkerShown}">
+                            <StackPanel Orientation="Vertical" Spacing="0">
+                                <TextBlock Classes="zoom-value" FontSize="10" Text="{Binding MarkerTimeLabel}" />
+                                <TextBlock Classes="zoom-value" FontSize="10" Text="{Binding MarkerValueLabel}" />
+                            </StackPanel>
+                        </Border>
+                        <Ellipse x:Name="MarkerDot"
+                                 Width="8"
+                                 Height="8"
+                                 Fill="{Binding MarkerFill}"
+                                 Stroke="White"
+                                 StrokeThickness="1.5"
+                                 IsVisible="{Binding MarkerShown}" />
+                    </Canvas>
+
+                    <!--  Aggregate selector: Avg / P95 / Max. Disabled for metrics that have no
+                         per-edge sample set to aggregate (GPS speed, pitch).  -->
+                    <Border
+                        x:Name="AggregatePill"
+                        Margin="0,12,12,0"
+                        HorizontalAlignment="Right"
+                        VerticalAlignment="Top"
+                        Background="#C815191C"
+                        ClipToBounds="True"
+                        CornerRadius="12"
+                        IsVisible="{Binding TrackMap, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <StackPanel Orientation="Horizontal" Spacing="1">
+                            <Button
+                                Classes="agg aggFirst"
+                                Classes.active="{Binding IsAvgActive}"
+                                Command="{Binding SelectAggregateCommand}"
+                                CommandParameter="{x:Static vm:MiscPageViewModel.AggregateAvg}"
+                                Content="Avg"
+                                IsEnabled="{Binding AggregateAvailable}" />
+                            <Button
+                                Classes="agg"
+                                Classes.active="{Binding IsP95Active}"
+                                Command="{Binding SelectAggregateCommand}"
+                                CommandParameter="{x:Static vm:MiscPageViewModel.AggregateP95}"
+                                Content="P95"
+                                IsEnabled="{Binding AggregateAvailable}" />
+                            <Button
+                                Classes="agg aggLast"
+                                Classes.active="{Binding IsMaxActive}"
+                                Command="{Binding SelectAggregateCommand}"
+                                CommandParameter="{x:Static vm:MiscPageViewModel.AggregateMax}"
+                                Content="Max"
+                                IsEnabled="{Binding AggregateAvailable}" />
+                        </StackPanel>
+                    </Border>
+
+                    <!--  Left, right and bottom were all 12 pt and measured equal, but the imagery
+                         credit now sits in the strip below the bar and needs room to stay
+                         legible. 22 pt leaves about 11 bitmap pixels of clear map under the text.  -->
+                    <!--  Margins are recomputed in code-behind against the drawn image rectangle,
+                         which is narrower than its cell once the map is letterboxed. The values
+                         here are only the starting point for the first layout pass.  -->
+                    <Border
+                        x:Name="ControlBar"
+                        Margin="12,0,12,12"
+                        Padding="8,6"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Bottom"
+                        Background="#C815191C"
+                        CornerRadius="10"
+                        IsVisible="{Binding TrackMap, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <StackPanel Orientation="Vertical" Spacing="4">
+
+                            <!--  Zoom window + pan.  -->
+                            <Grid ColumnDefinitions="Auto,*">
+                                <Border
+                                    Grid.Column="0"
+                                    Margin="0,0,8,0"
+                                    VerticalAlignment="Center"
+                                    ClipToBounds="True"
+                                    CornerRadius="12">
+                                    <StackPanel Orientation="Horizontal" Spacing="1">
+                                        <Button
+                                            Classes="agg aggFirst"
+                                            Classes.active="{Binding TimeZoom.Is2sActive}"
+                                            Command="{Binding TimeZoom.SelectWindowCommand}"
+                                            CommandParameter="{x:Static vm:TimeZoomViewModel.Window2Seconds}"
+                                            Content="2s"
+                                            IsEnabled="{Binding TimeZoom.Allow2s}" />
+                                        <Button
+                                            Classes="agg"
+                                            Classes.active="{Binding TimeZoom.Is5sActive}"
+                                            Command="{Binding TimeZoom.SelectWindowCommand}"
+                                            CommandParameter="{x:Static vm:TimeZoomViewModel.Window5Seconds}"
+                                            Content="5s"
+                                            IsEnabled="{Binding TimeZoom.Allow5s}" />
+                                        <Button
+                                            Classes="agg aggLast"
+                                            Classes.active="{Binding TimeZoom.Is10sActive}"
+                                            Command="{Binding TimeZoom.SelectWindowCommand}"
+                                            CommandParameter="{x:Static vm:TimeZoomViewModel.Window10Seconds}"
+                                            Content="10s"
+                                            IsEnabled="{Binding TimeZoom.Allow10s}" />
+                                    </StackPanel>
+                                </Border>
+                                <Grid
+                                    Grid.Column="1"
+                                    ColumnDefinitions="Auto,*,Auto"
+                                    VerticalAlignment="Center"
+                                    IsVisible="{Binding TimeZoom.IsZoomActive}">
+                                    <Button
+                                        Grid.Column="0"
+                                        Classes="map-nudge"
+                                        Command="{Binding TimeZoom.NudgePanBackCommand}"
+                                        Content="◀◀" />
+                                    <Slider
+                                        Grid.Column="1"
+                                        Margin="4,0"
+                                        VerticalAlignment="Center"
+                                        Maximum="{Binding TimeZoom.MaxStartSeconds}"
+                                        Minimum="0"
+                                        Value="{Binding TimeZoom.StartSeconds, Mode=TwoWay}">
+                                        <!--  Fluent's Slider template drives the thumb/track purely off DynamicResource
+                                             lookups (verified against Avalonia 11.2.5 source) — no ordinary Style setter
+                                             can reach the thumb's CornerRadius, so the resource keys are overridden here,
+                                             scoped to just this Slider instance via Slider.Resources. Thumb is 22 px so
+                                             the overlay bar stays flat.  -->
+                                        <Slider.Resources>
+                                            <x:Double x:Key="SliderHorizontalThumbWidth">22</x:Double>
+                                            <x:Double x:Key="SliderHorizontalThumbHeight">22</x:Double>
+                                            <CornerRadius x:Key="SliderThumbCornerRadius">11</CornerRadius>
+                                            <SolidColorBrush x:Key="SliderThumbBackground" Color="{StaticResource SufniAccentColor}" />
+                                            <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="{StaticResource SufniAccentColor}" />
+                                            <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="{StaticResource SufniAccentColor}" />
+                                            <SolidColorBrush x:Key="SliderThumbBackgroundDisabled" Color="{StaticResource SufniForegroundDisabled}" />
+                                            <x:Double x:Key="SliderTrackThemeHeight">6</x:Double>
+                                            <SolidColorBrush x:Key="SliderTrackFill" Color="{StaticResource SufniBackground}" />
+                                            <SolidColorBrush x:Key="SliderTrackValueFill" Color="{StaticResource SufniAccentColor}" />
+                                            <SolidColorBrush x:Key="SliderTrackFillPointerOver" Color="{StaticResource SufniBackground}" />
+                                            <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="{StaticResource SufniAccentColor}" />
+                                            <SolidColorBrush x:Key="SliderTrackFillPressed" Color="{StaticResource SufniBackground}" />
+                                            <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="{StaticResource SufniAccentColor}" />
+                                            <SolidColorBrush x:Key="SliderTrackFillDisabled" Color="{StaticResource SufniBackgroundDisabled}" />
+                                            <SolidColorBrush x:Key="SliderTrackValueFillDisabled" Color="{StaticResource SufniForegroundDisabled}" />
+                                            <GridLength x:Key="SliderPreContentMargin">6</GridLength>
+                                            <GridLength x:Key="SliderPostContentMargin">6</GridLength>
+                                        </Slider.Resources>
+                                        <Slider.Styles>
+                                            <Style Selector="Slider /template/ Thumb">
+                                                <Setter Property="BorderBrush" Value="#40FFFFFF" />
+                                                <Setter Property="BorderThickness" Value="2" />
+                                            </Style>
+                                        </Slider.Styles>
+                                    </Slider>
+                                    <Button
+                                        Grid.Column="2"
+                                        Classes="map-nudge"
+                                        Command="{Binding TimeZoom.NudgePanForwardCommand}"
+                                        Content="▶▶" />
+                                </Grid>
+                            </Grid>
+
+                            <!--  Data marker: time along the zoom window, value from the overlay.  -->
+                            <Grid
+                                ColumnDefinitions="Auto,*,Auto"
+                                IsVisible="{Binding MarkerVisible}">
+                                <Button
+                                    Grid.Column="0"
+                                    Classes="map-nudge"
+                                    Command="{Binding NudgeMarkerBackCommand}"
+                                    Content="−" />
+                                <Slider
+                                    x:Name="MarkerSlider"
+                                    Grid.Column="1"
+                                    Margin="4,0"
+                                    VerticalAlignment="Center"
+                                    Maximum="{Binding MarkerRangeEnd}"
+                                    Minimum="{Binding MarkerRangeStart}"
+                                    Value="{Binding MarkerSeconds, Mode=TwoWay}">
+                                    <Slider.Resources>
+                                        <x:Double x:Key="SliderHorizontalThumbWidth">22</x:Double>
+                                        <x:Double x:Key="SliderHorizontalThumbHeight">22</x:Double>
+                                        <CornerRadius x:Key="SliderThumbCornerRadius">11</CornerRadius>
+                                        <SolidColorBrush x:Key="SliderThumbBackground" Color="{StaticResource SufniAccentColor}" />
+                                        <SolidColorBrush x:Key="SliderThumbBackgroundPointerOver" Color="{StaticResource SufniAccentColor}" />
+                                        <SolidColorBrush x:Key="SliderThumbBackgroundPressed" Color="{StaticResource SufniAccentColor}" />
+                                        <SolidColorBrush x:Key="SliderThumbBackgroundDisabled" Color="{StaticResource SufniForegroundDisabled}" />
+                                        <x:Double x:Key="SliderTrackThemeHeight">6</x:Double>
+                                        <SolidColorBrush x:Key="SliderTrackFill" Color="{StaticResource SufniBackground}" />
+                                        <SolidColorBrush x:Key="SliderTrackValueFill" Color="#66c2a5" />
+                                        <SolidColorBrush x:Key="SliderTrackFillPointerOver" Color="{StaticResource SufniBackground}" />
+                                        <SolidColorBrush x:Key="SliderTrackValueFillPointerOver" Color="#66c2a5" />
+                                        <SolidColorBrush x:Key="SliderTrackValueFillPressed" Color="#66c2a5" />
+                                        <SolidColorBrush x:Key="SliderTrackFillPressed" Color="{StaticResource SufniBackground}" />
+                                        <SolidColorBrush x:Key="SliderTrackFillDisabled" Color="{StaticResource SufniBackgroundDisabled}" />
+                                        <SolidColorBrush x:Key="SliderTrackValueFillDisabled" Color="{StaticResource SufniForegroundDisabled}" />
+                                        <GridLength x:Key="SliderPreContentMargin">6</GridLength>
+                                        <GridLength x:Key="SliderPostContentMargin">6</GridLength>
+                                    </Slider.Resources>
+                                    <Slider.Styles>
+                                        <Style Selector="Slider /template/ Thumb">
+                                            <Setter Property="BorderBrush" Value="#40FFFFFF" />
+                                            <Setter Property="BorderThickness" Value="2" />
+                                        </Style>
+                                    </Slider.Styles>
+                                </Slider>
+                                <Button
+                                    Grid.Column="2"
+                                    Classes="map-nudge"
+                                    Command="{Binding NudgeMarkerForwardCommand}"
+                                    Content="+" />
+                            </Grid>
+                        </StackPanel>
+                    </Border>
+                </Grid>
             </Grid>
-            <Image IsVisible="{Binding PositionVelocityComparison, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding PositionVelocityComparison}" />
+            <Image Margin="0,8,0,0" IsVisible="{Binding PositionVelocityComparison, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding PositionVelocityComparison}" />
             <Image IsVisible="{Binding FrontPositionVelocity, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontPositionVelocity}" />
             <Image IsVisible="{Binding RearPositionVelocity, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding RearPositionVelocity}" />
             <!--  Combined front+rear acceleration — shown only while zoomed, replaces the two separate plots below  -->

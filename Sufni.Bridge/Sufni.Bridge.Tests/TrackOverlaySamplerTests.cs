@@ -178,7 +178,8 @@ public class TrackOverlaySamplerTests
         var data = Telemetry(sampleRate: 10, frontPresent: true, frontTravel: travel, maxFrontTravel: maxTravel);
         var track = TwoPointTrack(47.0, 11.0, 47.01, 11.01);
 
-        var overlay = TrackOverlaySampler.Build(track, data, TrackOverlayMetric.FrontTravel);
+        // Default aggregate is Max; pass Avg so this test keeps covering the mean path.
+        var overlay = TrackOverlaySampler.Build(track, data, TrackOverlayMetric.FrontTravel, TrackOverlayAggregate.Avg);
 
         Assert.NotNull(overlay);
         Assert.Equal(TrackOverlayMetric.FrontTravel, overlay.Metric);

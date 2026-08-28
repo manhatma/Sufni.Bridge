@@ -241,4 +241,81 @@ public class SessionTrackTests
         Assert.Equal(SessionTrack.MinFocusSpanMeters, box!.Width, 6);
         Assert.Equal(SessionTrack.MinFocusSpanMeters, box.Height, 6);
     }
+
+    // --- SubdivideLongEdges (via Build) --------------------------------------
+
+    [Fact]
+    public void Build_FourSecondEdge_IsSplitIntoOneSecondEdgesOnTheLine()
+    {
+        var points = LinearPoints(
+            count: 2,
+            startUnixMs: (long)StartUnix * 1000,
+            stepMs: 4_000,
+            lat0: 47.0,
+            lon0: 11.0,
+            dLat: 0.01,
+            dLon: 0.01);
+
+        var track = SessionTrack.FromSession(points, StartUnix, 4);
+
+        var segment = Assert.Single(track.Segments);
+        Assert.Equal(5, segment.TimeSeconds.Length);
+        for (var i = 0; i < 4; i++)
+            Assert.Equal(1.0, segment.TimeSeconds[i + 1] - segment.TimeSeconds[i], 6);
+
+        Assert.True(SessionTrack.TryToWebMercator(47.0, 11.0, out var x0, out var y0));
+        Assert.True(SessionTrack.TryToWebMercator(47.01, 11.01, out var x1, out var y1));
+        for (var i = 0; i < 5; i++)
+        {
+            var f = i / 4.0;
+            Assert.Equal(x0 + f * (x1 - x0), segment.X[i], 6);
+            Assert.Equal(y0 + f * (y1 - y0), segment.Y[i], 6);
+            Assert.Equal(47.0 + f * 0.01, segment.Lat[i], 6);
+            Assert.Equal(11.0 + f * 0.01, segment.Lon[i], 6);
+        }
+    }
+
+    [Fact]
+    public void Build_OneSecondEdge_IsUnchanged()
+    {
+        var points = LinearPoints(
+            count: 2,
+            startUnixMs: (long)StartUnix * 1000,
+            stepMs: 1_000,
+            lat0: 47.0,
+            lon0: 11.0,
+            dLat: 0.001,
+            dLon: 0.001);
+
+        var track = SessionTrack.FromSession(points, StartUnix, 1);
+
+        var segment = Assert.Single(track.Segments);
+        Assert.Equal(2, segment.X.Length);
+        Assert.Equal(0.0, segment.TimeSeconds[0], 6);
+        Assert.Equal(1.0, segment.TimeSeconds[1], 6);
+        Assert.Equal(47.0, segment.Lat[0], 6);
+        Assert.Equal(47.001, segment.Lat[1], 6);
+        Assert.Equal(11.0, segment.Lon[0], 6);
+        Assert.Equal(11.001, segment.Lon[1], 6);
+    }
+
+    [Fact]
+    public void Build_SubdividedTimes_AreStrictlyIncreasing()
+    {
+        var startMs = (long)StartUnix * 1000;
+        var points = new TrackPoints
+        {
+            TimeMs = [startMs, startMs + 4_000, startMs + 5_000],
+            Lat = [47.0, 47.01, 47.012],
+            Lon = [11.0, 11.01, 11.012],
+            Ele = [0, 0, 0]
+        };
+
+        var track = SessionTrack.FromSession(points, StartUnix, 5);
+
+        var segment = Assert.Single(track.Segments);
+        Assert.True(segment.TimeSeconds.Length >= 2);
+        for (var i = 1; i < segment.TimeSeconds.Length; i++)
+            Assert.True(segment.TimeSeconds[i] > segment.TimeSeconds[i - 1]);
+    }
 }

@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
+using Avalonia.Media;
 using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using MessagePack;
@@ -48,6 +50,7 @@ internal sealed class SessionMapRenderer
     private Guid? loadedTrackId;
     private TelemetryData? telemetry;
     private TrackOverlay? currentOverlay;
+    private MapBounds? lastFocusBounds;
     private bool isCombined;
     // Cached so a manual offset nudge can rebuild the session track without re-reading the DB.
     private TrackPoints? cachedPoints;
@@ -64,6 +67,8 @@ internal sealed class SessionMapRenderer
     {
         timeZoom.WindowChanged += OnZoomWindowChanged;
         viewModel.MiscPage.OverlayMetricChanged += OnOverlayMetricChanged;
+        viewModel.MiscPage.OverlayAggregateChanged += OnOverlayAggregateChanged;
+        viewModel.MiscPage.MarkerChanged += OnMarkerChanged;
         viewModel.MiscPage.TrackTimeOffsetChanged += OnTrackTimeOffsetChanged;
         viewModel.MiscPage.TrackAutoOffsetRequested += OnTrackAutoOffsetRequested;
     }
@@ -228,7 +233,8 @@ internal sealed class SessionMapRenderer
         var selected = viewModel.MiscPage.SelectedOverlayMetric?.Metric ?? TrackOverlayMetric.GpsSpeed;
         if (!TrackOverlaySampler.IsAvailable(selected, telemetry))
             selected = TrackOverlayMetric.GpsSpeed;
-        currentOverlay = TrackOverlaySampler.Build(sessionTrack, telemetry, selected);
+        currentOverlay = TrackOverlaySampler.Build(
+            sessionTrack, telemetry, selected, viewModel.MiscPage.OverlayAggregate);
 
         var focus = FocusBoundsFor(sessionTrack, CurrentFocusWindow());
         await EnsureFocusTilesAsync(focus, token);
@@ -433,7 +439,7 @@ internal sealed class SessionMapRenderer
             useFocus ? focusMosaicBounds : overviewBounds,
             FullWidth, FullHeight,
             highlight, currentOverlay, drawMarkers: !isCombined,
-            focusBounds: focus);
+            focusBounds: focus, drawStatMarkers: true, emphasizedLines: true);
     }
 
     private void RenderPreviewAndFull(
@@ -461,7 +467,7 @@ internal sealed class SessionMapRenderer
             return;
         }
 
-        AssignBitmaps(preview, full, available, selected, token);
+        AssignBitmaps(preview, full, available, selected, focus, token);
     }
 
     private void RenderFullMap(ZoomWindow? highlight, MapBounds? focus, CancellationToken token)
@@ -483,9 +489,11 @@ internal sealed class SessionMapRenderer
                 return;
             }
 
+            lastFocusBounds = focus;
             viewModel.TrackMap?.Dispose();
             viewModel.TrackMap = full;
             viewModel.MiscPage.TrackMap = full;
+            UpdateMarker();
         });
     }
 
@@ -494,6 +502,7 @@ internal sealed class SessionMapRenderer
         Bitmap full,
         IReadOnlyList<TrackOverlayMetric> available,
         TrackOverlayMetric selected,
+        MapBounds? focus,
         CancellationToken token)
     {
         Dispatcher.UIThread.Post(() =>
@@ -507,6 +516,7 @@ internal sealed class SessionMapRenderer
 
             viewModel.TrackMapPreview?.Dispose();
             viewModel.TrackMap?.Dispose();
+            lastFocusBounds = focus;
             viewModel.TrackMapPreview = preview;
             viewModel.TrackMap = full;
             viewModel.SummaryPage.TrackMapPreview = preview;
@@ -515,6 +525,7 @@ internal sealed class SessionMapRenderer
             // ComboBox IsVisible is bound to TrackMap. Populate after the control is shown
             // so ItemsSource changes apply on a realized ComboBox (cold-start path).
             viewModel.MiscPage.SetAvailableMetrics(available, selected);
+            UpdateMarker();
         });
     }
 
@@ -529,9 +540,11 @@ internal sealed class SessionMapRenderer
             viewModel.TrackMapPreview = null;
             viewModel.TrackMap = null;
             viewModel.SummaryPage.TrackMapPreview = null;
+            lastFocusBounds = null;
             viewModel.MiscPage.TrackMap = null;
             viewModel.MiscPage.ClearOverlayMetrics();
             viewModel.MiscPage.SetTrackOffset(0, false);
+            UpdateMarker();
         });
     }
 
@@ -605,6 +618,7 @@ internal sealed class SessionMapRenderer
         var highlight = CurrentHighlight();
         var focusWindow = CurrentFocusWindow();
         var selected = viewModel.MiscPage.SelectedOverlayMetric?.Metric ?? TrackOverlayMetric.GpsSpeed;
+        var aggregate = viewModel.MiscPage.OverlayAggregate;
         var points = cachedPoints;
         var slices = cachedSlices;
         var track = loadedTrack;
@@ -627,7 +641,7 @@ internal sealed class SessionMapRenderer
                 if (!TrackOverlaySampler.IsAvailable(selected, data))
                     selected = TrackOverlayMetric.GpsSpeed;
                 // Per-edge overlay values depend on track geometry — rebuild, do not reuse.
-                currentOverlay = TrackOverlaySampler.Build(sessionTrack, data, selected);
+                currentOverlay = TrackOverlaySampler.Build(sessionTrack, data, selected, aggregate);
                 var available = TrackOverlaySampler.AvailableMetrics(data);
 
                 // Shifting the track in time moves it geographically. The mosaic fetched for the
@@ -658,6 +672,25 @@ internal sealed class SessionMapRenderer
 
     private void OnOverlayMetricChanged(object? sender, EventArgs e)
     {
+        RebuildOverlayAndRenderFull();
+    }
+
+    private void OnOverlayAggregateChanged(object? sender, EventArgs e)
+    {
+        RebuildOverlayAndRenderFull();
+    }
+
+    private void OnMarkerChanged(object? sender, EventArgs e)
+    {
+        if (Dispatcher.UIThread.CheckAccess())
+            UpdateMarker();
+        else
+            Dispatcher.UIThread.Post(UpdateMarker);
+    }
+
+    // Overlay colours only — the geometry and therefore both mosaics stay valid.
+    private void RebuildOverlayAndRenderFull()
+    {
         if (sessionTrack is null || sessionTrack.IsEmpty)
             return;
         if (loadInProgress)
@@ -670,6 +703,7 @@ internal sealed class SessionMapRenderer
         var highlight = CurrentHighlight();
         var focusWindow = CurrentFocusWindow();
         var metric = viewModel.MiscPage.SelectedOverlayMetric?.Metric ?? TrackOverlayMetric.GpsSpeed;
+        var aggregate = viewModel.MiscPage.OverlayAggregate;
         var track = sessionTrack;
         var data = telemetry;
 
@@ -677,8 +711,7 @@ internal sealed class SessionMapRenderer
         {
             try
             {
-                // Colours only — the geometry and therefore both mosaics stay valid.
-                currentOverlay = TrackOverlaySampler.Build(track, data, metric);
+                currentOverlay = TrackOverlaySampler.Build(track, data, metric, aggregate);
                 if (token.IsCancellationRequested) return;
                 var focus = FocusBoundsFor(track, focusWindow);
                 await EnsureFocusTilesAsync(focus, token);
@@ -694,5 +727,98 @@ internal sealed class SessionMapRenderer
                     viewModel.ErrorMessages.Add($"Could not render track overlay: {ex.Message}"));
             }
         }, token);
+    }
+
+    private void UpdateMarker()
+    {
+        var misc = viewModel.MiscPage;
+        if (sessionTrack is null || sessionTrack.IsEmpty || !misc.MarkerVisible)
+        {
+            misc.MarkerOnTrack = false;
+            misc.MarkerValueLabel = "—";
+            misc.MarkerFill = Brushes.Gray;
+            misc.StatMaxBounds = null;
+            misc.StatMinBounds = null;
+            return;
+        }
+
+        misc.MapPixelWidth = FullWidth;
+        misc.MapPixelHeight = FullHeight;
+
+        var extent = TrackMapRenderer.ExtentFor(sessionTrack, lastFocusBounds, FullWidth, FullHeight);
+        if (currentOverlay is null)
+        {
+            misc.StatMaxBounds = null;
+            misc.StatMinBounds = null;
+        }
+        else
+        {
+            var (max, min) = TrackMapRenderer.StatMarkerBounds(
+                sessionTrack, currentOverlay, extent, FullWidth, FullHeight, CurrentHighlight());
+            misc.StatMaxBounds = ToMapPixelRect(max);
+            misc.StatMinBounds = ToMapPixelRect(min);
+        }
+        var t = misc.MarkerSeconds;
+        var segments = sessionTrack.Segments;
+
+        for (var s = 0; s < segments.Count; s++)
+        {
+            var segment = segments[s];
+            var edges = Math.Max(0, segment.TimeSeconds.Length - 1);
+            for (var i = 0; i < edges; i++)
+            {
+                var t0 = segment.TimeSeconds[i];
+                var t1 = segment.TimeSeconds[i + 1];
+                if (t < t0 || t > t1) continue;
+
+                var dt = t1 - t0;
+                var f = dt <= 0 ? 0.0 : Math.Clamp((t - t0) / dt, 0.0, 1.0);
+                var mapX = segment.X[i] + (segment.X[i + 1] - segment.X[i]) * f;
+                var mapY = segment.Y[i] + (segment.Y[i + 1] - segment.Y[i]) * f;
+                TrackMapRenderer.ProjectToPixel(segment.X[i],     segment.Y[i],     extent, FullWidth, FullHeight, out var ax, out var ay);
+                TrackMapRenderer.ProjectToPixel(segment.X[i + 1], segment.Y[i + 1], extent, FullWidth, FullHeight, out var bx, out var by);
+                TrackMapRenderer.ProjectToPixel(mapX, mapY, extent, FullWidth, FullHeight, out var px, out var py);
+                misc.MarkerX = px;
+                misc.MarkerY = py;
+                var ex = bx - ax; var ey = by - ay;
+                var len = Math.Sqrt(ex * ex + ey * ey);
+                misc.MarkerDirX = len > 0 ? ex / len : 1.0;
+                misc.MarkerDirY = len > 0 ? ey / len : 0.0;
+                misc.MarkerOnTrack = true;
+                (misc.MarkerValueLabel, misc.MarkerFill) = FormatMarkerValue(s, i);
+                return;
+            }
+        }
+
+        misc.MarkerOnTrack = false;
+        misc.MarkerValueLabel = "—";
+        misc.MarkerFill = Brushes.Gray;
+    }
+
+    private static MapPixelRect? ToMapPixelRect(SKRect? rect) =>
+        rect is { } r ? new MapPixelRect(r.Left, r.Top, r.Width, r.Height) : null;
+
+    private (string Label, IBrush Fill) FormatMarkerValue(int segmentIndex, int edgeIndex)
+    {
+        var overlay = currentOverlay;
+        if (overlay is null) return ("—", Brushes.Gray);
+        if (segmentIndex < 0 || segmentIndex >= overlay.SegmentPairValues.Count) return ("—", Brushes.Gray);
+        var values = overlay.SegmentPairValues[segmentIndex];
+        if (edgeIndex < 0 || edgeIndex >= values.Length) return ("—", Brushes.Gray);
+        var value = values[edgeIndex];
+        if (!double.IsFinite(value)) return ("—", Brushes.Gray);
+        var sk = TrackMapRenderer.OverlayColorFor(overlay, value);
+        IBrush fill = new SolidColorBrush(Color.FromRgb(sk.Red, sk.Green, sk.Blue));
+        return ($"{FormatScale(value)} {overlay.Unit}", fill);
+    }
+
+    // Same rules as TrackMapRenderer.FormatScale (private there).
+    private static string FormatScale(double value)
+    {
+        if (!double.IsFinite(value))
+            return "–";
+        var abs = Math.Abs(value);
+        var format = abs >= 100 ? "0" : "0.0";
+        return value.ToString(format, CultureInfo.InvariantCulture);
     }
 }
