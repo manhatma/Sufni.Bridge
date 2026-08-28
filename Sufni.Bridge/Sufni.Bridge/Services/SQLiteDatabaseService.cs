@@ -1078,6 +1078,24 @@ public class SqLiteDatabaseService : IDatabaseService
         return rows.Select(r => r.CombinedId).ToHashSet();
     }
 
+    private class SampleRateRow
+    {
+        [Column("session_id")] public Guid SessionId { get; set; }
+        [Column("sample_rate")] public int SampleRate { get; set; }
+    }
+
+    public async Task<Dictionary<Guid, int>> GetSampleRatesAsync()
+    {
+        await Initialization;
+        // Scalar columns only — the wide session_cache row carries tens of MB of SVG.
+        var rows = await connection.QueryAsync<SampleRateRow>(
+            "SELECT session_id, sample_rate FROM session_cache WHERE sample_rate > 0");
+        var rates = new Dictionary<Guid, int>(rows.Count);
+        foreach (var row in rows)
+            rates[row.SessionId] = row.SampleRate;
+        return rates;
+    }
+
     public async Task PutCombinedSourcesAsync(Guid combinedId, List<Guid> sourceIds)
     {
         await Initialization;

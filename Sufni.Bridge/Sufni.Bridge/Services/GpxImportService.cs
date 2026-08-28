@@ -55,6 +55,10 @@ public class GpxImportService : IGpxImportService
         var allSessions = await databaseService.GetSessionsAsync();
         var byId = allSessions.ToDictionary(s => s.Id);
         var combinedIds = await databaseService.GetAllCombinedIdsAsync();
+        // A cropped recording contributes only its cropped span to a combined session, so the
+        // wall-clock windows need its sample rate to convert the crop's sample indices to seconds.
+        var sampleRates = await databaseService.GetSampleRatesAsync();
+        double RateFor(Guid id) => sampleRates.TryGetValue(id, out var r) ? r : 0;
 
         var assignedNames = new List<string>();
         var assignedIds = new List<Guid>();
@@ -62,7 +66,7 @@ public class GpxImportService : IGpxImportService
         foreach (var session in candidates)
         {
             if (session.Track is not null) continue;
-            if (!await OverlapsTrackAsync(session, track.StartTimeMs, track.EndTimeMs, byId, combinedIds))
+            if (!await OverlapsTrackAsync(session, track.StartTimeMs, track.EndTimeMs, byId, combinedIds, RateFor))
                 continue;
 
             session.Track = track.Id;
@@ -74,7 +78,8 @@ public class GpxImportService : IGpxImportService
         var intervals = new List<WallClockSlice>();
         foreach (var sessionId in assignedIds)
         {
-            var slices = await TrackTimeline.FlattenAsync(sessionId, databaseService, byId, combinedIds);
+            var slices = await TrackTimeline.FlattenAsync(
+                sessionId, databaseService.GetCombinedSourcesAsync, byId, combinedIds, sampleRateFor: RateFor);
             intervals.AddRange(slices);
         }
 
@@ -104,9 +109,11 @@ public class GpxImportService : IGpxImportService
         long trackStartMs,
         long trackEndMs,
         Dictionary<Guid, Session> byId,
-        HashSet<Guid> combinedIds)
+        HashSet<Guid> combinedIds,
+        Func<Guid, double> sampleRateFor)
     {
-        var slices = await TrackTimeline.FlattenAsync(session.Id, databaseService, byId, combinedIds);
+        var slices = await TrackTimeline.FlattenAsync(
+            session.Id, databaseService.GetCombinedSourcesAsync, byId, combinedIds, sampleRateFor: sampleRateFor);
         if (slices.Count == 0)
         {
             if (session.Timestamp is null) return false;

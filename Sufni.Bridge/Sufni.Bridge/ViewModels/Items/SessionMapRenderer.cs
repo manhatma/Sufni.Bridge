@@ -18,10 +18,14 @@ namespace Sufni.Bridge.ViewModels.Items;
 
 internal sealed class SessionMapRenderer
 {
-    private const int PreviewWidth = 400;
-    private const int PreviewHeight = 180;
-    private const int FullWidth = 800;
-    private const int FullHeight = 500;
+    // The summary preview now fills the space above RUN DATA, so it is rendered close to that
+    // aspect (~393x340 pt on an iPhone 15) instead of the old letterbox strip.
+    private const int PreviewWidth = 700;
+    private const int PreviewHeight = 600;
+    // Portrait: the Misc map fills the screen below the metric dropdown (~393x645 pt on an
+    // iPhone 15 Pro), so it is rendered at that aspect and fitted with Stretch=Uniform.
+    private const int FullWidth = 620;
+    private const int FullHeight = 1000;
     private const int ZoomDebounceMs = 280;
 
     private readonly SessionViewModel viewModel;
@@ -261,75 +265,42 @@ internal sealed class SessionMapRenderer
         IDatabaseService databaseService,
         TelemetryData? fullTelemetry)
     {
-        var sourceIds = await databaseService.GetCombinedSourcesAsync(session.Id);
+        // Flatten first: this used to walk only one level of combined sources and treat each source
+        // as one contiguous wall-clock block. For a session combined from combined sessions that
+        // block covers just the first few runs, and every track after it fell outside the window
+        // and vanished from the map.
+        var allSessions = await databaseService.GetSessionsAsync();
+        var byId = allSessions.ToDictionary(s => s.Id);
+        var combinedIds = await databaseService.GetAllCombinedIdsAsync();
+        var rate = fullTelemetry?.SampleRate ?? 0;
+        // Per-leaf rate from the cache, falling back to this session's own rate: every recording on
+        // one DAQ shares it, so the fallback is right whenever a leaf was never cached.
+        var cachedRates = await databaseService.GetSampleRatesAsync();
+        var flattened = await TrackTimeline.FlattenAsync(
+            session.Id, databaseService.GetCombinedSourcesAsync, byId, combinedIds,
+            sessionStartSeconds: 0,
+            sampleRateFor: id => cachedRates.TryGetValue(id, out var r) && r > 0 ? r : rate);
+
         if (!ShouldApplyCrop(session, fullTelemetry))
+            return flattened;
+
+        // The outer session carries its own crop. Keep the part of each flattened window that
+        // survives it, and rebase the session-time offsets on the crop's start.
+        var cropStartSec = (session.CropStartSample ?? 0) / (double)rate;
+        var cropEndSec = (session.CropEndSample ?? FullSampleCount(fullTelemetry)) / (double)rate;
+
+        var slices = new List<WallClockSlice>(flattened.Count);
+        foreach (var slice in flattened)
         {
-            if (sourceIds.Count == 0)
-            {
-                return
-                [
-                    new WallClockSlice(
-                        (long)(session.Timestamp ?? 0) * 1000,
-                        (long)(session.DurationSeconds ?? 0) * 1000,
-                        0)
-                ];
-            }
-
-            var allSessionsUncut = await databaseService.GetSessionsAsync();
-            var byIdUncut = allSessionsUncut.ToDictionary(s => s.Id);
-            var uncut = new List<WallClockSlice>(sourceIds.Count);
-            double offsetUncut = 0;
-            foreach (var sourceId in sourceIds)
-            {
-                if (!byIdUncut.TryGetValue(sourceId, out var source))
-                    continue;
-                var durationSeconds = source.DurationSeconds ?? 0;
-                uncut.Add(new WallClockSlice(
-                    (long)(source.Timestamp ?? 0) * 1000,
-                    (long)durationSeconds * 1000,
-                    offsetUncut));
-                offsetUncut += durationSeconds;
-            }
-
-            return uncut;
-        }
-
-        var rate = fullTelemetry!.SampleRate;
-        var cropStart = session.CropStartSample ?? 0;
-        var cropEnd = session.CropEndSample ?? FullSampleCount(fullTelemetry);
-        var cropStartSec = cropStart / (double)rate;
-        var cropEndSec = cropEnd / (double)rate;
-
-        var sources = new List<(double wallStart, double offsetSec, double durSec)>();
-        if (sourceIds.Count == 0)
-        {
-            sources.Add((session.Timestamp ?? 0, 0, session.DurationSeconds ?? 0));
-        }
-        else
-        {
-            var allSessions = await databaseService.GetSessionsAsync();
-            var byId = allSessions.ToDictionary(s => s.Id);
-            double offset = 0;
-            foreach (var sourceId in sourceIds)
-            {
-                if (!byId.TryGetValue(sourceId, out var source))
-                    continue;
-                var durationSeconds = source.DurationSeconds ?? 0;
-                sources.Add((source.Timestamp ?? 0, offset, durationSeconds));
-                offset += durationSeconds;
-            }
-        }
-
-        var slices = new List<WallClockSlice>(sources.Count);
-        foreach (var (wallStart, offsetSec, durSec) in sources)
-        {
+            var offsetSec = slice.SessionStartSeconds;
+            var durSec = slice.DurationMs / 1000.0;
             var overlapStart = Math.Max(offsetSec, cropStartSec);
             var overlapEnd = Math.Min(offsetSec + durSec, cropEndSec);
             if (overlapEnd <= overlapStart)
                 continue;
 
             slices.Add(new WallClockSlice(
-                (long)((wallStart + (overlapStart - offsetSec)) * 1000),
+                slice.StartUnixMs + (long)((overlapStart - offsetSec) * 1000),
                 (long)((overlapEnd - overlapStart) * 1000),
                 overlapStart - cropStartSec));
         }
@@ -475,7 +446,7 @@ internal sealed class SessionMapRenderer
         if (sessionTrack is null) return;
 
         // The preview always shows the whole track — it is the session overview on another page.
-        var preview = TrackMapRenderer.Render(sessionTrack, overviewTiles, overviewBounds, PreviewWidth, PreviewHeight, highlight: null, overlay: null, drawMarkers: false, plainTrackColor: new SKColor(0xF2, 0x6A, 0x21));
+        var preview = TrackMapRenderer.Render(sessionTrack, overviewTiles, overviewBounds, PreviewWidth, PreviewHeight, highlight: null, overlay: null, drawMarkers: false, plainTrackColor: new SKColor(0xF2, 0x6A, 0x21), drawDirectionArrow: true, haloTrack: true);
         if (token.IsCancellationRequested)
         {
             preview.Dispose();
@@ -586,12 +557,16 @@ internal sealed class SessionMapRenderer
                 var allSessions = await databaseService.GetSessionsAsync();
                 var byId = allSessions.ToDictionary(s => s.Id);
                 var combinedIds = await databaseService.GetAllCombinedIdsAsync();
+                var cachedRates = await databaseService.GetSampleRatesAsync();
+                double RateFor(Guid id) => cachedRates.TryGetValue(id, out var r) ? r : 0;
                 var intervals = new List<WallClockSlice>();
                 foreach (var candidate in allSessions)
                 {
                     if (candidate.Track != track.Id) continue;
                     intervals.AddRange(
-                        await TrackTimeline.FlattenAsync(candidate.Id, databaseService, byId, combinedIds));
+                        await TrackTimeline.FlattenAsync(
+                            candidate.Id, databaseService.GetCombinedSourcesAsync, byId, combinedIds,
+                            sampleRateFor: RateFor));
                 }
 
                 var estimated = TrackTimeOffsetEstimator.Estimate(points, intervals);
