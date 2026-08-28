@@ -203,8 +203,22 @@ public partial class CompareSessionsViewModel : ViewModelBase
             maxTravel, bands, data.CalculateSignalMetrics(type));
     }
 
-    private static List<CompareTableRow> BuildSummaryRows(List<SessionStats?> statsList, List<SessionViewModel> sessions, SuspensionType type)
+    private static List<CompareTableRow> BuildSummaryRows(
+        List<SessionStats?> statsList,
+        List<SessionViewModel> sessions,
+        List<TelemetryData> telemetry,
+        SuspensionType type)
     {
+        var cumulativeTravel = telemetry.Select(data =>
+        {
+            var present = type == SuspensionType.Front ? data.Front.Present : data.Rear.Present;
+            if (!present) return "-";
+            var cum = data.CalculateCumulativeTravel(type);
+            return cum.Length == 0
+                ? "-"
+                : string.Create(CultureInfo.InvariantCulture, $"{cum[^1] / 1000.0:F1}");
+        }).ToList();
+
         var rows = new List<CompareTableRow>
         {
             new("Spring", sessions.Select(s => SessionSetupValues.Get(s,
@@ -235,12 +249,12 @@ public partial class CompareSessionsViewModel : ViewModelBase
             new("LSR [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.Percent(s.Bands.LowSpeedRebound)).ToList()),
             new("LSC [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.Percent(s.Bands.LowSpeedCompression)).ToList()),
             new("HSC [%]", statsList.Select(s => s?.Bands is null ? "-" : SessionFormat.Percent(s.Bands.HighSpeedCompression)).ToList()),
+            // Same rows as the Summary tab's wheel table, in the same order. "Vel crest" and both
+            // Travel signal metrics were dropped there earlier; Compare kept them by accident.
+            new("Cum. Travel [m]", cumulativeTravel),
             new("Vel RMS [mm/s]", statsList.Select(s => s is null ? "-" : s.SignalMetrics.Velocity.Rms.ToString("F1", CultureInfo.InvariantCulture)).ToList()),
-            new("Vel crest", statsList.Select(s => s is null ? "-" : s.SignalMetrics.Velocity.Crest.ToString("F2", CultureInfo.InvariantCulture)).ToList()),
             new("Acc RMS [g]", statsList.Select(s => s is null ? "-" : s.SignalMetrics.Acceleration.Rms.ToString("F1", CultureInfo.InvariantCulture)).ToList()),
             new("Acc crest", statsList.Select(s => s is null ? "-" : s.SignalMetrics.Acceleration.Crest.ToString("F2", CultureInfo.InvariantCulture)).ToList()),
-            new("Travel RMS [mm]", statsList.Select(s => s is null ? "-" : s.SignalMetrics.Travel.Rms.ToString("F1", CultureInfo.InvariantCulture)).ToList()),
-            new("Travel crest", statsList.Select(s => s is null ? "-" : s.SignalMetrics.Travel.Crest.ToString("F2", CultureInfo.InvariantCulture)).ToList()),
         };
         return rows;
     }
@@ -626,9 +640,10 @@ public partial class CompareSessionsViewModel : ViewModelBase
             var balanceMetrics = sessionData.Select((session, index) =>
                 cachedBalanceMetrics[index] ?? session.data.CalculateBalanceMetrics(sessionDisciplines[index])).ToList();
 
-            var frontRows = BuildSummaryRows(frontStatsList, Sessions, SuspensionType.Front);
-            var rearRows = BuildSummaryRows(rearStatsList, Sessions, SuspensionType.Rear);
-            var balanceRows = BuildBalanceRows(balanceMetrics, sessionData.Select(s => s.data).ToList());
+            var telemetry = sessionData.Select(s => s.data).ToList();
+            var frontRows = BuildSummaryRows(frontStatsList, Sessions, telemetry, SuspensionType.Front);
+            var rearRows = BuildSummaryRows(rearStatsList, Sessions, telemetry, SuspensionType.Rear);
+            var balanceRows = BuildBalanceRows(balanceMetrics, telemetry);
 
             Dispatcher.UIThread.Post(() =>
             {

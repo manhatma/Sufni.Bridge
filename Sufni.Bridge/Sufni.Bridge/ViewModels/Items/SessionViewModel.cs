@@ -49,7 +49,8 @@ public partial class SessionViewModel : ItemViewModelBase
     internal SpringPageViewModel SpringPage { get; } = new();
     internal DamperPageViewModel DamperPage { get; } = new();
     internal BalancePageViewModel BalancePage { get; } = new();
-    internal MiscPageViewModel MiscPage { get; } = new();
+    // public: the GPX flyout in SessionView binds the track time offset through it.
+    public MiscPageViewModel MiscPage { get; } = new();
     internal SummaryPageViewModel SummaryPage { get; } = new();
 
     private void ShareBalanceMetricsWithSummary() =>
@@ -70,6 +71,9 @@ public partial class SessionViewModel : ItemViewModelBase
     [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private Bitmap? trackMapPreview;
     [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private bool hasTrack;
     public ObservableCollection<TrackListItem> AvailableTracks { get; } = [];
+
+    // Drives the "no GPX matches this session" hint in the assign flyout.
+    [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private bool hasNoAvailableTracks;
 
     // Read-path state. _pagesPopulated: pages hold a complete render of the current cache row
     // (valid load or rebuild), so a later Loaded() only re-validates the scalar cache meta and
@@ -1105,10 +1109,11 @@ public partial class SessionViewModel : ItemViewModelBase
         try
         {
             var tracks = await databaseService.GetTracksAsync();
+            var candidates = tracks.Where(track => OverlapsSession(track) || track.Id == session.Track).ToList();
             Dispatcher.UIThread.Post(() =>
             {
                 AvailableTracks.Clear();
-                foreach (var track in tracks)
+                foreach (var track in candidates)
                 {
                     var start = DateTimeOffset.FromUnixTimeMilliseconds(track.StartTimeMs).UtcDateTime;
                     var end = DateTimeOffset.FromUnixTimeMilliseconds(track.EndTimeMs).UtcDateTime;
@@ -1119,12 +1124,30 @@ public partial class SessionViewModel : ItemViewModelBase
                         TimeRange = $"{start:HH:mm}–{end:HH:mm} UTC"
                     });
                 }
+
+                HasNoAvailableTracks = AvailableTracks.Count == 0;
             });
         }
         catch (Exception e)
         {
             ErrorMessages.Add($"Could not load tracks: {e.Message}");
         }
+    }
+
+    // Tracks recorded far away from this session are never the right GPX. The DAQ now keeps real
+    // time from the DS3231, so a matching recording overlaps the session window; the tolerance only
+    // covers the residual drift and a rider who started the GPX logger a few minutes early.
+    private const long TrackMatchToleranceMs = 5 * 60 * 1000;
+
+    private bool OverlapsSession(Track track)
+    {
+        if (session.Timestamp is not { } timestamp)
+            return true;
+
+        var sessionStartMs = timestamp * 1000L;
+        var sessionEndMs = sessionStartMs + Math.Max(0, session.DurationSeconds ?? 0) * 1000L;
+        return track.StartTimeMs - TrackMatchToleranceMs <= sessionEndMs &&
+               track.EndTimeMs + TrackMatchToleranceMs >= sessionStartMs;
     }
 
     [RelayCommand]

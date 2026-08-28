@@ -7,6 +7,7 @@
     xmlns:controls="clr-namespace:Sufni.Bridge.Views.Controls"
     xmlns:models="clr-namespace:Sufni.Bridge.Models"
     xmlns:vm="clr-namespace:Sufni.Bridge.ViewModels.SessionPages"
+    xmlns:conv="clr-namespace:Sufni.Bridge.Converters"
     d:DesignHeight="600"
     d:DesignWidth="500"
     x:DataType="vm:MiscPageViewModel"
@@ -17,72 +18,44 @@
     </Design.DataContext>
 
     <UserControl.Styles>
-        <Style Selector="Button.pan-nudge">
-            <Setter Property="MinWidth" Value="30" />
+        <Style Selector="ComboBox.overlay-metric">
+            <Setter Property="Height" Value="30" />
             <Setter Property="MinHeight" Value="30" />
-            <Setter Property="Padding" Value="4,2" />
             <Setter Property="FontSize" Value="12" />
-            <Setter Property="Background" Value="Transparent" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Foreground" Value="{StaticResource SufniForeground}" />
-            <Setter Property="HorizontalContentAlignment" Value="Center" />
-            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Padding" Value="6,0" />
         </Style>
     </UserControl.Styles>
 
     <ScrollViewer Width="{Binding $parent[ScrollViewer].Bounds.Width}" Height="{Binding $parent[ScrollViewer].Bounds.Height}" IsScrollChainingEnabled="False">
         <StackPanel Orientation="Vertical">
-            <ComboBox Margin="0,0,0,8"
-                      HorizontalAlignment="Stretch"
-                      IsVisible="{Binding TrackMap, Converter={x:Static ObjectConverters.IsNotNull}}"
-                      ItemsSource="{Binding OverlayMetrics}"
-                      SelectedItem="{Binding SelectedOverlayMetric, Mode=TwoWay}">
-                <ComboBox.ItemTemplate>
-                    <DataTemplate x:DataType="models:TrackOverlayMetricOption">
-                        <TextBlock Text="{Binding DisplayName}" />
-                    </DataTemplate>
-                </ComboBox.ItemTemplate>
-            </ComboBox>
-            <Image Margin="0,0,0,8"
-                   MinHeight="220"
-                   Stretch="Uniform"
-                   IsVisible="{Binding TrackMap, Converter={x:Static ObjectConverters.IsNotNull}}"
-                   Source="{Binding TrackMap}" />
-            <Grid Margin="0,0,0,8"
-                  ColumnDefinitions="Auto,Auto,*,Auto,Auto,Auto,Auto"
-                  IsVisible="{Binding TrackOffsetAvailable}">
-                <Button Grid.Column="0"
-                        Classes="pan-nudge"
-                        Command="{Binding NudgeTrackOffsetCommand}"
-                        CommandParameter="{x:Static vm:MiscPageViewModel.NudgeMinus5000}"
-                        Content="-5 s" />
-                <Button Grid.Column="1"
-                        Classes="pan-nudge"
-                        Command="{Binding NudgeTrackOffsetCommand}"
-                        CommandParameter="{x:Static vm:MiscPageViewModel.NudgeMinus1000}"
-                        Content="-1 s" />
-                <TextBlock Grid.Column="2"
-                           HorizontalAlignment="Center"
-                           VerticalAlignment="Center"
-                           Text="{Binding TrackTimeOffsetLabel}" />
-                <Button Grid.Column="3"
-                        Classes="pan-nudge"
-                        Command="{Binding NudgeTrackOffsetCommand}"
-                        CommandParameter="{x:Static vm:MiscPageViewModel.NudgePlus1000}"
-                        Content="+1 s" />
-                <Button Grid.Column="4"
-                        Classes="pan-nudge"
-                        Command="{Binding NudgeTrackOffsetCommand}"
-                        CommandParameter="{x:Static vm:MiscPageViewModel.NudgePlus5000}"
-                        Content="+5 s" />
-                <Button Grid.Column="5"
-                        Classes="pan-nudge"
-                        Command="{Binding AutoTrackOffsetCommand}"
-                        Content="Auto" />
-                <Button Grid.Column="6"
-                        Classes="pan-nudge"
-                        Command="{Binding ResetTrackOffsetCommand}"
-                        Content="Reset" />
+            <!--  Dropdown plus map fill the initial screen; the plots below start after one swipe.
+                  MinHeight collapses to 0 without a map, so a session without a GPX track keeps
+                  its plots at the top.  -->
+            <Grid RowDefinitions="auto *" ColumnDefinitions="*" Margin="0,0,0,8">
+                <Grid.MinHeight>
+                    <MultiBinding Converter="{x:Static conv:MapFillHeightConverter.Instance}">
+                        <Binding Path="$parent[ScrollViewer].Bounds.Height" />
+                        <Binding Path="TrackMap" />
+                    </MultiBinding>
+                </Grid.MinHeight>
+                <ComboBox Grid.Row="0"
+                          Margin="0,0,0,8"
+                          Classes="overlay-metric"
+                          HorizontalAlignment="Stretch"
+                          IsVisible="{Binding TrackMap, Converter={x:Static ObjectConverters.IsNotNull}}"
+                          ItemsSource="{Binding OverlayMetrics}"
+                          SelectedItem="{Binding SelectedOverlayMetric, Mode=TwoWay}">
+                    <ComboBox.ItemTemplate>
+                        <DataTemplate x:DataType="models:TrackOverlayMetricOption">
+                            <TextBlock FontSize="12" Text="{Binding DisplayName}" />
+                        </DataTemplate>
+                    </ComboBox.ItemTemplate>
+                </ComboBox>
+                <Image Grid.Row="1"
+                       MinHeight="220"
+                       Stretch="Uniform"
+                       IsVisible="{Binding TrackMap, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Source="{Binding TrackMap}" />
             </Grid>
             <Image IsVisible="{Binding PositionVelocityComparison, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding PositionVelocityComparison}" />
             <Image IsVisible="{Binding FrontPositionVelocity, Converter={x:Static ObjectConverters.IsNotNull}}" Source="{Binding FrontPositionVelocity}" />

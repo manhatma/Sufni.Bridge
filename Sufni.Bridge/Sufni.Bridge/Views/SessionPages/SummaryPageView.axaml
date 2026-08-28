@@ -6,6 +6,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     xmlns:vm="clr-namespace:Sufni.Bridge.ViewModels.SessionPages"
     xmlns:items="clr-namespace:Sufni.Bridge.ViewModels.Items"
+    xmlns:conv="clr-namespace:Sufni.Bridge.Converters"
     d:DesignHeight="600"
     d:DesignWidth="500"
     x:DataType="vm:SummaryPageViewModel"
@@ -61,107 +62,119 @@
 
     <ScrollViewer Width="{Binding $parent[ScrollViewer].Bounds.Width}" Height="{Binding $parent[ScrollViewer].Bounds.Height}" IsScrollChainingEnabled="False">
         <StackPanel Margin="0,0,0,10" Orientation="Vertical" Spacing="12">
-            <Grid RowDefinitions="auto auto auto auto auto auto auto" ColumnDefinitions="*">
-                <TextBlock Grid.Row="0" Classes="summary-title" Text="RUN DATA" />
-                <ItemsControl Grid.Row="1" ItemsSource="{Binding RunDataRows}">
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate x:DataType="vm:SummaryValueRow">
-                            <Grid ColumnDefinitions="110,*">
-                                <Border Grid.Column="0" Classes="summary-cell">
-                                    <TextBlock Text="{Binding Label}" />
-                                </Border>
-                                <Border Grid.Column="1" Classes="summary-cell">
-                                    <TextBlock HorizontalAlignment="Right" Text="{Binding Value}" />
-                                </Border>
+            <!--  Map above RUN DATA. The outer Grid is at least one viewport tall and gives the map
+                  every point RUN DATA does not need, so both together fill the initial screen.
+                  MinHeight keeps the map usable when RUN DATA alone already overflows.  -->
+            <Grid RowDefinitions="* auto" ColumnDefinitions="*">
+                <Grid.MinHeight>
+                    <MultiBinding Converter="{x:Static conv:MapFillHeightConverter.Instance}">
+                        <Binding Path="$parent[ScrollViewer].Bounds.Height" />
+                        <Binding Path="TrackMapPreview" />
+                    </MultiBinding>
+                </Grid.MinHeight>
+                <Image Grid.Row="0"
+                       Margin="0,0,0,12"
+                       MinHeight="180"
+                       Stretch="UniformToFill"
+                       IsVisible="{Binding TrackMapPreview, Converter={x:Static ObjectConverters.IsNotNull}}"
+                       Source="{Binding TrackMapPreview}" />
+                <Grid Grid.Row="1" RowDefinitions="auto auto auto auto auto auto auto" ColumnDefinitions="*">
+                    <TextBlock Grid.Row="0" Classes="summary-title" Text="RUN DATA" />
+                    <ItemsControl Grid.Row="1" ItemsSource="{Binding RunDataRows}">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate x:DataType="vm:SummaryValueRow">
+                                <Grid ColumnDefinitions="110,*">
+                                    <Border Grid.Column="0" Classes="summary-cell">
+                                        <TextBlock Text="{Binding Label}" />
+                                    </Border>
+                                    <Border Grid.Column="1" Classes="summary-cell">
+                                        <TextBlock HorizontalAlignment="Right" Text="{Binding Value}" />
+                                    </Border>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+                    <Grid Grid.Row="2" ColumnDefinitions="110,*">
+                        <Border Grid.Column="0" Classes="summary-cell" Padding="8,2">
+                            <TextBlock Text="Setup" VerticalAlignment="Center" />
+                        </Border>
+                        <Border Grid.Column="1" Classes="summary-cell" Padding="4,2">
+                            <Grid ColumnDefinitions="* auto">
+                                <!-- View mode: setup name + pencil button -->
+                                <TextBlock
+                                    Grid.Column="0"
+                                    IsVisible="{Binding !IsEditingSetup}"
+                                    HorizontalAlignment="Right"
+                                    VerticalAlignment="Center"
+                                    Text="{Binding SelectedSetup.Name}" />
+                                <Button
+                                    Grid.Column="1"
+                                    IsVisible="{Binding !IsEditingSetup}"
+                                    Classes="embedded"
+                                    Command="{Binding ToggleEditSetupCommand}">
+                                    <Image Width="14" Source="{SvgImage /Assets/fa-pen-square.svg}" />
+                                </Button>
+                                <!-- Edit mode: dropdown + refresh button -->
+                                <ComboBox
+                                    Classes="summary-setup"
+                                    Grid.Column="0"
+                                    IsVisible="{Binding IsEditingSetup}"
+                                    HorizontalAlignment="Stretch"
+                                    ItemsSource="{Binding AvailableSetups}"
+                                    SelectedItem="{Binding SelectedSetup}">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate x:DataType="items:SetupViewModel">
+                                            <TextBlock Text="{Binding Name}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
+                                <Button
+                                    Grid.Column="1"
+                                    IsVisible="{Binding IsEditingSetup}"
+                                    Classes="embedded"
+                                    Command="{Binding ChangeSetupCommand}">
+                                    <Image Width="16" Source="{SvgImage /Assets/fa-rotate-right.svg}" />
+                                </Button>
                             </Grid>
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <Grid Grid.Row="2" ColumnDefinitions="110,*">
-                    <Border Grid.Column="0" Classes="summary-cell" Padding="8,2">
-                        <TextBlock Text="Setup" VerticalAlignment="Center" />
-                    </Border>
-                    <Border Grid.Column="1" Classes="summary-cell" Padding="4,2">
-                        <Grid ColumnDefinitions="* auto">
-                            <!-- View mode: setup name + pencil button -->
-                            <TextBlock
-                                Grid.Column="0"
-                                IsVisible="{Binding !IsEditingSetup}"
-                                HorizontalAlignment="Right"
-                                VerticalAlignment="Center"
-                                Text="{Binding SelectedSetup.Name}" />
-                            <Button
-                                Grid.Column="1"
-                                IsVisible="{Binding !IsEditingSetup}"
-                                Classes="embedded"
-                                Command="{Binding ToggleEditSetupCommand}">
-                                <Image Width="14" Source="{SvgImage /Assets/fa-pen-square.svg}" />
-                            </Button>
-                            <!-- Edit mode: dropdown + refresh button -->
-                            <ComboBox
-                                Classes="summary-setup"
-                                Grid.Column="0"
-                                IsVisible="{Binding IsEditingSetup}"
-                                HorizontalAlignment="Stretch"
-                                ItemsSource="{Binding AvailableSetups}"
-                                SelectedItem="{Binding SelectedSetup}">
-                                <ComboBox.ItemTemplate>
-                                    <DataTemplate x:DataType="items:SetupViewModel">
-                                        <TextBlock Text="{Binding Name}" />
-                                    </DataTemplate>
-                                </ComboBox.ItemTemplate>
-                            </ComboBox>
-                            <Button
-                                Grid.Column="1"
-                                IsVisible="{Binding IsEditingSetup}"
-                                Classes="embedded"
-                                Command="{Binding ChangeSetupCommand}">
-                                <Image Width="16" Source="{SvgImage /Assets/fa-rotate-right.svg}" />
-                            </Button>
-                        </Grid>
-                    </Border>
-                </Grid>
-                <Grid Grid.Row="3" ColumnDefinitions="110,*">
-                    <Border Grid.Column="0" Classes="summary-cell">
-                        <TextBlock Text="Discipline" />
-                    </Border>
-                    <Border Grid.Column="1" Classes="summary-cell">
-                        <TextBlock HorizontalAlignment="Right" Text="{Binding SelectedSetup.SelectedDiscipline}" />
-                    </Border>
-                </Grid>
-                <Grid Grid.Row="4" ColumnDefinitions="110,*">
-                    <Border Grid.Column="0" Classes="summary-cell">
-                        <TextBlock Text="{Binding EffectiveHeadAngle.Label}" />
-                    </Border>
-                    <Border Grid.Column="1" Classes="summary-cell">
-                        <TextBlock HorizontalAlignment="Right"
-                                   Text="{Binding EffectiveHeadAngle.Value}" />
-                    </Border>
-                </Grid>
-                <Grid Grid.Row="5" ColumnDefinitions="110,*">
-                    <Border Grid.Column="0" Classes="summary-cell">
-                        <TextBlock Text="Airtime" />
-                    </Border>
-                    <Border Grid.Column="1" Classes="summary-cell">
-                        <TextBlock HorizontalAlignment="Right"
-                                   Text="{Binding Airtime}" />
-                    </Border>
-                </Grid>
-                <Grid Grid.Row="6" ColumnDefinitions="110,*"
-                      IsVisible="{Binding DataQuality, Converter={x:Static ObjectConverters.IsNotNull}}">
-                    <Border Grid.Column="0" Classes="summary-warning-cell">
-                        <TextBlock Text="Data Quality" />
-                    </Border>
-                    <Border Grid.Column="1" Classes="summary-warning-cell">
-                        <TextBlock Text="{Binding DataQuality}" TextWrapping="Wrap" />
-                    </Border>
+                        </Border>
+                    </Grid>
+                    <Grid Grid.Row="3" ColumnDefinitions="110,*">
+                        <Border Grid.Column="0" Classes="summary-cell">
+                            <TextBlock Text="Discipline" />
+                        </Border>
+                        <Border Grid.Column="1" Classes="summary-cell">
+                            <TextBlock HorizontalAlignment="Right" Text="{Binding SelectedSetup.SelectedDiscipline}" />
+                        </Border>
+                    </Grid>
+                    <Grid Grid.Row="4" ColumnDefinitions="110,*">
+                        <Border Grid.Column="0" Classes="summary-cell">
+                            <TextBlock Text="{Binding EffectiveHeadAngle.Label}" />
+                        </Border>
+                        <Border Grid.Column="1" Classes="summary-cell">
+                            <TextBlock HorizontalAlignment="Right"
+                                       Text="{Binding EffectiveHeadAngle.Value}" />
+                        </Border>
+                    </Grid>
+                    <Grid Grid.Row="5" ColumnDefinitions="110,*">
+                        <Border Grid.Column="0" Classes="summary-cell">
+                            <TextBlock Text="Airtime" />
+                        </Border>
+                        <Border Grid.Column="1" Classes="summary-cell">
+                            <TextBlock HorizontalAlignment="Right"
+                                       Text="{Binding Airtime}" />
+                        </Border>
+                    </Grid>
+                    <Grid Grid.Row="6" ColumnDefinitions="110,*"
+                          IsVisible="{Binding DataQuality, Converter={x:Static ObjectConverters.IsNotNull}}">
+                        <Border Grid.Column="0" Classes="summary-warning-cell">
+                            <TextBlock Text="Data Quality" />
+                        </Border>
+                        <Border Grid.Column="1" Classes="summary-warning-cell">
+                            <TextBlock Text="{Binding DataQuality}" TextWrapping="Wrap" />
+                        </Border>
+                    </Grid>
                 </Grid>
             </Grid>
-
-            <Image Height="180"
-                   Stretch="UniformToFill"
-                   IsVisible="{Binding TrackMapPreview, Converter={x:Static ObjectConverters.IsNotNull}}"
-                   Source="{Binding TrackMapPreview}" />
 
             <Grid RowDefinitions="auto auto" ColumnDefinitions="*">
                 <Grid Grid.Row="0" ColumnDefinitions="110,*,*">

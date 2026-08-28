@@ -12,6 +12,16 @@ public partial class SessionView : UserControl
     public SessionView()
     {
         InitializeComponent();
+
+        // The tab pager is scrolled only by OnTabHeaderClicked and by the user's swipe. Controls
+        // inside a page can raise RequestBringIntoView on their own — Avalonia's ComboBox does it
+        // for the selected item when the drop-down opens, and the request bubbles out of the popup
+        // through the ComboBox. The pager's ScrollContentPresenter then answers it and nudges the
+        // page sideways, exposing a strip of the neighbouring tab. Swallowing the request here, one
+        // level below that presenter, stops it. Each page's own ScrollViewer sits deeper in the
+        // tree and still gets its turn first, so vertical bring-into-view keeps working.
+        TabContainer.AddHandler(RequestBringIntoViewEvent, (_, e) => e.Handled = true);
+
         TabHeaders.Items.CollectionChanged += (_, _) =>
         {
             // Only set a default if no tab is currently selected
