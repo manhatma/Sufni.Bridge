@@ -18,7 +18,9 @@ public static class TrackMapRenderer
     private static readonly SKColor AttributionColor = new(0xD0, 0xD0, 0xD0);
     private static readonly SKColor ScaleBackdrop = new(0x15, 0x19, 0x1C, 0xC8);
     private const string Attribution = "Esri, Maxar, Earthstar Geographics";
-    private const int TurboStops = 16;
+    // The overlay uses a stepped Turbo scale: both the colour bar and the track lines are
+    // quantised to these levels, so a line colour maps back to exactly one bar block.
+    private const int OverlayLevels = 12;
 
     public static Bitmap Render(
         SessionTrack track,
@@ -30,7 +32,9 @@ public static class TrackMapRenderer
         TrackOverlay? overlay = null,
         bool drawMarkers = true,
         SKColor? plainTrackColor = null,
-        MapBounds? focusBounds = null)
+        MapBounds? focusBounds = null,
+        bool drawDirectionArrow = false,
+        bool haloTrack = false)
     {
         if (width < 1) width = 1;
         if (height < 1) height = 1;
@@ -63,11 +67,22 @@ public static class TrackMapRenderer
 
         if (!track.IsEmpty && extent.Width > 0 && extent.Height > 0)
         {
-            var strokeWidth = Math.Max(2f, width / 180f);
+            // +50% over the original width: the halo margin below stays absolute, so a thicker
+            // line means proportionally less white and more colour inside the zoom window.
+            var strokeWidth = Math.Max(3f, width / 120f);
             if (overlay is not null)
                 DrawOverlay(canvas, track, overlay, extent, width, height, strokeWidth);
             else
             {
+                if (haloTrack)
+                {
+                    // Thin white casing along the whole track. Half the width of the zoom halo, so
+                    // where both exist the zoomed sub-range still reads as the thicker outline.
+                    using var casing = Stroke(HighlightLine, strokeWidth + HaloWidth(width));
+                    foreach (var segment in track.Segments)
+                        DrawSegment(canvas, segment, extent, width, height, casing, null);
+                }
+
                 using var muted = Stroke(plainTrackColor ?? TrackLine, strokeWidth);
                 foreach (var segment in track.Segments)
                     DrawSegment(canvas, segment, extent, width, height, muted, null);
@@ -80,7 +95,9 @@ public static class TrackMapRenderer
                 // (draw an edge when it overlaps the window) mirrors DrawOverlay/DrawOverlayWindow,
                 // so the halo follows the coloured line exactly — including across sparse GPS gaps,
                 // where a per-point window test can leave a single in-window point and no halo.
-                var haloWidth = strokeWidth + Math.Max(3f, width / 120f);
+                // Thin casing: the white margin only has to separate the line from the imagery.
+                // A wider one swallows the colour that carries the actual information.
+                var haloWidth = strokeWidth + Math.Max(1.5f, width / 240f);
                 using var halo = Stroke(HighlightLine, haloWidth);
                 DrawWindowedEdges(canvas, track, extent, width, height, halo, highlight);
 
@@ -94,6 +111,8 @@ public static class TrackMapRenderer
             }
 
             if (drawMarkers) DrawEndpoints(canvas, track, extent, width, height);
+            if (drawDirectionArrow)
+                DrawDirectionArrows(canvas, track, extent, width, height, plainTrackColor ?? TrackLine);
         }
 
         if (overlay is not null)
@@ -115,6 +134,10 @@ public static class TrackMapRenderer
         stream.Position = 0;
         return new Bitmap(stream);
     }
+
+    // White casing width shared by the plain track line and the direction arrows. Both end up
+    // showing half of it on each side, so the arrow's outline is exactly as thick as the track's.
+    private static float HaloWidth(int width) => Math.Max(0.75f, width / 480f);
 
     private static SKPaint Stroke(SKColor color, float width) => new()
     {
@@ -251,8 +274,18 @@ public static class TrackMapRenderer
             frac = 0.5;
         else
             frac = Math.Clamp((value - min) / (max - min), 0.0, 1.0);
-        var color = turbo.GetColor(frac);
+        var color = turbo.GetColor(LevelCenter(frac));
         return new SKColor(color.R, color.G, color.B);
+    }
+
+    // Maps a 0..1 fraction to the centre of its quantisation level, so ColorFor and the colour
+    // bar pick the same 12 colours.
+    private static double LevelCenter(double frac)
+    {
+        var level = (int)(frac * OverlayLevels);
+        if (level >= OverlayLevels) level = OverlayLevels - 1;
+        if (level < 0) level = 0;
+        return (level + 0.5) / OverlayLevels;
     }
 
     private static void DrawColorBar(SKCanvas canvas, TrackOverlay overlay, int width)
@@ -273,16 +306,20 @@ public static class TrackMapRenderer
         var margin = Math.Max(8f, width / 50f);
         var gap = Math.Max(6f, width / 80f);
         var barHeight = Math.Max(8f, width / 70f);
+
+        // Bar and both labels together occupy the left half of the map; the right half stays clear
+        // of the legend so the track keeps room.
         var barLeft = margin + minWidth + gap;
-        var barRight = width - margin - maxWidth - gap;
-        if (barRight - barLeft < 24f)
+        var barLength = width * 0.5f - margin - minWidth - maxWidth - 2f * gap;
+        if (barLength < 24f)
             return;
+        var barRight = barLeft + barLength;
 
         var barTop = margin;
         var backdrop = new SKRect(
             margin - 4f,
             barTop - 4f,
-            width - margin + 4f,
+            barRight + gap + maxWidth + 4f,
             barTop + barHeight + 4f);
         using var backdropPaint = new SKPaint
         {
@@ -292,35 +329,128 @@ public static class TrackMapRenderer
         };
         canvas.DrawRoundRect(backdrop, 4f, 4f, backdropPaint);
 
+        // Discrete blocks instead of a gradient: a colour read off the track can be matched to one
+        // block, which a continuous ramp does not allow.
         var turbo = new ScottPlot.Colormaps.Turbo();
-        var colors = new SKColor[TurboStops];
-        var positions = new float[TurboStops];
-        for (var i = 0; i < TurboStops; i++)
+        using var blockPaint = new SKPaint { IsAntialias = false, Style = SKPaintStyle.Fill };
+        for (var i = 0; i < OverlayLevels; i++)
         {
-            var frac = i / (float)(TurboStops - 1);
-            var color = turbo.GetColor(frac);
-            colors[i] = new SKColor(color.R, color.G, color.B);
-            positions[i] = frac;
+            var color = turbo.GetColor((i + 0.5) / OverlayLevels);
+            blockPaint.Color = new SKColor(color.R, color.G, color.B);
+            var left = barLeft + barLength * i / OverlayLevels;
+            var right = barLeft + barLength * (i + 1) / OverlayLevels;
+            // Half a pixel of overlap keeps hairline gaps out of the bar on fractional widths.
+            canvas.DrawRect(left, barTop, right - left + 0.5f, barHeight, blockPaint);
         }
-
-        var barRect = new SKRect(barLeft, barTop, barRight, barTop + barHeight);
-        using var shader = SKShader.CreateLinearGradient(
-            new SKPoint(barRect.Left, barRect.MidY),
-            new SKPoint(barRect.Right, barRect.MidY),
-            colors,
-            positions,
-            SKShaderTileMode.Clamp);
-        using var barPaint = new SKPaint
-        {
-            IsAntialias = true,
-            Shader = shader,
-            Style = SKPaintStyle.Fill
-        };
-        canvas.DrawRoundRect(barRect, 2f, 2f, barPaint);
 
         var textY = barTop + barHeight - (barHeight - textSize) * 0.35f;
         canvas.DrawText(minLabel, margin, textY, textPaint);
         canvas.DrawText(maxLabel, barRight + gap, textY, textPaint);
+    }
+
+    // One arrow per segment, at half of that segment's travelled distance, pointing the way the
+    // rider went. A segment is one sub-session (one WallClockSlice), so a combined session gets an
+    // arrow per run instead of a single one for the whole set. Distance-based rather than
+    // time-based so a long stop does not drag the marker onto the spot where the rider stood still.
+    private static void DrawDirectionArrows(
+        SKCanvas canvas,
+        SessionTrack track,
+        MapBounds extent,
+        int width,
+        int height,
+        SKColor fill)
+    {
+        var size = Math.Max(5f, width / 48f);
+        var casingWidth = HaloWidth(width);
+        foreach (var segment in track.Segments)
+            DrawSegmentArrow(canvas, segment, extent, width, height, size, fill, casingWidth);
+    }
+
+    private static void DrawSegmentArrow(
+        SKCanvas canvas,
+        TrackSegment segment,
+        MapBounds extent,
+        int width,
+        int height,
+        float size,
+        SKColor fill,
+        float casingWidth)
+    {
+        static double EdgeLength(TrackSegment s, int i)
+        {
+            var dx = s.X[i + 1] - s.X[i];
+            var dy = s.Y[i + 1] - s.Y[i];
+            return Math.Sqrt(dx * dx + dy * dy);
+        }
+
+        var total = 0.0;
+        for (var i = 0; i + 1 < segment.X.Length; i++)
+            total += EdgeLength(segment, i);
+        if (total <= 0.0)
+            return;
+
+        var target = total * 0.5;
+        var walked = 0.0;
+        for (var i = 0; i + 1 < segment.X.Length; i++)
+        {
+            var length = EdgeLength(segment, i);
+            if (length <= 0.0)
+                continue;
+            if (walked + length >= target)
+            {
+                var f = (target - walked) / length;
+                var dx = segment.X[i + 1] - segment.X[i];
+                var dy = segment.Y[i + 1] - segment.Y[i];
+                ToPixel(segment.X[i] + dx * f, segment.Y[i] + dy * f, extent, width, height, out var px, out var py);
+                ToPixel(segment.X[i], segment.Y[i], extent, width, height, out var ax, out var ay);
+                ToPixel(segment.X[i + 1], segment.Y[i + 1], extent, width, height, out var bx, out var by);
+                DrawArrowHead(canvas, px, py, bx - ax, by - ay, size, fill, casingWidth);
+                return;
+            }
+
+            walked += length;
+        }
+    }
+
+    // Arrowhead with a notched back — the shape used on trail maps. Filled in the track colour and
+    // cased in white: the white is stroked first and the fill painted over it, so the casing sits
+    // outside the shape instead of eating into it.
+    private static void DrawArrowHead(
+        SKCanvas canvas, float cx, float cy, float dx, float dy, float size, SKColor fill, float casingWidth)
+    {
+        var length = MathF.Sqrt(dx * dx + dy * dy);
+        if (length <= 0.0001f)
+            return;
+
+        var ux = dx / length;
+        var uy = dy / length;
+        var nx = -uy;
+        var ny = ux;
+
+        SKPoint At(float along, float across) =>
+            new(cx + ux * along + nx * across, cy + uy * along + ny * across);
+
+        using var path = new SKPath();
+        // Blunt head: wider than long (1.24 x 1.70 in units of size), matching a trail-map arrow.
+        // A longer, narrower head reads as a pointer and draws more attention than it should.
+        path.MoveTo(At(size * 0.62f, 0f));
+        path.LineTo(At(-size * 0.62f, size * 0.85f));
+        path.LineTo(At(-size * 0.30f, 0f));
+        path.LineTo(At(-size * 0.62f, -size * 0.85f));
+        path.Close();
+
+        using var casing = new SKPaint
+        {
+            IsAntialias = true,
+            Color = SKColors.White,
+            Style = SKPaintStyle.Stroke,
+            StrokeWidth = casingWidth,
+            StrokeJoin = SKStrokeJoin.Round,
+            StrokeCap = SKStrokeCap.Round
+        };
+        using var body = new SKPaint { IsAntialias = true, Color = fill, Style = SKPaintStyle.Fill };
+        canvas.DrawPath(path, casing);
+        canvas.DrawPath(path, body);
     }
 
     private static string FormatScale(double value)
