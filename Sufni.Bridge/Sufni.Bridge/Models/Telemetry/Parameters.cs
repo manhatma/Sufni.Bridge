@@ -216,14 +216,19 @@ public static class Parameters
     // Acceleration is the second derivative of travel; its noise gain ∝ ω². The
     // velocity-tuned WH (order 3, λ=11) leaves enough 30–93 Hz content that, when
     // differentiated a second time, produces unphysical g-peaks (~95 g rear in active
-    // riding). Pre-smoothing the velocity with this stronger WH (cutoff ≈29 Hz @ 860 SPS)
-    // places the effective bandwidth just below the suspension's mechanical response
-    // (~30–40 Hz) — preserves real impact peaks (10–25 Hz fundamental) while suppressing
-    // residual differentiation noise.
-    public const int WhAccelOrder = 3;
-    public const double WhAccelLambda = 10000.0;
+    // riding). Pre-smoothing the velocity with this stronger WH suppresses that residual
+    // differentiation noise. Order 5 with a −3 dB cutoff at 32 Hz (set in Hz, so identical at
+    // every sample rate) gives |H| = 0.996 @ 20 Hz, 0.966 @ 25 Hz, 0.821 @ 30 Hz, 0.208 @ 40 Hz,
+    // 0.005 @ 60 Hz: real impact peaks (10–25 Hz fundamental) pass almost unattenuated, while the
+    // stopband is at least as strong as before. The former order 3, λ = 10000 filter (−3 dB
+    // ≈ 27 Hz) cut them: 0.912 @ 20 Hz, 0.731 @ 25 Hz (0.141 @ 40 Hz, 0.015 @ 60 Hz), so the
+    // displayed g-peaks were systematically too low. Corpus (356 sessions, 2026-07-26): session
+    // peak g rises by median 16 % front / 21 % rear (p95 23 % / 30 %). A 40 Hz cutoff was also
+    // tested and rejected: +33 % median, rear p95 116 g, i.e. residual noise above 30 Hz returns.
+    public const int WhAccelOrder = 5;
+    public const double WhAccelCutoffHz = 32.0;
 
-    // Sample rate the λ constants above were calibrated at (ADS1115 continuous mode, 860 SPS).
+    // Sample rate the velocity λ constant above was calibrated at (ADS1115 continuous mode, 860 SPS).
     public const double WhReferenceSampleRate = 860.0;
 
     // The WH smoother operates on sample indices, so a fixed λ fixes the cutoff in f/fs and the
@@ -234,7 +239,7 @@ public static class Parameters
         sampleRate > 0 ? WhLambda * Math.Pow(sampleRate / WhReferenceSampleRate, 2.0 * WhOrder) : WhLambda;
 
     public static double WhAccelLambdaFor(double sampleRate) =>
-        sampleRate > 0 ? WhAccelLambda * Math.Pow(sampleRate / WhReferenceSampleRate, 2.0 * WhAccelOrder) : WhAccelLambda;
+        WhLambdaForCutoff(WhAccelCutoffHz, sampleRate > 0 ? sampleRate : WhReferenceSampleRate, WhAccelOrder);
 
     // Exact WH λ for a desired −3 dB cutoff. The WH amplitude response for order p is
     //   H(ω) = 1 / (1 + λ·(2·sin(ω/2))^(2p)),  ω = 2π·f/f_s,

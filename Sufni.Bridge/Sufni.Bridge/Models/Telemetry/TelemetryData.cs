@@ -2441,7 +2441,8 @@ public class TelemetryData
 
     #region Spectrum / balance metrics
 
-    // Welch's method: Hanning window, 50% overlap, averaged across segments.
+    // Welch's method: periodic Hann window (the DFT-even form standard for spectral estimation),
+    // 50% overlap, averaged across segments.
     // Returns (frequencies in Hz, single-sided amplitude in mm). Empty arrays if signal is too short.
     public static TravelSpectrum ComputeWelchSpectrum(double[] signal, int sampleRate, int segLen = 8192)
     {
@@ -2452,7 +2453,7 @@ public class TelemetryData
         if ((segLen & 1) != 0) segLen--;
         if (segLen < 64) return new TravelSpectrum([], []);
 
-        var window = Window.Hann(segLen);
+        var window = Window.HannPeriodic(segLen);
         double winSum = 0;
         for (int i = 0; i < segLen; i++) winSum += window[i];
 
@@ -2499,8 +2500,11 @@ public class TelemetryData
 
     // Welch cross-spectrum + per-axis auto-spectra computed in a single pass with the
     // same windowing/segmentation as ComputeWelchSpectrum. Returns averaged Pxx, Pyy
-    // (real, single-sided power) and the complex cross spectrum Pxy. Empty arrays if
-    // signals are too short or mismatched.
+    // (real, single-sided power spectral density in mm²/Hz) and the complex cross spectral
+    // density Pxy. Scaled by 2/(fs·S2), S2 = Σw², so IntegrateBand over a band yields the signal
+    // variance in that band. Every current consumer uses ratios only (coherence, band dB, modal
+    // split), which are independent of the scale. Empty arrays if signals are too short or
+    // mismatched.
     public static (double[] Freqs, double[] Pxx, double[] Pyy, Complex[] Pxy) ComputeWelchCrossSpectrum(
         double[] x, double[] y, int sampleRate, int segLen = 8192)
     {
@@ -2518,9 +2522,9 @@ public class TelemetryData
         if ((segLen & 1) != 0) segLen--;
         if (segLen < 64 || segLen + segLen / 2 > n) return ([], [], [], []);
 
-        var window = Window.Hann(segLen);
-        double winSum = 0;
-        for (int i = 0; i < segLen; i++) winSum += window[i];
+        var window = Window.HannPeriodic(segLen);
+        double winSumSq = 0;
+        for (int i = 0; i < segLen; i++) winSumSq += window[i] * window[i];
 
         int step = segLen / 2;
         int bins = segLen / 2;
@@ -2555,7 +2559,7 @@ public class TelemetryData
         }
         if (segCount == 0) return ([], [], [], []);
 
-        double powerScale = 2.0 / (winSum * winSum);
+        double powerScale = 2.0 / (sampleRate * winSumSq);
         double dF = (double)sampleRate / segLen;
         var freqs = new double[bins];
         for (int k = 0; k < bins; k++)
