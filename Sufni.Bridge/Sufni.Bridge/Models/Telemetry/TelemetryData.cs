@@ -2849,6 +2849,37 @@ public class TelemetryData
             return ComputeWelchCrossSpectrum(x, y, SampleRate, segLen);
         });
 
+    /// <summary>
+    /// Magnitude-squared coherence that two UNCORRELATED signals exceed with probability
+    /// <paramref name="alpha"/> in the memoized front/rear cross-spectrum. Coherence estimated
+    /// from few Welch segments is strongly biased upward: for independent Gaussian signals
+    /// P(γ̂² > c) = (1 − c)^(n_d − 1), with n_d the number of independent averages, so the
+    /// level is γ²_α = 1 − α^(1/(n_d − 1)). Overlapping segments are not independent; n_d follows
+    /// Welch's variance reduction for the actual window and 50 % overlap,
+    /// n_d = K / (1 + 2·ρ²·(K − 1)/K), ρ = Σ w[i]·w[i+step] / Σ w² (Hann: ρ² ≈ 0.028).
+    /// Examples: K = 3 → 0.80, K = 5 → 0.55, K = 10 → 0.30, K = 50 → 0.06. Returns 1 when the
+    /// spectrum is unavailable or has a single segment (no coherence is significant then).
+    /// </summary>
+    internal double CoherenceSignificanceLevel(double alpha = 0.05) =>
+        Memo($"coherenceSignificance/{alpha}", () =>
+        {
+            var (cf, _, _, _) = GetCrossSpectrum();
+            if (cf.Length == 0) return 1.0;
+            int segLen = 2 * cf.Length;
+            int step = segLen / 2;
+            int n = Math.Min(Front.Travel.Length, Rear.Travel.Length);
+            int k = (n - segLen) / step + 1;
+            if (k < 2) return 1.0;
+
+            var window = Window.HannPeriodic(segLen);
+            double s2 = 0, lagged = 0;
+            for (int i = 0; i < segLen; i++) s2 += window[i] * window[i];
+            for (int i = 0; i + step < segLen; i++) lagged += window[i] * window[i + step];
+            double rho = lagged / s2;
+            double nd = k / (1.0 + 2.0 * rho * rho * (k - 1) / k);
+            return nd > 1.0 ? 1.0 - Math.Pow(alpha, 1.0 / (nd - 1.0)) : 1.0;
+        });
+
     #endregion
 
     /// <summary>Front→rear traversal lag (rear lags front by this many samples) with a 0..1
@@ -2872,7 +2903,10 @@ public class TelemetryData
     // to ~0/negative (⇒ "not determinable"), while a real traversal still shows a positive ramp. The
     // old [3, 10] Hz band drifted into the incoherent >6 Hz region, where unwrapping noise fabricated
     // a spurious positive slope (and an implausibly high speed). The coherence floor is the weight
-    // cutoff below which a bin is wrapping noise.
+    // cutoff below which a bin is wrapping noise. It deliberately stays fixed rather than following
+    // CoherenceSignificanceLevel: on short sessions that level leaves only a few sparse bins, and a
+    // single chance-coherent bin then dominates the pair fit (checked on the corpus: a stationary
+    // bounce test became "determinable" at 0.19 s).
     private const double LagPhaseLowHz = 1.0;
     private const double LagPhaseHighHz = 6.0;
     private const double LagCoherenceFloor = 0.3;
