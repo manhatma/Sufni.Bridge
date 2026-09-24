@@ -194,8 +194,19 @@ public static class Parameters
     // episode decays over many samples and crosses repeatedly; the corpus shows 485 of 489
     // candidate bursts consist of exactly two crossings, all of them ordinary signal. Requiring
     // three removes that entire population without touching the real fault, which spans 64
-    // samples. Isolated single-sample outliers are already handled by RejectSingleSampleSpikes.
+    // samples. Isolated single-sample outliers are repaired before smoothing
+    // (SignalConditioning.RepairIsolatedSpikes, see SpikeRepairThresholdLsb).
     public const int GlitchBurstMinSeeds = 3;
+
+    // (LSB) step size above which a sample that jumps away from BOTH neighbours in the same
+    // direction, while the neighbours agree with each other, is repaired as an isolated
+    // one-sample outlier before smoothing. The repair must run on raw travel: after the WH
+    // smoother a one-sample glitch is spread over ~10 samples (a 5 mm glitch becomes ±445 mm/s
+    // across 10 samples at 860 SPS) and the velocity-domain test in RejectSingleSampleSpikes can
+    // no longer find it. For such a peak the step equals the curvature deviation used by the
+    // burst detector, so the same corpus calibration applies: healthy channels peak at p99 =
+    // 501 LSB, and this reuses the burst floor that sits 1.6x above the highest clean channel.
+    public const double SpikeRepairThresholdLsb = GlitchBurstFloorLsb;
 
     // (s) maximum separation used to merge curvature-threshold crossings from the same loss-of-
     // contact episode. Expressing it in time keeps burst grouping invariant across sample rates.

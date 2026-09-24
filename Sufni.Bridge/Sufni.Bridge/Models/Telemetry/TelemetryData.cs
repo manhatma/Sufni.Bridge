@@ -165,7 +165,7 @@ public class TelemetryData
 
     // Increment when velocity processing parameters change (e.g. smoother lambda).
     // Blobs with a lower version are automatically re-processed from Travel arrays on load.
-    public const int CurrentProcessingVersion = 29;
+    public const int CurrentProcessingVersion = 30;
 
     #region Public properties
 
@@ -413,21 +413,46 @@ public class TelemetryData
     /// signal through the polynomial to obtain wheel travel for differentiation. Compared to
     /// smoothing already-mapped wheel travel, this gives the WH filter ~2.5× finer input
     /// resolution, which shortens the LSB plateaus that cause the v≈0 horizontal artefacts.
+    /// Isolated one-sample spikes are repaired first, because the smoother would otherwise
+    /// spread them into a multi-sample velocity artefact. The result is deliberately NOT clamped
+    /// to [0, MaxRearTravel]: clamping before differentiation flattens the signal at top-out and
+    /// bottom-out and so cuts the velocity exactly where the stroke ends.
     /// </summary>
-    private double[] SmoothedRearWheelTravel(double[] shockTravel, WhittakerHendersonSmoother smoother)
+    private double[] SmoothedRearWheelTravel(
+        double[] shockTravel, double travelPerLsb, WhittakerHendersonSmoother smoother)
     {
-        var smoothedShock = smoother.Smooth(shockTravel);
+        var smoothedShock = smoother.Smooth(RepairedShockTravel(shockTravel, travelPerLsb));
         var n = smoothedShock.Length;
         var smoothedWheel = new double[n];
-        var maxRear = Linkage.MaxRearTravel;
         for (var i = 0; i < n; i++)
-        {
-            var w = Linkage.Polynomial.Evaluate(smoothedShock[i]);
-            if (w < 0) w = 0;
-            if (w > maxRear) w = maxRear;
-            smoothedWheel[i] = w;
-        }
+            smoothedWheel[i] = Linkage.Polynomial.Evaluate(smoothedShock[i]);
         return smoothedWheel;
+    }
+
+    private static double[] RepairedShockTravel(double[] shockTravel, double travelPerLsb) =>
+        SignalConditioning.RepairIsolatedSpikes(shockTravel,
+            Parameters.SpikeRepairThresholdLsb * Parameters.ShockTravelPerLsbOrFallback(travelPerLsb));
+
+    private static double[] RepairedForkStroke(double[] forkStroke, double travelPerLsb) =>
+        SignalConditioning.RepairIsolatedSpikes(forkStroke,
+            Parameters.SpikeRepairThresholdLsb * Parameters.ForkTravelPerLsbOrFallback(travelPerLsb));
+
+    /// <summary>
+    /// Front wheel travel for differentiation: spike-repaired fork stroke times the head-angle
+    /// factor, NOT clamped to [0, MaxFrontTravel] (see <see cref="SmoothedRearWheelTravel"/>).
+    /// Falls back to the stored (clamped) wheel travel when no matching fork stroke exists.
+    /// </summary>
+    private double[] FrontWheelTravelForVelocity(double[] wheelTravel, double[]? forkStroke, double travelPerLsb)
+    {
+        var frontCoeff = Math.Sin(Linkage.HeadAngle * Math.PI / 180.0);
+        if (forkStroke is null || forkStroke.Length != wheelTravel.Length || !(frontCoeff > 0))
+            return wheelTravel;
+
+        var repaired = RepairedForkStroke(forkStroke, travelPerLsb);
+        var wheel = new double[repaired.Length];
+        for (var i = 0; i < repaired.Length; i++)
+            wheel[i] = repaired[i] * frontCoeff;
+        return wheel;
     }
 
     /// <summary>
@@ -504,7 +529,9 @@ public class TelemetryData
         return v;
     }
 
-    // Reject isolated 1-sample velocity outliers. Taylor expansion of a smooth signal v(t):
+    // Backstop only: isolated raw-travel outliers are already repaired before smoothing
+    // (SignalConditioning.RepairIsolatedSpikes), because after WH smoothing they are no longer
+    // isolated. Reject isolated 1-sample velocity outliers. Taylor expansion of a smooth signal v(t):
     //   v[i] − ½(v[i-1]+v[i+1])  =  −½·dt²·v''(t) + O(dt⁴)
     // For the velocity signal v(t), v''(t) is d²v/dt² = jerk (NOT acceleration — that
     // would be the case for the position signal). So the deviation equals ½·dt²·|jerk|,
@@ -567,42 +594,35 @@ public class TelemetryData
             Front.ClampedSamples = 0;
             var frontCoeff = Math.Sin(Linkage.HeadAngle * Math.PI / 180.0);
 
-            var lastValidFront = 0.0;
-            var sawValidFront = false;
+            // A NaN (null delegate / failed evaluation) would propagate through the Cholesky
+            // smoother and destroy the entire velocity array. Interpolate across it instead.
+            var stroke = Front.ShockTravel;
             for (var i = 0; i < front.Length; i++)
-            {
-                // Front travel might under/overshoot because of erroneous data
-                // acquisition. Errors might occur mid-ride (e.g. broken electrical
-                // connection due to vibration), so we don't error out, just cap
-                // travel. Errors like these will be obvious on the graphs, and
-                // the affected regions can be filtered by hand.
-                var travel = Front.Calibration!.Evaluate(front[i]);
-                // A NaN (null delegate / failed evaluation) would propagate through the
-                // Cholesky smoother and destroy the entire velocity array. Hold the last
-                // valid sample instead of injecting NaN or an artificial zero-spike.
-                if (double.IsNaN(travel))
-                    travel = lastValidFront;
-                else
-                {
-                    lastValidFront = travel;
-                    sawValidFront = true;
-                }
-                Front.ShockTravel[i] = Math.Clamp(travel, 0, Linkage.MaxFrontStroke ?? 0);
-                var x = travel * frontCoeff;
-                if (x < 0) Front.ClampedSamples++;
-                x = Math.Max(0, x);
-                x = Math.Min(x, Linkage.MaxFrontTravel);
-                Front.Travel[i] = x;
-            }
-
-            if (!sawValidFront)
+                stroke[i] = Front.Calibration!.Evaluate(front[i]);
+            if (!SignalConditioning.FillGapsLinear(stroke))
                 throw new Exception("Front calibration produced no valid samples!");
+
+            // Front travel might under/overshoot because of erroneous data acquisition. Errors
+            // might occur mid-ride (e.g. broken electrical connection due to vibration), so we
+            // don't error out, just cap the stored travel. Errors like these will be obvious on
+            // the graphs, and the affected regions can be filtered by hand. The fork stroke is
+            // kept unclamped, like the rear shock travel, and velocity is derived from the
+            // unclamped wheel travel so top-out does not flatten it.
+            var repairedStroke = RepairedForkStroke(stroke, Front.TravelPerLsb);
+            var wheel = new double[fc];
+            for (var i = 0; i < fc; i++)
+            {
+                var x = repairedStroke[i] * frontCoeff;
+                wheel[i] = x;
+                if (x < 0) Front.ClampedSamples++;
+                Front.Travel[i] = Math.Min(Math.Max(0, x), Linkage.MaxFrontTravel);
+            }
 
             var tbins = Linspace(0, Linkage.MaxFrontTravel, Parameters.TravelHistBins + 1);
             var dt = Digitize(Front.Travel, tbins);
             Front.TravelBins = tbins;
 
-            var v = ComputeVelocity(smoother.Smooth(Front.Travel), SampleRate);
+            var v = ComputeVelocity(smoother.Smooth(wheel), SampleRate);
             Front.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             Front.VelocityBins = vbins;
@@ -630,40 +650,31 @@ public class TelemetryData
             Rear.ShockTravel = new double[rc];
             Rear.ClampedSamples = 0;
 
-            var lastValidRear = 0.0;
-            var sawValidRear = false;
+            // Guard NaN before storing: ShockTravel feeds the Cholesky smoother, where a single
+            // NaN would destroy the whole velocity array. Interpolate across it instead.
+            var shock = Rear.ShockTravel;
             for (var i = 0; i < rear.Length; i++)
-            {
-                // Rear travel might also overshoot the max because of
-                //  a) inaccurately measured leverage ratio
-                //  b) inaccuracies introduced by polynomial fitting
-                // So we just cap it at calculated maximum.
-                var shock = Rear.Calibration!.Evaluate(rear[i]);
-                // Guard NaN before storing: ShockTravel feeds the Cholesky smoother, where
-                // a single NaN would destroy the whole velocity array. Hold last valid.
-                if (double.IsNaN(shock))
-                    shock = lastValidRear;
-                else
-                {
-                    lastValidRear = shock;
-                    sawValidRear = true;
-                }
-                Rear.ShockTravel[i] = shock;
-                var x = Linkage.Polynomial.Evaluate(shock);
-                if (x < 0) Rear.ClampedSamples++;
-                x = Math.Max(0, x);
-                x = Math.Min(x, Linkage.MaxRearTravel);
-                Rear.Travel[i] = x;
-            }
-
-            if (!sawValidRear)
+                shock[i] = Rear.Calibration!.Evaluate(rear[i]);
+            if (!SignalConditioning.FillGapsLinear(shock))
                 throw new Exception("Rear calibration produced no valid samples!");
+
+            // Rear travel might also overshoot the max because of
+            //  a) inaccurately measured leverage ratio
+            //  b) inaccuracies introduced by polynomial fitting
+            // So we just cap the stored travel at calculated maximum.
+            var repairedShock = RepairedShockTravel(shock, Rear.TravelPerLsb);
+            for (var i = 0; i < rc; i++)
+            {
+                var x = Linkage.Polynomial.Evaluate(repairedShock[i]);
+                if (x < 0) Rear.ClampedSamples++;
+                Rear.Travel[i] = Math.Min(Math.Max(0, x), Linkage.MaxRearTravel);
+            }
 
             var tbins = Linspace(0, Linkage.MaxRearTravel, Parameters.TravelHistBins + 1);
             var dt = Digitize(Rear.Travel, tbins);
             Rear.TravelBins = tbins;
 
-            var v = ComputeVelocity(SmoothedRearWheelTravel(Rear.ShockTravel, smoother), SampleRate);
+            var v = ComputeVelocity(SmoothedRearWheelTravel(Rear.ShockTravel, Rear.TravelPerLsb, smoother), SampleRate);
             Rear.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             Rear.VelocityBins = vbins;
@@ -738,10 +749,11 @@ public class TelemetryData
             if (Linkage.MaxFrontTravel > 0 && frontCoeff > 0 &&
                 Front.ShockTravel is not null && Front.ShockTravel.Length == Front.Travel.Length)
             {
-                for (var i = 0; i < Front.ShockTravel.Length; i++)
+                var repairedStroke = RepairedForkStroke(Front.ShockTravel, Front.TravelPerLsb);
+                for (var i = 0; i < repairedStroke.Length; i++)
                 {
                     Front.Travel[i] = Math.Clamp(
-                        Front.ShockTravel[i] * frontCoeff, 0, Linkage.MaxFrontTravel);
+                        repairedStroke[i] * frontCoeff, 0, Linkage.MaxFrontTravel);
                 }
             }
 
@@ -749,7 +761,8 @@ public class TelemetryData
             var dt = Digitize(Front.Travel, tbins);
             Front.TravelBins = tbins;
 
-            var v = ComputeVelocity(smoother.Smooth(Front.Travel), SampleRate);
+            var v = ComputeVelocity(smoother.Smooth(
+                FrontWheelTravelForVelocity(Front.Travel, Front.ShockTravel, Front.TravelPerLsb)), SampleRate);
             Front.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             Front.VelocityBins = vbins;
@@ -784,14 +797,15 @@ public class TelemetryData
             // polynomial, so the corrected intercept-free fit propagates to existing
             // sessions (mirrors the bake in ProcessRecording).
             var maxRear = Linkage.MaxRearTravel;
-            for (var i = 0; i < Rear.ShockTravel.Length; i++)
-                Rear.Travel[i] = Math.Clamp(Linkage.Polynomial.Evaluate(Rear.ShockTravel[i]), 0, maxRear);
+            var repairedShock = RepairedShockTravel(Rear.ShockTravel, Rear.TravelPerLsb);
+            for (var i = 0; i < repairedShock.Length; i++)
+                Rear.Travel[i] = Math.Clamp(Linkage.Polynomial.Evaluate(repairedShock[i]), 0, maxRear);
 
             var tbins = Linspace(0, Linkage.MaxRearTravel, Parameters.TravelHistBins + 1);
             var dt = Digitize(Rear.Travel, tbins);
             Rear.TravelBins = tbins;
 
-            var v = ComputeVelocity(SmoothedRearWheelTravel(Rear.ShockTravel, smoother), SampleRate);
+            var v = ComputeVelocity(SmoothedRearWheelTravel(Rear.ShockTravel, Rear.TravelPerLsb, smoother), SampleRate);
             Rear.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             Rear.VelocityBins = vbins;
@@ -921,7 +935,8 @@ public class TelemetryData
             var dt = Digitize(cropped.Front.Travel, tbins);
             cropped.Front.TravelBins = tbins;
 
-            var v = ComputeVelocity(smoother.Smooth(cropped.Front.Travel), SampleRate);
+            var v = ComputeVelocity(smoother.Smooth(FrontWheelTravelForVelocity(
+                cropped.Front.Travel, cropped.Front.ShockTravel, cropped.Front.TravelPerLsb)), SampleRate);
             cropped.Front.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             cropped.Front.VelocityBins = vbins;
@@ -954,7 +969,7 @@ public class TelemetryData
             var dt = Digitize(cropped.Rear.Travel, tbins);
             cropped.Rear.TravelBins = tbins;
 
-            var v = ComputeVelocity(SmoothedRearWheelTravel(cropped.Rear.ShockTravel, smoother), SampleRate);
+            var v = ComputeVelocity(SmoothedRearWheelTravel(cropped.Rear.ShockTravel, cropped.Rear.TravelPerLsb, smoother), SampleRate);
             cropped.Rear.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             cropped.Rear.VelocityBins = vbins;
@@ -1034,7 +1049,8 @@ public class TelemetryData
             combined.Front.TravelBins = tbins;
 
             // Re-derive velocity from combined travel to avoid discontinuities at session boundaries
-            var v = ComputeVelocity(smoother.Smooth(combined.Front.Travel), first.SampleRate);
+            var v = ComputeVelocity(smoother.Smooth(combined.FrontWheelTravelForVelocity(
+                combined.Front.Travel, combined.Front.ShockTravel, combined.Front.TravelPerLsb)), first.SampleRate);
             combined.Front.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             combined.Front.VelocityBins = vbins;
@@ -1072,7 +1088,7 @@ public class TelemetryData
             combined.Rear.TravelBins = tbins;
 
             // Re-derive velocity from combined travel to avoid discontinuities at session boundaries
-            var v = ComputeVelocity(first.SmoothedRearWheelTravel(combined.Rear.ShockTravel, smoother), first.SampleRate);
+            var v = ComputeVelocity(first.SmoothedRearWheelTravel(combined.Rear.ShockTravel, combined.Rear.TravelPerLsb, smoother), first.SampleRate);
             combined.Rear.Velocity = v;
             var (vbins, dv) = DigitizeVelocity(v, Parameters.VelocityHistStep);
             combined.Rear.VelocityBins = vbins;
