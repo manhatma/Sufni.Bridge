@@ -9,8 +9,10 @@ namespace Sufni.Bridge.Plots;
 /// <summary>
 /// Front/rear cross-spectrum diagnostics on a frequency axis: magnitude-squared coherence γ²(f)
 /// on the left axis and the cross phase φ(f) on a second (right) axis. The body/pitch band
-/// [1 Hz, fSplit] is marked with dotted verticals, and phase is shown only where coherence is high
-/// enough to be meaningful. An anti-phase energy fraction summarises how much of the in-band modal
+/// [1 Hz, fSplit] is marked with dotted verticals. A dashed horizontal line marks the 95 % noise
+/// level of the coherence estimate, which depends on the number of Welch segments (short or cropped
+/// sessions average few segments, and uncorrelated signals then reach high γ² by chance). Phase is
+/// shown only where coherence exceeds both that level and a fixed readability floor. An anti-phase energy fraction summarises how much of the in-band modal
 /// energy lives in the anti-phase (pitch) mode, de-lagged by the front→rear traversal lag τ where
 /// determinable; where τ is not determinable this is an upper bound on the true chassis-pitch
 /// energy fraction.
@@ -19,6 +21,7 @@ public class PitchCoherencePlot(Plot plot, Discipline? discipline) : TelemetryPl
 {
     private const double DisplayMaxHz = 6.0;
     private const double PhaseCoherenceFloor = 0.3;   // below this, cross phase is wrapping noise
+    private static readonly Color NoiseLevelColor = Color.FromHex("#888888");
     private static readonly Color PhaseColor = Color.FromHex("#F4511E");
 
     public override void LoadTelemetryData(TelemetryData telemetryData)
@@ -47,7 +50,8 @@ public class PitchCoherencePlot(Plot plot, Discipline? discipline) : TelemetryPl
         var dispPhase = new List<double>(freqs.Length);
         for (var k = 0; k < freqs.Length; k++)
         {
-            if (freqs[k] < 0.0 || freqs[k] > DisplayMaxHz) continue;
+            // Skip DC: after per-segment mean removal the 0 Hz bin carries no front/rear relation.
+            if (freqs[k] <= 0.0 || freqs[k] > DisplayMaxHz) continue;
             dispF.Add(freqs[k]);
             dispCoh.Add(coherence[k]);
             dispPhase.Add(phaseDeg[k]);
@@ -82,13 +86,29 @@ public class PitchCoherencePlot(Plot plot, Discipline? discipline) : TelemetryPl
         rightAxis.TickLabelStyle.ForeColor = Color.FromHex("#D0D0D0");
         rightAxis.TickLabelStyle.FontSize = 12;
 
-        // Phase only where coherence is high enough to be meaningful; elsewhere the cross phase is
-        // just ±180° wrapping noise. Drawn as dots so no false connectors bridge the masked gaps.
+        // 95 % noise level of γ² for this session's segment count: coherence below the line is
+        // indistinguishable from two unrelated signals.
+        var noiseLevel = telemetryData.CoherenceSignificanceLevel();
+        if (noiseLevel < 1.0)
+        {
+            Plot.Add.HorizontalLine(noiseLevel, 1f, NoiseLevelColor, LinePattern.Dashed);
+            var noiseLabel = Plot.Add.Text("95 % noise", DisplayMaxHz, noiseLevel);
+            noiseLabel.LabelFontSize = 9;
+            noiseLabel.LabelFontColor = Color.FromHex("#AAAAAA");
+            noiseLabel.LabelAlignment = Alignment.LowerRight;
+            noiseLabel.LabelOffsetX = -4;
+            noiseLabel.LabelOffsetY = -2;
+        }
+
+        // Phase only where coherence is significant and high enough to be readable; elsewhere the
+        // cross phase is just ±180° wrapping noise. Drawn as dots so no false connectors bridge the
+        // masked gaps.
+        var phaseFloor = Math.Max(PhaseCoherenceFloor, noiseLevel);
         var phaseF = new List<double>();
         var phaseP = new List<double>();
         for (var k = 0; k < dispF.Count; k++)
         {
-            if (dispCoh[k] < PhaseCoherenceFloor) continue;
+            if (dispCoh[k] < phaseFloor) continue;
             phaseF.Add(dispF[k]);
             phaseP.Add(dispPhase[k]);
         }
@@ -120,8 +140,11 @@ public class PitchCoherencePlot(Plot plot, Discipline? discipline) : TelemetryPl
         var et = TelemetryData.IntegrateBand(freqs, pitchSum, 1.0, fSplit);
         var frac = et > 0 ? ep / et : 0.0;
         // Info box (top-right, over the low-coherence/empty region): anti-phase energy fraction.
+        // Few Welch segments (noise level above the readability floor, i.e. fewer than ~10) make
+        // the cross-spectrum and so the modal split unreliable; say so instead of implying precision.
+        var fewSegments = noiseLevel > PhaseCoherenceFloor;
         var info = Plot.Add.Text(
-            $"anti-phase energy: {frac:0.00}", DisplayMaxHz, 1);
+            $"anti-phase energy: {frac:0.00}{(fewSegments ? " (short, low confidence)" : "")}", DisplayMaxHz, 1);
         info.LabelFontColor = Color.FromHex("#FFD700");
         info.LabelFontSize = 9;
         info.LabelFontName = "Menlo";

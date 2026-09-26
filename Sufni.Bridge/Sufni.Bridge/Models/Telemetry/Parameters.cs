@@ -194,8 +194,19 @@ public static class Parameters
     // episode decays over many samples and crosses repeatedly; the corpus shows 485 of 489
     // candidate bursts consist of exactly two crossings, all of them ordinary signal. Requiring
     // three removes that entire population without touching the real fault, which spans 64
-    // samples. Isolated single-sample outliers are already handled by RejectSingleSampleSpikes.
+    // samples. Isolated single-sample outliers are repaired before smoothing
+    // (SignalConditioning.RepairIsolatedSpikes, see SpikeRepairThresholdLsb).
     public const int GlitchBurstMinSeeds = 3;
+
+    // (LSB) step size above which a sample that jumps away from BOTH neighbours in the same
+    // direction, while the neighbours agree with each other, is repaired as an isolated
+    // one-sample outlier before smoothing. The repair must run on raw travel: after the WH
+    // smoother a one-sample glitch is spread over ~10 samples (a 5 mm glitch becomes ±445 mm/s
+    // across 10 samples at 860 SPS) and the velocity-domain test in RejectSingleSampleSpikes can
+    // no longer find it. For such a peak the step equals the curvature deviation used by the
+    // burst detector, so the same corpus calibration applies: healthy channels peak at p99 =
+    // 501 LSB, and this reuses the burst floor that sits 1.6x above the highest clean channel.
+    public const double SpikeRepairThresholdLsb = GlitchBurstFloorLsb;
 
     // (s) maximum separation used to merge curvature-threshold crossings from the same loss-of-
     // contact episode. Expressing it in time keeps burst grouping invariant across sample rates.
@@ -205,14 +216,19 @@ public static class Parameters
     // Acceleration is the second derivative of travel; its noise gain ∝ ω². The
     // velocity-tuned WH (order 3, λ=11) leaves enough 30–93 Hz content that, when
     // differentiated a second time, produces unphysical g-peaks (~95 g rear in active
-    // riding). Pre-smoothing the velocity with this stronger WH (cutoff ≈29 Hz @ 860 SPS)
-    // places the effective bandwidth just below the suspension's mechanical response
-    // (~30–40 Hz) — preserves real impact peaks (10–25 Hz fundamental) while suppressing
-    // residual differentiation noise.
-    public const int WhAccelOrder = 3;
-    public const double WhAccelLambda = 10000.0;
+    // riding). Pre-smoothing the velocity with this stronger WH suppresses that residual
+    // differentiation noise. Order 5 with a −3 dB cutoff at 32 Hz (set in Hz, so identical at
+    // every sample rate) gives |H| = 0.996 @ 20 Hz, 0.966 @ 25 Hz, 0.821 @ 30 Hz, 0.208 @ 40 Hz,
+    // 0.005 @ 60 Hz: real impact peaks (10–25 Hz fundamental) pass almost unattenuated, while the
+    // stopband is at least as strong as before. The former order 3, λ = 10000 filter (−3 dB
+    // ≈ 27 Hz) cut them: 0.912 @ 20 Hz, 0.731 @ 25 Hz (0.141 @ 40 Hz, 0.015 @ 60 Hz), so the
+    // displayed g-peaks were systematically too low. Corpus (356 sessions, 2026-07-26): session
+    // peak g rises by median 16 % front / 21 % rear (p95 23 % / 30 %). A 40 Hz cutoff was also
+    // tested and rejected: +33 % median, rear p95 116 g, i.e. residual noise above 30 Hz returns.
+    public const int WhAccelOrder = 5;
+    public const double WhAccelCutoffHz = 32.0;
 
-    // Sample rate the λ constants above were calibrated at (ADS1115 continuous mode, 860 SPS).
+    // Sample rate the velocity λ constant above was calibrated at (ADS1115 continuous mode, 860 SPS).
     public const double WhReferenceSampleRate = 860.0;
 
     // The WH smoother operates on sample indices, so a fixed λ fixes the cutoff in f/fs and the
@@ -223,7 +239,7 @@ public static class Parameters
         sampleRate > 0 ? WhLambda * Math.Pow(sampleRate / WhReferenceSampleRate, 2.0 * WhOrder) : WhLambda;
 
     public static double WhAccelLambdaFor(double sampleRate) =>
-        sampleRate > 0 ? WhAccelLambda * Math.Pow(sampleRate / WhReferenceSampleRate, 2.0 * WhAccelOrder) : WhAccelLambda;
+        WhLambdaForCutoff(WhAccelCutoffHz, sampleRate > 0 ? sampleRate : WhReferenceSampleRate, WhAccelOrder);
 
     // Exact WH λ for a desired −3 dB cutoff. The WH amplitude response for order p is
     //   H(ω) = 1 / (1 + λ·(2·sin(ω/2))^(2p)),  ω = 2π·f/f_s,

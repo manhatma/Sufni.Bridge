@@ -56,37 +56,58 @@ public class RawTelemetryData
 
         Front = hasFront ? new ushort[count] : [];
         Rear = hasRear ? new ushort[count] : [];
-        var lastFront = firstFork;
-        var lastRear = firstShock;
         for (var i = 0; i < count; i++)
         {
             var offset = HeaderSize + i * RecordSize;
             if (hasFront)
-            {
-                var value = U16(sstData, offset);
-                if (value == 0xffff)
-                {
-                    FrontDropouts++;
-                    value = lastFront;
-                }
-
-                Front[i] = value;
-                lastFront = value;
-            }
-
+                Front[i] = U16(sstData, offset);
             if (hasRear)
-            {
-                var value = U16(sstData, offset + 2);
-                if (value == 0xffff)
-                {
-                    RearDropouts++;
-                    value = lastRear;
-                }
-
-                Rear[i] = value;
-                lastRear = value;
-            }
+                Rear[i] = U16(sstData, offset + 2);
         }
+
+        FrontDropouts = FillDropouts(Front);
+        RearDropouts = FillDropouts(Rear);
+    }
+
+    /// <summary>
+    /// Replaces dropout records (0xffff) by linear interpolation between the neighbouring valid
+    /// samples; a trailing run holds the last valid value. Holding the last value across every
+    /// gap would create a plateau followed by a step, which differentiation turns into a
+    /// velocity spike about twice as high as the real motion across the gap. The first record
+    /// of a present channel is valid by definition (it decides channel presence).
+    /// Returns the number of replaced samples.
+    /// </summary>
+    private static int FillDropouts(ushort[] samples)
+    {
+        var dropouts = 0;
+        var lastValid = -1;
+        for (var i = 0; i < samples.Length; i++)
+        {
+            if (samples[i] == 0xffff)
+            {
+                dropouts++;
+                continue;
+            }
+
+            if (lastValid >= 0 && i - lastValid > 1)
+            {
+                double from = samples[lastValid];
+                double to = samples[i];
+                var span = i - lastValid;
+                for (var j = lastValid + 1; j < i; j++)
+                    samples[j] = (ushort)Math.Round(from + (to - from) * (j - lastValid) / span);
+            }
+
+            lastValid = i;
+        }
+
+        if (lastValid >= 0)
+        {
+            for (var j = lastValid + 1; j < samples.Length; j++)
+                samples[j] = samples[lastValid];
+        }
+
+        return dropouts;
     }
 
     // Reads the remaining stream content into memory and parses it there — functionally
