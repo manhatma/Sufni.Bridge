@@ -4,9 +4,11 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Diagnostics;
 using System.Globalization;
+using System.IO;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using DynamicData;
@@ -473,6 +475,73 @@ public partial class SessionListViewModel : ItemListViewModelBase
         {
             try { await databaseService!.BackfillDurationAsync(); }
             catch { /* non-critical */ }
+        });
+    }
+
+    [RelayCommand]
+    private async Task ImportGpx()
+    {
+        var filesService = App.Current?.Services?.GetService<IFilesService>();
+        if (filesService is null) return;
+        try
+        {
+            var file = await filesService.OpenGpxFileAsync();
+            if (file is null) return;
+            await using var stream = await file.OpenReadAsync();
+            await ImportGpxStreamAsync(stream, file.Name);
+        }
+        catch (Exception e)
+        {
+            ErrorMessages.Add($"GPX import failed: {e.Message}");
+        }
+    }
+
+    public async Task ImportGpxFromPathAsync(string path)
+    {
+        try
+        {
+            await using var stream = File.OpenRead(path);
+            await ImportGpxStreamAsync(stream, Path.GetFileName(path));
+        }
+        catch (Exception e)
+        {
+            ErrorMessages.Add($"GPX import failed: {e.Message}");
+        }
+    }
+
+    private async Task ImportGpxStreamAsync(Stream stream, string fileName)
+    {
+        var importService = App.Current?.Services?.GetService<IGpxImportService>();
+        Debug.Assert(importService != null, nameof(importService) + " != null");
+        var result = await importService.ImportAsync(stream, fileName);
+        await Dispatcher.UIThread.InvokeAsync(() =>
+        {
+            if (!result.Success)
+            {
+                ErrorMessages.Add(result.Error ?? "GPX import failed");
+                return;
+            }
+
+            foreach (var svm in AllSessionsFlat())
+            {
+                if (result.AssignedSessionIds.Contains(svm.Id))
+                    svm.ApplyTrackId(result.TrackId);
+            }
+
+            var start = DateTimeOffset.FromUnixTimeMilliseconds(result.StartTimeMs).UtcDateTime;
+            var end = DateTimeOffset.FromUnixTimeMilliseconds(result.EndTimeMs).UtcDateTime;
+            var range = $"{start:HH:mm}–{end:HH:mm} UTC";
+            var offsetNote = result.TimeOffsetEstimated
+                ? $" GPS offset: {result.TimeOffsetMs / 1000.0:+0.0;-0.0;0.0} s"
+                : "";
+            if (result.AssignedSessionNames.Count == 0)
+            {
+                Notifications.Add($"Imported \"{result.TrackName}\" ({range}). No matching sessions.{offsetNote}");
+                return;
+            }
+
+            Notifications.Add(
+                $"Imported \"{result.TrackName}\" ({range}). Assigned to: {string.Join(", ", result.AssignedSessionNames)}.{offsetNote}");
         });
     }
 

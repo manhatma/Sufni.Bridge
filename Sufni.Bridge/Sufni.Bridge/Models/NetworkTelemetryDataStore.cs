@@ -67,7 +67,7 @@ public class NetworkTelemetryDataStore : ITelemetryDataStore
             // file listing.
             try
             {
-                await SstTcpClient.SendTime(ipEndPoint, DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+                await SstTcpClient.SendTime(ipEndPoint, DateTimeOffset.UtcNow);
             }
             catch (Exception e)
             {

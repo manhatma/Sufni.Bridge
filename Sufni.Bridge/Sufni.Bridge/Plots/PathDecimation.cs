@@ -54,9 +54,39 @@ internal static class PathDecimation
     /// </summary>
     internal static (double[] Xs, double[] Ys) DecimatePolyline(double[] xs, double[] ys)
     {
+        var (outXs, outYs, _) = DecimatePolylineCore(xs, ys, extras: []);
+        return (outXs, outYs);
+    }
+
+    /// <summary>
+    /// Same RDP as <see cref="DecimatePolyline(double[], double[])"/>, keeping a parallel
+    /// payload array (session-relative times for the track map) aligned with surviving vertices.
+    /// </summary>
+    internal static (double[] Xs, double[] Ys, double[] Ts) DecimatePolyline(
+        double[] xs, double[] ys, double[] ts)
+    {
+        var (outXs, outYs, outExtras) = DecimatePolylineCore(xs, ys, extras: [ts]);
+        return (outXs, outYs, outExtras.Length > 0 ? outExtras[0] : ts);
+    }
+
+    /// <summary>
+    /// Same RDP, keeping session-relative times plus WGS84 lat/lon aligned with surviving vertices.
+    /// </summary>
+    internal static (double[] Xs, double[] Ys, double[] Ts, double[] Lat, double[] Lon) DecimatePolyline(
+        double[] xs, double[] ys, double[] ts, double[] lat, double[] lon)
+    {
+        var (outXs, outYs, outExtras) = DecimatePolylineCore(xs, ys, extras: [ts, lat, lon]);
+        return (outXs, outYs, outExtras[0], outExtras[1], outExtras[2]);
+    }
+
+    private static (double[] Xs, double[] Ys, double[][] Extras) DecimatePolylineCore(
+        double[] xs, double[] ys, double[][] extras)
+    {
         var length = Math.Min(xs.Length, ys.Length);
+        foreach (var extra in extras)
+            length = Math.Min(length, extra.Length);
         if (length == 0)
-            return (xs, ys);
+            return (xs, ys, extras);
 
         // Single pass: finite min/max of both axes, to normalize onto the virtual raster.
         var minX = double.PositiveInfinity;
@@ -75,7 +105,7 @@ internal static class PathDecimation
         }
 
         if (double.IsPositiveInfinity(minX))
-            return (xs, ys); // No finite points at all.
+            return (xs, ys, extras); // No finite points at all.
 
         var rangeX = maxX - minX;
         var rangeY = maxY - minY;
@@ -109,10 +139,13 @@ internal static class PathDecimation
 
         // Nothing dropped — return the original arrays untouched.
         if (keptCount == length)
-            return (xs, ys);
+            return (xs, ys, extras);
 
         var outXs = new double[keptCount];
         var outYs = new double[keptCount];
+        var outExtras = new double[extras.Length][];
+        for (var e = 0; e < extras.Length; e++)
+            outExtras[e] = new double[keptCount];
         var o = 0;
         for (var i = 0; i < length; i++)
         {
@@ -120,10 +153,12 @@ internal static class PathDecimation
             {
                 outXs[o] = xs[i];
                 outYs[o] = ys[i];
+                for (var e = 0; e < extras.Length; e++)
+                    outExtras[e][o] = extras[e][i];
                 o++;
             }
         }
-        return (outXs, outYs);
+        return (outXs, outYs, outExtras);
     }
 
     /// <summary>

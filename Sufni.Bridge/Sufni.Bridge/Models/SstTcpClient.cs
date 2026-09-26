@@ -128,21 +128,27 @@ public static class SstTcpClient
         }
     }
 
-    public static async Task SendTime(IPEndPoint ipEndPoint, long epochUtc)
+    public static async Task SendTime(IPEndPoint ipEndPoint, DateTimeOffset utcNow)
     {
         using Socket client = new(ipEndPoint.AddressFamily, SocketType.Stream, ProtocolType.Tcp);
         await client.ConnectAsync(ipEndPoint);
 
+        var epochUtc = utcNow.ToUnixTimeSeconds();
+        var micros = (uint)(utcNow.UtcDateTime.Ticks % TimeSpan.TicksPerSecond / 10);
+
         var epoch = BitConverter.GetBytes(epochUtc);
+        var usec = BitConverter.GetBytes(micros);
         if (!BitConverter.IsLittleEndian)
         {
             Array.Reverse(epoch);
+            Array.Reverse(usec);
         }
 
-        // Request time sync: [0x07 00 00 00][int64 epoch]
-        var payload = new byte[12];
+        // Request time sync: [0x07 00 00 00][int64 epoch LE][uint32 micros LE]
+        var payload = new byte[16];
         payload[0] = 0x07;
         Buffer.BlockCopy(epoch, 0, payload, 4, 8);
+        Buffer.BlockCopy(usec, 0, payload, 12, 4);
         await client.SendAsync(payload, SocketFlags.None);
 
         // Receive STATUS_TIME_SYNCED (11) ack

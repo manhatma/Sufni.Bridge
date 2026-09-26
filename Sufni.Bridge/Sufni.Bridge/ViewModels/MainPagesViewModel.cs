@@ -47,6 +47,11 @@ public partial class MainPagesViewModel : ViewModelBase
         SetupsPage.MenuItems.Add(new("sync", SyncCommand));
         SessionsPage.MenuItems.Add(new("sync", SyncCommand));
         SessionsPage.MenuItems.Add(new("import", ShowImportPageCommand));
+        SessionsPage.MenuItems.Add(new("gpx import", SessionsPage.ImportGpxCommand));
+
+        var inbox = App.Current?.Services?.GetService<IGpxInboxService>();
+        if (inbox is not null)
+            inbox.FileReceived += OnGpxInboxFileReceived;
 
         SettingsPage.PropertyChanged += (_, args) =>
         {
@@ -184,6 +189,11 @@ public partial class MainPagesViewModel : ViewModelBase
     private void OpenMenuPane()
     {
         IsMenuPaneOpen = true;
+    }
+
+    private void OnGpxInboxFileReceived(object? sender, string path)
+    {
+        Dispatcher.UIThread.Post(() => _ = SessionsPage.ImportGpxFromPathAsync(path));
     }
 
     #endregion

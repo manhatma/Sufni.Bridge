@@ -55,6 +55,12 @@ public interface IDatabaseService
     public Task UpdateLastSyncTimeAsync();
     public Task<List<Guid>> GetCombinedSourcesAsync(Guid combinedId);
     public Task<HashSet<Guid>> GetAllCombinedIdsAsync();
+
+    /// <summary>
+    /// Sample rate per session, read from the cache's scalar columns. Sessions whose cache row
+    /// predates those columns, or that were never cached, are absent — callers must fall back.
+    /// </summary>
+    public Task<Dictionary<Guid, int>> GetSampleRatesAsync();
     public Task PutCombinedSourcesAsync(Guid combinedId, List<Guid> sourceIds);
     public Task DeleteCombinedSourcesAsync(Guid combinedId);
     public Task BackfillDurationAsync();
@@ -67,4 +73,9 @@ public interface IDatabaseService
     public Task<List<DayLabel>> GetDayLabelsAsync();
     public Task PutDayLabelAsync(DayLabel label);
     public Task DeleteDayLabelAsync(string date);
+    public Task<List<Track>> GetTracksAsync();
+    public Task<Track?> GetTrackAsync(Guid id);
+    public Task PutTrackAsync(Track track);
+    public Task DeleteTrackAsync(Guid id);
+    public Task<List<Session>> GetSessionsInRangeAsync(long startMs, long endMs);
 }

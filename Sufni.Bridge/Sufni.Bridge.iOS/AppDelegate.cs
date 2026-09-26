@@ -1,3 +1,5 @@
+using System;
+using System.IO;
 using Avalonia;
 using Avalonia.iOS;
 using Foundation;
@@ -32,6 +34,39 @@ namespace Sufni.Bridge.iOS
         {
             var serviceDiscovery = App.Current?.Services?.GetService<IServiceDiscovery>();
             serviceDiscovery?.StartBrowse(ITelemetryDataStoreService.ServiceType);
+        }
+
+        [Export("application:openURL:options:")]
+        public bool HandleOpenUrl(UIApplication app, NSUrl url, NSDictionary options)
+        {
+            HandleIncomingUrl(url);
+            return true;
+        }
+
+        private static void HandleIncomingUrl(NSUrl url)
+        {
+            var accessing = url.StartAccessingSecurityScopedResource();
+            try
+            {
+                var path = url.Path;
+                if (string.IsNullOrEmpty(path) || !File.Exists(path))
+                    return;
+
+                var dest = Path.Combine(Path.GetTempPath(), Path.GetFileName(path));
+                File.Copy(path, dest, overwrite: true);
+
+                var inbox = App.Current?.Services?.GetService<IGpxInboxService>();
+                inbox?.NotifyFileReceived(dest);
+            }
+            catch (Exception)
+            {
+                // Open-in is best-effort; a missing inbox service means the UI is not ready yet.
+            }
+            finally
+            {
+                if (accessing)
+                    url.StopAccessingSecurityScopedResource();
+            }
         }
     }
 }

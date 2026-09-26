@@ -11,7 +11,7 @@
 
 set -e
 
-UDID="9418F204-D26E-4C72-BF1D-C24EAA601001"  # iPhone 15 Pro, iOS 26.3.1
+UDID="EE697957-6E9A-4FDF-9A5D-AF115B501E10"  # iPhone 15 Pro, iOS 26.5
 BUNDLE="de.nielsbarth.sufnibridge-dev"
 OUT="./screenshots"
 mkdir -p "$OUT"

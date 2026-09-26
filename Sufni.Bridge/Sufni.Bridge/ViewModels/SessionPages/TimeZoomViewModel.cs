@@ -35,6 +35,17 @@ public partial class TimeZoomViewModel : ObservableObject
         _ => 1.0,
     };
 
+    // Lead-in and run-out the track map keeps visible around the zoom window, per window size.
+    // Not simply one window length: a 2 s window covers so little trail that it needs relatively
+    // more context, while a 10 s window already spans a long stretch on its own.
+    public double MapContextSeconds => WindowSeconds switch
+    {
+        Window2Seconds => 2.0,
+        Window5Seconds => 3.0,
+        Window10Seconds => 5.0,
+        _ => 5.0,
+    };
+
     // Per-domain session-overview strips (travel/velocity/acceleration). The TimeZoomControl on each
     // page picks the one matching its page via its MiniMap styled property; all three share the same
     // window state so panning stays in sync across pages.

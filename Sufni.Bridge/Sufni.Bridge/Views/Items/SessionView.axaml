@@ -10,6 +10,7 @@
     xmlns:sessionpages="clr-namespace:Sufni.Bridge.Views.SessionPages"
     xmlns:v="clr-namespace:Sufni.Bridge.Views.Controls"
     xmlns:vm="clr-namespace:Sufni.Bridge.ViewModels.Items"
+    xmlns:pages="clr-namespace:Sufni.Bridge.ViewModels.SessionPages"
     d:DesignHeight="600"
     d:DesignWidth="500"
     x:DataType="vm:SessionViewModel"
@@ -28,6 +29,17 @@
             <Setter Property="MinWidth" Value="0" />
             <Setter Property="MinHeight" Value="0" />
             <Setter Property="Padding" Value="5" />
+        </Style>
+        <Style Selector="Button.pan-nudge">
+            <Setter Property="MinWidth" Value="30" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="Padding" Value="4,2" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Foreground" Value="{StaticResource SufniForeground}" />
+            <Setter Property="HorizontalContentAlignment" Value="Center" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
         </Style>
     </UserControl.Styles>
 
@@ -142,7 +154,7 @@
         <Grid
             Grid.Row="4"
             Margin="10,15,10,5"
-            ColumnDefinitions="auto * auto auto auto auto"
+            ColumnDefinitions="auto * auto auto auto auto auto"
             RowDefinitions="39">
             <Button
                 Grid.Row="0"
@@ -178,6 +190,7 @@
                 VerticalContentAlignment="Center"
                 Command="{Binding ToggleCropPageCommand}"
                 IsVisible="{Binding ShowPdfExportButton}"
+                IsEnabled="{Binding !IsCombinedSession}"
                 Svg.Css=".default { fill: #a0a0a0; }">
                 <Image
                     Width="20"
@@ -185,9 +198,101 @@
                     Source="{SvgImage /Assets/fa-crop.svg}" />
             </Button>
             <Button
-                Name="PdfExportButton"
                 Grid.Row="0"
                 Grid.Column="3"
+                Width="39"
+                Height="39"
+                Margin="0,0,5,0"
+                HorizontalContentAlignment="Center"
+                VerticalContentAlignment="Center"
+                Svg.Css=".default { fill: #a0a0a0; }">
+                <Button.Flyout>
+                    <Flyout FlyoutPresenterClasses="compact" Placement="Top">
+                        <StackPanel Width="240" Margin="6">
+                            <TextBlock Margin="4,2,4,6" FontSize="12" Foreground="#D0D0D0" Text="GPX zuweisen…" />
+                            <ItemsControl ItemsSource="{Binding AvailableTracks}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="vm:TrackListItem">
+                                        <Button HorizontalAlignment="Stretch"
+                                                HorizontalContentAlignment="Left"
+                                                Classes="embedded"
+                                                Command="{Binding $parent[UserControl].((vm:SessionViewModel)DataContext).AssignTrackCommand}"
+                                                CommandParameter="{Binding}">
+                                            <StackPanel>
+                                                <TextBlock FontSize="13" Text="{Binding Name}" />
+                                                <TextBlock FontSize="11" Foreground="#808080" Text="{Binding TimeRange}" />
+                                            </StackPanel>
+                                        </Button>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Margin="4,6,4,0"
+                                       FontSize="11"
+                                       Foreground="#808080"
+                                       IsVisible="{Binding HasNoAvailableTracks}"
+                                       Text="Kein GPX passt zum Zeitraum dieser Session."
+                                       TextWrapping="Wrap" />
+                            <Button Margin="0,6,0,0"
+                                    HorizontalAlignment="Stretch"
+                                    Classes="embedded"
+                                    Command="{Binding UnlinkTrackCommand}"
+                                    Content="Track lösen"
+                                    IsVisible="{Binding HasTrack}" />
+
+                            <!--  GPS offset: manual correction of the residual GPX/SST clock offset.
+                                  Lives here rather than under the Misc map so the map keeps its height.  -->
+                            <StackPanel IsVisible="{Binding MiscPage.TrackOffsetAvailable}">
+                                <Border Height="1" Margin="0,8,0,6" Background="{StaticResource SufniBorderBrush}" />
+                                <TextBlock Margin="4,0,4,4"
+                                           FontSize="12"
+                                           Foreground="#D0D0D0"
+                                           HorizontalAlignment="Center"
+                                           Text="{Binding MiscPage.TrackTimeOffsetLabel}" />
+                                <Grid ColumnDefinitions="*,*,*,*">
+                                    <Button Grid.Column="0"
+                                            Classes="pan-nudge"
+                                            Command="{Binding MiscPage.NudgeTrackOffsetCommand}"
+                                            CommandParameter="{x:Static pages:MiscPageViewModel.NudgeMinus5000}"
+                                            Content="-5 s" />
+                                    <Button Grid.Column="1"
+                                            Classes="pan-nudge"
+                                            Command="{Binding MiscPage.NudgeTrackOffsetCommand}"
+                                            CommandParameter="{x:Static pages:MiscPageViewModel.NudgeMinus1000}"
+                                            Content="-1 s" />
+                                    <Button Grid.Column="2"
+                                            Classes="pan-nudge"
+                                            Command="{Binding MiscPage.NudgeTrackOffsetCommand}"
+                                            CommandParameter="{x:Static pages:MiscPageViewModel.NudgePlus1000}"
+                                            Content="+1 s" />
+                                    <Button Grid.Column="3"
+                                            Classes="pan-nudge"
+                                            Command="{Binding MiscPage.NudgeTrackOffsetCommand}"
+                                            CommandParameter="{x:Static pages:MiscPageViewModel.NudgePlus5000}"
+                                            Content="+5 s" />
+                                </Grid>
+                                <Grid ColumnDefinitions="*,*">
+                                    <Button Grid.Column="0"
+                                            Classes="pan-nudge"
+                                            Command="{Binding MiscPage.AutoTrackOffsetCommand}"
+                                            Content="Auto" />
+                                    <Button Grid.Column="1"
+                                            Classes="pan-nudge"
+                                            Command="{Binding MiscPage.ResetTrackOffsetCommand}"
+                                            Content="Reset" />
+                                </Grid>
+                            </StackPanel>
+                        </StackPanel>
+                    </Flyout>
+                </Button.Flyout>
+                <Image
+                    Width="18"
+                    Height="18"
+                    Source="{SvgImage /Assets/fa-satellite-dish.svg}" />
+            </Button>
+            <Button
+                Name="PdfExportButton"
+                Grid.Row="0"
+                Grid.Column="4"
                 Width="39"
                 Height="39"
                 Margin="0,0,5,0"
@@ -239,7 +344,7 @@
             </Button>
             <Button
                 Grid.Row="0"
-                Grid.Column="4"
+                Grid.Column="5"
                 Width="39"
                 Height="39"
                 Margin="0,0,5,0"
@@ -254,7 +359,7 @@
             <Button
                 Name="DeleteButton"
                 Grid.Row="0"
-                Grid.Column="5"
+                Grid.Column="6"
                 Width="39"
                 Height="39"
                 Margin="0,0,2,0"

@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" height="32" width="32" viewBox="35 18 460 480">
+  <!-- Stylised satellite dish: reflector aimed up-right, feed horn at the focus, two signal arcs. -->
+  <g fill="#a0a0a0">
+    <ellipse cx="190" cy="322" rx="150" ry="92" transform="rotate(45 190 322)" />
+    <circle cx="300" cy="212" r="30" />
+  </g>
+  <g fill="none" stroke="#a0a0a0" stroke-width="30" stroke-linecap="round">
+    <path d="M190 322 L300 212" />
+    <path d="M222 386 L258 462" />
+    <path d="M204 470 L312 470" />
+    <path d="M282.6 113.5 A100 100 0 0 1 398.5 194.6" />
+    <path d="M270.5 44.6 A170 170 0 0 1 467.4 182.5" />
+  </g>
+</svg>

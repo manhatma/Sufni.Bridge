@@ -27,6 +27,28 @@ public class FilesService : IFilesService
         return files.Count == 1 ? files[0] : null;
     }
 
+    public async Task<IStorageFile?> OpenGpxFileAsync()
+    {
+        Debug.Assert(target != null, nameof(target) + " != null");
+
+        var files = await target.StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+        {
+            Title = "GPX importieren",
+            AllowMultiple = false,
+            FileTypeFilter =
+            [
+                new FilePickerFileType("GPX")
+                {
+                    Patterns = ["*.gpx"],
+                    AppleUniformTypeIdentifiers = ["com.topografix.gpx", "public.xml"],
+                    MimeTypes = ["application/gpx+xml", "application/xml", "text/xml"]
+                }
+            ]
+        });
+
+        return files.Count == 1 ? files[0] : null;
+    }
+
     public async Task<IStorageFolder?> OpenDataStoreFolderAsync()
     {
         Debug.Assert(target != null, nameof(target) + " != null");

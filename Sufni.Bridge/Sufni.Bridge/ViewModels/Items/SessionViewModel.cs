@@ -7,6 +7,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using Avalonia;
+using Avalonia.Media.Imaging;
 using Avalonia.Svg.Skia;
 using Avalonia.Threading;
 using CommunityToolkit.Mvvm.Input;
@@ -48,7 +49,8 @@ public partial class SessionViewModel : ItemViewModelBase
     internal SpringPageViewModel SpringPage { get; } = new();
     internal DamperPageViewModel DamperPage { get; } = new();
     internal BalancePageViewModel BalancePage { get; } = new();
-    internal MiscPageViewModel MiscPage { get; } = new();
+    // public: the GPX flyout in SessionView binds the track time offset through it.
+    public MiscPageViewModel MiscPage { get; } = new();
     internal SummaryPageViewModel SummaryPage { get; } = new();
 
     private void ShareBalanceMetricsWithSummary() =>
@@ -63,6 +65,15 @@ public partial class SessionViewModel : ItemViewModelBase
     private SvgImage? _fullFrontTravel, _fullRearTravel, _fullFrontVelocity, _fullRearVelocity, _fullFrontAccel, _fullRearAccel;
     private bool _timeZoomSnapshotTaken;
     private readonly SessionTimeZoomRenderer _timeZoomRenderer;
+    private readonly SessionMapRenderer _mapRenderer;
+
+    [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private Bitmap? trackMap;
+    [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private Bitmap? trackMapPreview;
+    [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private bool hasTrack;
+    public ObservableCollection<TrackListItem> AvailableTracks { get; } = [];
+
+    // Drives the "no GPX matches this session" hint in the assign flyout.
+    [CommunityToolkit.Mvvm.ComponentModel.ObservableProperty] private bool hasNoAvailableTracks;
 
     // Read-path state. _pagesPopulated: pages hold a complete render of the current cache row
     // (valid load or rebuild), so a later Loaded() only re-validates the scalar cache meta and
@@ -398,6 +409,8 @@ public partial class SessionViewModel : ItemViewModelBase
         MiscPage.TimeZoom = _timeZoom;
         _timeZoomRenderer = CreateTimeZoomRenderer();
         _timeZoomRenderer.Subscribe();
+        _mapRenderer = new SessionMapRenderer(this, _timeZoom);
+        _mapRenderer.Subscribe();
     }
 
     public SessionViewModel(Session session, bool fromDatabase)
@@ -417,6 +430,9 @@ public partial class SessionViewModel : ItemViewModelBase
         MiscPage.TimeZoom = _timeZoom;
         _timeZoomRenderer = CreateTimeZoomRenderer();
         _timeZoomRenderer.Subscribe();
+        _mapRenderer = new SessionMapRenderer(this, _timeZoom);
+        _mapRenderer.Subscribe();
+        HasTrack = session.Track is not null;
 
         NotesPage.ForkSettings.PropertyChanged += (_, _) => EvaluateDirtiness();
         NotesPage.ShockSettings.PropertyChanged += (_, _) => EvaluateDirtiness();
@@ -498,6 +514,7 @@ public partial class SessionViewModel : ItemViewModelBase
                 HasProcessedData = IsComplete,
                 CropStartSample = session.CropStartSample,
                 CropEndSample   = session.CropEndSample,
+                DurationSeconds = session.DurationSeconds,
             };
 
             await databaseService.PutSessionAsync(newSession);
@@ -685,6 +702,8 @@ public partial class SessionViewModel : ItemViewModelBase
             // New crop → new analysis data: rebuild zoom state + mini-map and reset the window.
             _analysisData = null;
             _timeZoomRenderer.InitializeTimeZoom();
+            _mapRenderer.Invalidate();
+            _ = _mapRenderer.ReloadAsync();
             IsCropVisible = false;
         }
         catch (Exception e)
@@ -955,6 +974,8 @@ public partial class SessionViewModel : ItemViewModelBase
             {
                 EnsureFullDataLoaded(databaseService);
                 _timeZoomRenderer.InitializeTimeZoomIfNeeded();
+                _ = _mapRenderer.EnsureLoadedAsync();
+                _ = LoadAvailableTracksAsync();
                 PerfLog.Log($"load/reopen {Id}", swTotal.Elapsed.TotalMilliseconds);
                 return;
             }
@@ -1049,6 +1070,8 @@ public partial class SessionViewModel : ItemViewModelBase
             // (Re)initialise the shared time-zoom state and context mini-map. No-ops while the
             // deferred full-data load is still pending — it re-triggers this on completion.
             _timeZoomRenderer.InitializeTimeZoomIfNeeded();
+            _ = _mapRenderer.EnsureLoadedAsync();
+            _ = LoadAvailableTracksAsync();
             PerfLog.Log($"load/total {Id}", swTotal.Elapsed.TotalMilliseconds);
         }
         catch (Exception e)
@@ -1071,5 +1094,107 @@ public partial class SessionViewModel : ItemViewModelBase
     [RelayCommand(CanExecute = nameof(CanExportPdfEssential))]
     private Task ExportPdfEssential() => SessionPdfExporter.ExportAsync(this, essential: true);
 
+    internal void ApplyTrackId(Guid? trackId)
+    {
+        session.Track = trackId;
+        HasTrack = trackId is not null;
+        _mapRenderer.Invalidate();
+        _ = _mapRenderer.ReloadAsync();
+    }
+
+    private async Task LoadAvailableTracksAsync()
+    {
+        var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
+        if (databaseService is null) return;
+        try
+        {
+            var tracks = await databaseService.GetTracksAsync();
+            var candidates = tracks.Where(track => OverlapsSession(track) || track.Id == session.Track).ToList();
+            Dispatcher.UIThread.Post(() =>
+            {
+                AvailableTracks.Clear();
+                foreach (var track in candidates)
+                {
+                    var start = DateTimeOffset.FromUnixTimeMilliseconds(track.StartTimeMs).UtcDateTime;
+                    var end = DateTimeOffset.FromUnixTimeMilliseconds(track.EndTimeMs).UtcDateTime;
+                    AvailableTracks.Add(new TrackListItem
+                    {
+                        Id = track.Id,
+                        Name = track.Name,
+                        TimeRange = $"{start:HH:mm}–{end:HH:mm} UTC"
+                    });
+                }
+
+                HasNoAvailableTracks = AvailableTracks.Count == 0;
+            });
+        }
+        catch (Exception e)
+        {
+            ErrorMessages.Add($"Could not load tracks: {e.Message}");
+        }
+    }
+
+    // Tracks recorded far away from this session are never the right GPX. The DAQ now keeps real
+    // time from the DS3231, so a matching recording overlaps the session window; the tolerance only
+    // covers the residual drift and a rider who started the GPX logger a few minutes early.
+    private const long TrackMatchToleranceMs = 5 * 60 * 1000;
+
+    private bool OverlapsSession(Track track)
+    {
+        if (session.Timestamp is not { } timestamp)
+            return true;
+
+        var sessionStartMs = timestamp * 1000L;
+        var sessionEndMs = sessionStartMs + Math.Max(0, session.DurationSeconds ?? 0) * 1000L;
+        return track.StartTimeMs - TrackMatchToleranceMs <= sessionEndMs &&
+               track.EndTimeMs + TrackMatchToleranceMs >= sessionStartMs;
+    }
+
+    [RelayCommand]
+    private async Task AssignTrack(TrackListItem? item)
+    {
+        if (item is null) return;
+        var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
+        Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
+        session.Track = item.Id;
+        HasTrack = true;
+        try
+        {
+            await databaseService.PutSessionAsync(session);
+            _mapRenderer.Invalidate();
+            await _mapRenderer.ReloadAsync();
+        }
+        catch (Exception e)
+        {
+            ErrorMessages.Add($"Could not assign track: {e.Message}");
+        }
+    }
+
+    [RelayCommand]
+    private async Task UnlinkTrack()
+    {
+        var databaseService = App.Current?.Services?.GetService<IDatabaseService>();
+        Debug.Assert(databaseService != null, nameof(databaseService) + " != null");
+        session.Track = null;
+        HasTrack = false;
+        try
+        {
+            await databaseService.PutSessionAsync(session);
+            _mapRenderer.Invalidate();
+            await _mapRenderer.ReloadAsync();
+        }
+        catch (Exception e)
+        {
+            ErrorMessages.Add($"Could not unlink track: {e.Message}");
+        }
+    }
+
     #endregion
+}
+
+public sealed class TrackListItem
+{
+    public Guid Id { get; init; }
+    public string Name { get; set; } = "";
+    public string TimeRange { get; set; } = "";
 }
