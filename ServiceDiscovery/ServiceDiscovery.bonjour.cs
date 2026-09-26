@@ -98,6 +98,9 @@ public class ServiceDiscovery : IServiceDiscovery
     {
         browser?.Cancel();
         var browserDescriptor = NWBrowserDescriptor.CreateBonjourService(type, "local.");
+        // NWBrowser omits TXT records unless asked. Without them ParseProtocolVersion
+        // always falls back to 1, and the DAQ never gets the iPhone's wall-clock time.
+        browserDescriptor.IncludeTxtRecord = true;
         browser = new NWBrowser(browserDescriptor, parameters);
         browser.SetDispatchQueue(dispatchQueue);
 
