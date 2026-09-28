@@ -93,7 +93,19 @@ public class SqLiteDatabaseService : IDatabaseService
                 "max - sqrt(arms_sqr_sum - dbl_arm1_arm2 * cos(start_angle-(factor*sample)))")),
     ];
 
-    public SqLiteDatabaseService()
+    public SqLiteDatabaseService() : this(DefaultDatabasePath())
+    {
+    }
+
+    // Lets tests run against a throwaway database instead of the user's sst.db. The DI
+    // container cannot resolve a string, so it keeps using the parameterless constructor.
+    public SqLiteDatabaseService(string databasePath)
+    {
+        connection = new SQLiteAsyncConnection(databasePath);
+        Initialization = Init();
+    }
+
+    private static string DefaultDatabasePath()
     {
         var dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Sufni.Bridge");
         if (!Directory.Exists(dir))
@@ -101,8 +113,7 @@ public class SqLiteDatabaseService : IDatabaseService
             Directory.CreateDirectory(dir);
         }
 
-        connection = new SQLiteAsyncConnection(Path.Combine(dir, "sst.db"));
-        Initialization = Init();
+        return Path.Combine(dir, "sst.db");
     }
 
     private async Task Init()
@@ -644,12 +655,32 @@ public class SqLiteDatabaseService : IDatabaseService
                 // Reconstruct fork stroke while the old head angle is still in effect.
                 td.EnsureFrontShockTravel();
                 td.Linkage = fresh;
-                var updatedBlob = td.ReprocessVelocity();
-                await connection.ExecuteAsync("UPDATE session SET data=? WHERE id=?", [updatedBlob, id]);
-                await connection.ExecuteAsync("DELETE FROM session_cache WHERE session_id=?", id);
+                return await ReprocessStoredSessionAsync(id, td);
             }
         }
 
+        return td;
+    }
+
+    /// <summary>
+    /// Re-derives a stored session against <paramref name="td"/>'s (already replaced) linkage,
+    /// persists the blob and invalidates the plot cache. A combined session is rebuilt from its
+    /// sources instead: its stored travel contains the synthetic transition ramps, which plain
+    /// ReprocessVelocity would feed into the global stroke detection (see GetSessionPsstAsync).
+    /// </summary>
+    private async Task<TelemetryData> ReprocessStoredSessionAsync(Guid id, TelemetryData td)
+    {
+        var sourceIds = await GetCombinedSourcesAsync(id);
+        if (sourceIds.Count > 0)
+        {
+            var rebuilt = await RebuildCombinedSessionAsync(
+                id, td.Name, sourceIds, td.Linkage.GeometrySignature);
+            if (rebuilt is not null) return rebuilt;
+        }
+
+        var updatedBlob = td.ReprocessVelocity();
+        await connection.ExecuteAsync("UPDATE session SET data=? WHERE id=?", [updatedBlob, id]);
+        await connection.ExecuteAsync("DELETE FROM session_cache WHERE session_id=?", id);
         return td;
     }
 
@@ -702,9 +733,12 @@ public class SqLiteDatabaseService : IDatabaseService
     /// current processing — including transition-ramp masking — is applied. Persists the
     /// rebuilt blob and invalidates the plot cache so it re-renders. Returns null if the
     /// session can't be faithfully reconstructed (a source is missing, or the combine fails),
-    /// letting the caller fall back to a plain reprocess.
+    /// letting the caller fall back to a plain reprocess. With
+    /// <paramref name="requiredGeometrySignature"/> set, it also returns null (and persists
+    /// nothing) when the rebuilt session does not end up with that geometry.
     /// </summary>
-    private async Task<TelemetryData?> RebuildCombinedSessionAsync(Guid combinedId, string name, List<Guid> sourceIds)
+    private async Task<TelemetryData?> RebuildCombinedSessionAsync(
+        Guid combinedId, string name, List<Guid> sourceIds, string? requiredGeometrySignature = null)
     {
         try
         {
@@ -728,6 +762,13 @@ public class SqLiteDatabaseService : IDatabaseService
             if (parts.Count < 2) return null;
 
             var rebuilt = TelemetryData.CombineSessions(parts, name);
+            // The combined blob takes the linkage of its earliest source. If the sources carry
+            // another geometry than the combined session's setup, the rebuild cannot remove the
+            // drift and would repeat on every load; let the caller reprocess instead.
+            if (requiredGeometrySignature is not null &&
+                rebuilt.Linkage.GeometrySignature != requiredGeometrySignature)
+                return null;
+
             var blob = MessagePackSerializer.Serialize(rebuilt);
             await connection.ExecuteAsync("UPDATE session SET data=? WHERE id=?", [blob, combinedId]);
             // Invalidate cached plots so they re-render from the corrected data.
@@ -1003,9 +1044,20 @@ public class SqLiteDatabaseService : IDatabaseService
 
         var sessions = await connection.QueryAsync<Session>(
             "SELECT id FROM session WHERE setup_id = ? AND deleted IS NULL AND data IS NOT NULL", oldSetupId);
+        var allCombinedIds = await GetAllCombinedIdsAsync();
+        var combinedIds = sessions.Select(s => s.Id).Where(allCombinedIds.Contains).ToList();
+
+        // Combined sessions are rebuilt from their sources after those were reprocessed. Point
+        // them all at the new setup first, so rebuilding an outer one detects the geometry
+        // drift of a nested one and rebuilds that as well.
+        foreach (var id in combinedIds)
+        {
+            await connection.ExecuteAsync("UPDATE session SET setup_id=? WHERE id=?", newSetupId, id);
+            await connection.ExecuteAsync("DELETE FROM session_cache WHERE session_id=?", id);
+        }
 
         var count = 0;
-        foreach (var session in sessions)
+        foreach (var session in sessions.Where(s => !allCombinedIds.Contains(s.Id)))
         {
             var rawData = await GetSessionRawPsstAsync(session.Id);
             if (rawData == null) continue;
@@ -1022,6 +1074,13 @@ public class SqLiteDatabaseService : IDatabaseService
             count++;
         }
 
+        foreach (var id in combinedIds)
+        {
+            // Detects the drift against the new setup's linkage and rebuilds from the sources.
+            await GetSessionPsstAsync(id);
+            count++;
+        }
+
         return count;
     }
 
@@ -1033,6 +1092,17 @@ public class SqLiteDatabaseService : IDatabaseService
             ?? throw new Exception("Target setup not found.");
         var newLinkage = await GetLinkageAsync(newSetup.LinkageId)
             ?? throw new Exception("Target setup's linkage not found.");
+
+        if ((await GetCombinedSourcesAsync(sessionId)).Count > 0)
+        {
+            // A combined session is rebuilt from its sources, which the caller must have
+            // reassigned first: GetSessionPsstAsync detects the drift against the new setup's
+            // linkage and rebuilds instead of running ReprocessVelocity over the ramps.
+            await connection.ExecuteAsync("UPDATE session SET setup_id=? WHERE id=?", newSetupId, sessionId);
+            await connection.ExecuteAsync("DELETE FROM session_cache WHERE session_id=?", sessionId);
+            await GetSessionPsstAsync(sessionId);
+            return;
+        }
 
         var rawData = await GetSessionRawPsstAsync(sessionId);
         if (rawData == null) return;
