@@ -2,12 +2,43 @@ using System;
 using System.Diagnostics;
 using System.Net;
 using System.Net.Sockets;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace Sufni.Bridge.Models;
 
 public static class SstTcpClient
 {
+    // Longest silence accepted from the DAQ while waiting for data. Without a limit, a DAQ
+    // that stops sending (Wi-Fi drop, reset) leaves the import waiting forever.
+    private static readonly TimeSpan IdleTimeout = TimeSpan.FromSeconds(30);
+
+    // TCP is a byte stream: one receive can return fewer bytes than the DAQ sent in one
+    // message. Reads until the buffer is full.
+    private static async Task ReceiveExactlyAsync(Socket client, Memory<byte> buffer)
+    {
+        var totalRead = 0;
+        while (totalRead < buffer.Length)
+        {
+            using var cts = new CancellationTokenSource(IdleTimeout);
+            int read;
+            try
+            {
+                read = await client.ReceiveAsync(buffer[totalRead..], SocketFlags.None, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                throw new TimeoutException($"The DAQ sent no data for {IdleTimeout.TotalSeconds:0} s.");
+            }
+
+            if (read == 0)
+            {
+                throw new Exception("Server closed connection while receiving data.");
+            }
+            totalRead += read;
+        }
+    }
+
     // A file transfer whose "file received" acknowledgement (0x05) has not been
     // sent yet. The DAQ moves the file to its "uploaded" folder only upon that
     // acknowledgement, so keeping it pending until the session is safely in the
@@ -81,7 +112,7 @@ public static class SstTcpClient
 
         // Receive size
         var sizeBuffer = new byte[8];
-        await client.ReceiveAsync(sizeBuffer);
+        await ReceiveExactlyAsync(client, sizeBuffer);
         var size = BitConverter.ToInt32(sizeBuffer.AsSpan()[..4]); // We won't be able to process file larger than
                                                                    // int max anyway, so this is OK.
 
@@ -90,16 +121,7 @@ public static class SstTcpClient
 
         // Receive data
         var buffer = new byte[size];
-        var totalRead = 0;
-        do
-        {
-            var read = client.Receive(buffer, totalRead, size - totalRead, SocketFlags.None);
-            if (read == 0)
-            {
-                throw new Exception("Server closed connection while receiveing data.");
-            }
-            totalRead += read;
-        } while (totalRead != size);
+        await ReceiveExactlyAsync(client, buffer);
 
         return buffer;
     }
@@ -153,7 +175,7 @@ public static class SstTcpClient
 
         // Receive STATUS_TIME_SYNCED (11) ack
         var statusBuffer = new byte[4];
-        await client.ReceiveAsync(statusBuffer);
+        await ReceiveExactlyAsync(client, statusBuffer);
         var status = BitConverter.ToInt32(statusBuffer.AsSpan()[..4]);
         Debug.Assert(status == 11);
 
@@ -182,7 +204,7 @@ public static class SstTcpClient
 
         // Wait for server to acknowledge file deletion
         var statusBuffer = new byte[4];
-        await client.ReceiveAsync(statusBuffer);
+        await ReceiveExactlyAsync(client, statusBuffer);
         var status = BitConverter.ToInt32(statusBuffer.AsSpan()[..4]);
         Debug.Assert(status == 10);
 
