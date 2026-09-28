@@ -25,8 +25,8 @@ public class NetworkTelemetryFile : ITelemetryFile
 
     public async Task<(TelemetryData Data, byte[] Psst)> GeneratePsstAsync(Linkage linkage, Calibration? frontCal, Calibration? rearCal)
     {
-        var idString = FileName[..5].TrimStart('0');
-        var idInt = int.Parse(idString);
+        // int.Parse accepts leading zeros; trimming them first would turn "00000" into "".
+        var idInt = int.Parse(FileName[..5]);
         pendingAck?.Dispose();
         pendingAck = await SstTcpClient.GetFileDeferred(ipEndPoint, idInt);
         var rawTelemetryData = new RawTelemetryData(pendingAck.Data);
@@ -61,8 +61,8 @@ public class NetworkTelemetryFile : ITelemetryFile
 
     public async Task OnTrashed()
     {
-        var idString = FileName[..5].TrimStart('0');
-        var idInt = int.Parse(idString);
+        // int.Parse accepts leading zeros; trimming them first would turn "00000" into "".
+        var idInt = int.Parse(FileName[..5]);
         await SstTcpClient.TrashFile(ipEndPoint, idInt);
     }
 

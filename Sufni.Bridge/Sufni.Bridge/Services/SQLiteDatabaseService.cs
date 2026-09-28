@@ -609,7 +609,8 @@ public class SqLiteDatabaseService : IDatabaseService
         await Initialization;
         var sessions = await connection.QueryAsync<Session>(
             "SELECT data, setup_id FROM session WHERE deleted IS null AND id = ?", id);
-        if (sessions.Count != 1) return null;
+        // A session synced from the server has no blob until PullIncompleteSessions fetched it.
+        if (sessions.Count != 1 || sessions[0].ProcessedData is null) return null;
 
         var td = MessagePackSerializer.Deserialize<TelemetryData>(sessions[0].ProcessedData);
         if (td.ProcessingVersion < TelemetryData.CurrentProcessingVersion)
@@ -629,6 +630,9 @@ public class SqLiteDatabaseService : IDatabaseService
             await RefreshLinkageFromSetupAsync(td, sessions[0].Setup);
             var updatedBlob = td.ReprocessVelocity();
             await connection.ExecuteAsync("UPDATE session SET data=? WHERE id=?", [updatedBlob, id]);
+            // The cache staleness check does not look at ProcessingVersion, so plots rendered
+            // from the old processing would otherwise survive the migration.
+            await connection.ExecuteAsync("DELETE FROM session_cache WHERE session_id=?", id);
         }
         else
         {
