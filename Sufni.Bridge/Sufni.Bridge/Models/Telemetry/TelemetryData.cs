@@ -568,6 +568,17 @@ public class TelemetryData
 
     public byte[] ProcessRecording(ushort[] front, ushort[] rear)
     {
+        // A setup without a calibration for a channel has no sensor there, whatever the DAQ
+        // recorded on it. Drop the channel instead of dereferencing the missing calibration.
+        if ((Front.Calibration is null || front.Length == 0) &&
+            (Rear.Calibration is null || rear.Length == 0) &&
+            (front.Length != 0 || rear.Length != 0))
+        {
+            throw new Exception("The setup has no calibration for the recorded channels!");
+        }
+        if (Front.Calibration is null) front = [];
+        if (Rear.Calibration is null) rear = [];
+
         // Evaluate front and rear input arrays
         var fc = front.Length;
         var rc = rear.Length;
