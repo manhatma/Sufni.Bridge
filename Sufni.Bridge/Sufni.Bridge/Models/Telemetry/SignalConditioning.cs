@@ -10,8 +10,8 @@ namespace Sufni.Bridge.Models.Telemetry;
 public static class SignalConditioning
 {
     /// <summary>
-    /// Replaces NaN samples in place by linear interpolation between the nearest valid
-    /// neighbours. Leading gaps take the first valid value, trailing gaps the last one.
+    /// Replaces non-finite samples (NaN, ±Infinity — e.g. a calibration expression dividing
+    /// by zero) in place by linear interpolation between the nearest valid neighbours. Leading gaps take the first valid value, trailing gaps the last one.
     /// Holding the last value instead (zero-order hold) turns every gap into a plateau followed
     /// by a step, which the differentiator reads as a velocity spike roughly twice as high as
     /// the real motion across the gap. Returns false if the signal has no valid sample at all.
@@ -21,7 +21,7 @@ public static class SignalConditioning
         var lastValid = -1;
         for (var i = 0; i < x.Length; i++)
         {
-            if (double.IsNaN(x[i])) continue;
+            if (!double.IsFinite(x[i])) continue;
 
             if (lastValid < 0)
             {

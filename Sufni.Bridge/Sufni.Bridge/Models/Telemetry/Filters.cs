@@ -36,6 +36,8 @@ public class WhittakerHendersonSmoother
     /// </summary>
     public void EnsurePrepared(int n)
     {
+        if (n < order) return; // Smooth passes such short signals through unchanged
+
         lock (gate)
         {
             if (matrix == null || matrixLength != n)
@@ -48,6 +50,12 @@ public class WhittakerHendersonSmoother
 
     public double[] Smooth(double[] data)
     {
+        // The difference matrix has order + 1 bands of length n − d; with n < order the
+        // outer bands would get a negative length. A signal that short cannot be smoothed
+        // meaningfully (e.g. a crop of a few samples), so pass it through unchanged.
+        if (data.Length < order)
+            return (double[])data.Clone();
+
         // Snapshot the matrix reference under the lock; Solve is pure and runs unlocked so
         // concurrent smoothing of equal-length signals proceeds in parallel.
         double[][] m;

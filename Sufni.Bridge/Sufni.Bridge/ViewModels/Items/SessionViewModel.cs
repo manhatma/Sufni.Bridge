@@ -864,30 +864,23 @@ public partial class SessionViewModel : ItemViewModelBase
             IsAnalyzingData = true;
             if (IsCombinedSession)
             {
-                var idsToReassign = new HashSet<Guid> { Id };
-                var visitedCombined = new HashSet<Guid>();
+                // Post-order: every source before the combined session built from it, nested
+                // combined sessions included, this session last. A combined session is rebuilt
+                // from its sources, so they must already carry the new setup.
+                var idsToReassign = new List<Guid>();
+                var visited = new HashSet<Guid>();
 
-                async Task CollectLeafSourceSessionIds(Guid combinedId)
+                async Task CollectPostOrder(Guid sessionId)
                 {
-                    if (!visitedCombined.Add(combinedId))
+                    if (!visited.Add(sessionId))
                         return;
 
-                    var sourceIds = await databaseService.GetCombinedSourcesAsync(combinedId);
-                    foreach (var sourceId in sourceIds)
-                    {
-                        var nestedSources = await databaseService.GetCombinedSourcesAsync(sourceId);
-                        if (nestedSources.Count == 0)
-                        {
-                            idsToReassign.Add(sourceId);
-                        }
-                        else
-                        {
-                            await CollectLeafSourceSessionIds(sourceId);
-                        }
-                    }
+                    foreach (var sourceId in await databaseService.GetCombinedSourcesAsync(sessionId))
+                        await CollectPostOrder(sourceId);
+                    idsToReassign.Add(sessionId);
                 }
 
-                await CollectLeafSourceSessionIds(Id);
+                await CollectPostOrder(Id);
                 foreach (var sessionId in idsToReassign)
                     await databaseService.ReassignSessionSetupAsync(sessionId, newSetup.Id);
             }
