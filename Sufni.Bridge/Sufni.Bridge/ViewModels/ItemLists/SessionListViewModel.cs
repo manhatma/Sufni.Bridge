@@ -77,7 +77,7 @@ public class SetupParameterFilterItem : ObservableObject
         new(SetupParameterSide.Any, "Any")
     ];
 
-    private SetupParameterField field = SetupParameterField.SpringRate;
+    private SetupParameterField selectedField = SetupParameterField.SpringRate;
     private SetupParameterSide side = SetupParameterSide.Any;
     private string? valueText;
     private string? toleranceText = "5";
@@ -87,10 +87,10 @@ public class SetupParameterFilterItem : ObservableObject
 
     public SetupParameterField Field
     {
-        get => field;
+        get => selectedField;
         set
         {
-            if (!SetProperty(ref field, value)) return;
+            if (!SetProperty(ref selectedField, value)) return;
             OnPropertyChanged(nameof(SelectedFieldOption));
             ToleranceText = DefaultTolerance(value).ToString(CultureInfo.InvariantCulture);
         }
